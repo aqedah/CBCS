@@ -1,0 +1,5 @@
+data/
+raw/
+*.json
+!manifest.webmanifest
+__pycache__/

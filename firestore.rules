@@ -1,0 +1,24 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function email() { return request.auth != null ? request.auth.token.email : ''; }
+    function isCommittee() { return email() == 'committee@cbcs.app'; }
+    function isDept(d) { return email() == d + '@cbcs.app'; }
+    function signedIn() { return request.auth != null; }
+
+    // 부서 자료: 그 부서 계정과 교육위원회만 읽고 씀
+    match /depts/{d} { allow read, write: if isDept(d) || isCommittee(); }
+    match /depts/{d}/{sub}/{docId} { allow read, write: if isDept(d) || isCommittee(); }
+
+    // 교육위원회 공지·공통 일정: 로그인한 모두 읽기, 교육위원회만 쓰기
+    match /committee/{docId} { allow read: if signedIn(); allow write: if isCommittee(); }
+    match /committee/{docId}/{sub}/{subId} { allow read: if signedIn(); allow write: if isCommittee(); }
+
+    // 장학: 교육위원회 전용
+    match /scholarship/{docId} { allow read, write: if isCommittee(); }
+
+    // 보관 색인·가져오기 기록: 로그인한 모두 읽기, 교육위원회만 쓰기
+    match /archive/{docId} { allow read: if signedIn(); allow write: if isCommittee(); }
+    match /meta/{docId} { allow read: if signedIn(); allow write: if isCommittee(); }
+  }
+}
