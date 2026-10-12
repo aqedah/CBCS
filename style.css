@@ -357,3 +357,12 @@ th.ystrip-h .ystrip .yw{background:none;height:12px}
 .pwhy{font-size:11px;color:var(--bad);line-height:1.35;margin-top:3px;max-width:150px;white-space:normal}
 .pill.warn + .pwhy{color:var(--warn)}
 .ystrip .yw.t{background:var(--info)}
+/* 학생 카드: 오른쪽(소속 이력·출석 띠)이 길어도 왼쪽 정보 칸이 눌리지 않게 */
+.grid2>*{min-width:0}
+.sc-grid{grid-template-columns:minmax(240px,1fr) minmax(0,1.3fr)}
+.sc-grid table td,.sc-grid table th{white-space:normal;overflow-wrap:anywhere}
+.sc-grid .kvl dd{overflow-wrap:break-word;word-break:keep-all}
+.sc-grid .row{flex-wrap:wrap}
+@media (max-width:1100px){.sc-grid{grid-template-columns:1fr}}
+.sc-grid table td:nth-child(-n+2),.sc-grid table th:nth-child(-n+2){white-space:nowrap;overflow-wrap:normal}
+.sc-grid table td:nth-child(3){word-break:keep-all}
