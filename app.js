@@ -1257,9 +1257,10 @@ VIEWS.bylaws = async () => {
     <textarea id="bt-text" style="width:100%;min-height:520px;margin-top:10px;font-size:14px;line-height:1.7">${esc(b.text)}</textarea></div>`;
   const R = b.params || RULE_2025;
   return `<div class="topbar"><div><h1>청년부 회칙</h1><div class="sub">${b.status === 'current' ? '<span class="pill ok">현행</span>' : b.status === 'draft' ? '<span class="pill warn">개정안 · 총회 통과 전</span>' : '<span class="pill mute">이전 판</span>'} ${esc(b.revision)} · ${esc(b.date)}${b.status === 'current' ? ' · 총회 자료의 자동 판정이 이 판을 따릅니다' : ''}</div></div>
-    <div class="row">${canEdit() ? '<button class="btn" id="bl-print">회칙 출력</button>' : ''}${edit ? `<button class="btn" id="bl-edit">본문 수정</button>${b.status !== 'current' ? '<button class="btn p" id="bl-current">현행으로 지정</button>' : ''}` : ''}</div></div>
+    <div class="row">${canEdit() ? '<button class="btn" id="bl-print">회칙 출력</button>' : ''}${edit ? `<button class="btn p" id="bl-upload">회칙 파일 올리기 (HWP·PDF)</button><button class="btn" id="bl-edit">본문 수정</button>${b.status !== 'current' ? '<button class="btn p" id="bl-current">현행으로 지정</button>' : ''}` : ''}</div></div>
   <div class="grid2 bylaw-grid">
-    <div class="card"><h2>${esc(b.title)}</h2>${b.text.trim() ? `<div class="bylaw-text">${bylawHTML(b.text)}</div>` : `<div class="hint">아직 본문이 없습니다. ${edit ? '"본문 수정"을 눌러 회칙 원본(한글 파일)의 내용을 붙여넣으세요.' : ''}</div>`}
+    <div class="card"><h2>${esc(b.title)}</h2>${b.text.trim() ? `<div class="bylaw-text">${bylawHTML(b.text)}</div>` : `<div class="hint">아직 본문이 없습니다. ${edit ? '"회칙 파일 올리기"로 HWP·PDF 원본을 올리면 본문을 자동으로 읽어 넣습니다. "본문 수정"으로 직접 붙여넣어도 됩니다.' : ''}</div>`}
+      ${b.file ? `<div class="note" style="margin-top:10px">원본 파일: ${esc(b.file.name)} (${Math.round((b.file.size || 0) / 1024)}KB, ${esc(b.file.at || '')})${b.file.stored ? ' <button class="btn s" id="bl-down">원본 내려받기</button>' : ' — 파일이 커서 원본은 저장하지 않고 본문만 넣음'}</div>` : ''}
       ${b.notes ? `<div class="note" style="margin-top:10px">${esc(b.notes)}</div>` : ''}</div>
     <div class="stack">
       <div class="card"><h2>판(版) 목록</h2><div class="list vlist">${vs.map(x => `<button class="item ${x.id === b.id ? 'on' : ''}" data-bylaw="${esc(x.id)}" style="text-align:left;width:100%"><div><div class="t">${esc(x.revision)}</div><div class="d">${esc(x.date)} · ${{ current: '현행', draft: '개정안', old: '이전 판' }[x.status]}</div></div></button>`).join('')}</div>
@@ -1273,10 +1274,86 @@ VIEWS.bylaws = async () => {
     </div>
   </div>`;
 };
+/* 회칙 파일 올리기: HWP(한글 5.0)·HWPX·PDF에서 본문 글자를 브라우저 안에서 읽는다(서버로 보내지 않음) */
+const LIBS = { cfb: 'https://cdn.jsdelivr.net/npm/cfb@1.2.2/dist/cfb.min.js', pako: 'https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js', jszip: 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js', pdf: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js', pdfw: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js' };
+const _libs = {};
+function loadLib(k, global) { if (window[global]) return Promise.resolve(window[global]); return _libs[k] || (_libs[k] = new Promise((ok, no) => { const sc = document.createElement('script'); sc.src = LIBS[k]; sc.onload = () => ok(window[global]); sc.onerror = () => no(new Error('도구를 불러오지 못했습니다(인터넷 연결 확인)')); document.head.appendChild(sc); })); }
+function hwpParaText(u8) { const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength); let out = ''; let j = 0; while (j + 1 < u8.length) { const c = dv.getUint16(j, true); if (c === 10) { out += '\n'; j += 2; continue; } if (c === 0 || c === 13 || (c >= 24 && c <= 31)) { j += 2; continue; } if (c === 9) { out += ' '; j += 16; continue; } if (c < 32) { j += 16; continue; } out += String.fromCharCode(c); j += 2; } return out; }
+async function hwpToText(buf) {
+  const CFB = await loadLib('cfb', 'CFB'); const pako = await loadLib('pako', 'pako');
+  const cfb = CFB.read(new Uint8Array(buf), { type: 'array' });
+  const hdr = CFB.find(cfb, 'FileHeader'); if (!hdr) throw new Error('한글(HWP 5.0) 파일이 아닙니다');
+  const h = hdr.content; const compressed = h[36] & 1, distributed = h[36] & 4;
+  if (distributed) throw new Error('배포용(보호된) 한글 파일은 읽을 수 없습니다. 한글에서 "다른 이름으로 저장"한 뒤 올려 주세요');
+  const secs = cfb.FullPaths.map((p, i) => [p, cfb.FileIndex[i]]).filter(([p]) => /BodyText\/Section\d+$/i.test(p)).sort((a, b) => +a[0].match(/(\d+)$/)[1] - +b[0].match(/(\d+)$/)[1]);
+  const lines = [];
+  for (const [, e] of secs) {
+    let d = new Uint8Array(e.content); if (compressed) d = pako.inflateRaw(d);
+    const dv = new DataView(d.buffer, d.byteOffset, d.byteLength); let i = 0;
+    while (i + 4 <= d.length) { const hh = dv.getUint32(i, true); i += 4; const tag = hh & 0x3ff; let size = hh >>> 20; if (size === 0xfff) { size = dv.getUint32(i, true); i += 4; } if (tag === 67) lines.push(hwpParaText(d.subarray(i, i + size))); i += size; }
+  }
+  return lines.join('\n');
+}
+async function hwpxToText(buf) {
+  const JSZip = await loadLib('jszip', 'JSZip'); const z = await JSZip.loadAsync(buf);
+  const names = Object.keys(z.files).filter(n => /Contents\/section\d+\.xml$/i.test(n)).sort((a, b) => +a.match(/(\d+)\.xml/i)[1] - +b.match(/(\d+)\.xml/i)[1]);
+  const lines = [];
+  for (const n of names) { const xml = await z.file(n).async('string'); const doc = new DOMParser().parseFromString(xml, 'application/xml'); doc.querySelectorAll('*').forEach(el => { if (el.localName === 'p') { const t = [...el.children].filter(c => c.localName === 'run').map(r => [...r.children].filter(x => x.localName === 't').map(x => x.textContent).join('')).join(''); lines.push(t); } }); }
+  return lines.join('\n');
+}
+async function pdfToText(buf) {
+  const lib = await loadLib('pdf', 'pdfjsLib'); lib.GlobalWorkerOptions.workerSrc = LIBS.pdfw;
+  const pdf = await lib.getDocument({ data: new Uint8Array(buf) }).promise; const lines = [];
+  for (let p = 1; p <= pdf.numPages; p++) { const tc = await (await pdf.getPage(p)).getTextContent(); let line = '', y = null; tc.items.forEach(it => { const yy = Math.round(it.transform[5]); if (y !== null && Math.abs(yy - y) > 2) { lines.push(line); line = ''; } line += it.str; y = yy; if (it.hasEOL) { lines.push(line); line = ''; y = null; } }); if (line) lines.push(line); }
+  return lines.join('\n');
+}
+function cleanBylawText(t) { return t.replace(/\r/g, '').split('\n').map(l => l.replace(/[\u0000-\u0008-]/g, '').replace(/\s+$/, '')).join('\n').replace(/\n{3,}/g, '\n\n').trim(); }
+function bylawUploadDialog(dd, b) {
+  openModal(`<h2>회칙 파일 올리기<button class="btn s" id="modal-close">닫기</button></h2>
+    <p class="note">한글(.hwp, .hwpx)이나 PDF 회칙 원본을 고르면 본문 글자를 읽어 옵니다. 파일은 이 컴퓨터의 브라우저 안에서만 읽고, 원본은 청년부 자료에 함께 보관합니다(큰 파일은 본문만).</p>
+    <div class="stack" style="margin-top:8px"><input type="file" id="bu-file" accept=".hwp,.hwpx,.pdf">
+      <div class="fields"><label class="f"><span>넣을 곳</span><select id="bu-to"><option value="this">지금 보고 있는 판: ${esc(b.revision)}</option><option value="new">새 판으로 추가</option></select></label>
+      <label class="f"><span>새 판 이름(개정 차수)</span><input type="text" id="bu-rev" placeholder="예: 24차 수정"></label><label class="f"><span>개정일</span><input type="date" id="bu-date" value="${today()}"></label>
+      <label class="f"><span>새 판 상태</span><select id="bu-status"><option value="draft">개정안</option><option value="old">이전 판</option><option value="current">현행</option></select></label></div>
+      <div id="bu-msg" class="note"></div><textarea id="bu-text" style="width:100%;min-height:300px;font-size:13.5px;line-height:1.7" placeholder="파일을 고르면 여기에 본문이 나옵니다. 저장 전에 고칠 수 있습니다."></textarea>
+      <div class="row"><button class="btn p" id="bu-save" disabled>저장</button><span class="note">"제1조", "제1장"으로 시작하는 줄은 자동으로 제목이 됩니다.</span></div></div>`);
+  let file = null, buf = null;
+  $('#bu-to').onchange = e => { const nw = e.target.value === 'new'; ['bu-rev', 'bu-date', 'bu-status'].forEach(id => { $('#' + id).disabled = !nw; }); };
+  $('#bu-to').onchange({ target: $('#bu-to') });
+  $('#bu-file').onchange = async e => {
+    file = e.target.files[0]; if (!file) return; const msg = $('#bu-msg'); msg.textContent = '읽는 중…'; $('#bu-save').disabled = true;
+    try {
+      buf = await file.arrayBuffer(); const ext = (file.name.split('.').pop() || '').toLowerCase();
+      const raw = ext === 'pdf' ? await pdfToText(buf) : ext === 'hwpx' ? await hwpxToText(buf) : await hwpToText(buf);
+      const txt = cleanBylawText(raw); $('#bu-text').value = txt;
+      const arts = (txt.match(/^제\s*\d+\s*조/gm) || []).length;
+      msg.textContent = `${file.name} — ${txt.length.toLocaleString()}자, 조문 ${arts}개를 찾았습니다.${arts ? '' : ' 조문 제목을 찾지 못했으니 내용을 확인해 주세요.'}`;
+      const m = file.name.match(/(20\d\d)/); if (m && !$('#bu-rev').value) $('#bu-rev').value = file.name.replace(/\.[^.]+$/, '');
+      $('#bu-save').disabled = !txt;
+    } catch (err) { msg.textContent = '읽지 못했습니다: ' + err.message; }
+  };
+  $('#bu-save').onclick = async () => {
+    const text = $('#bu-text').value; if (!text.trim()) return;
+    let target = b;
+    if ($('#bu-to').value === 'new') {
+      const st = $('#bu-status').value; const cur = currentBylaw(dd);
+      target = { id: 'rev_' + uid(), title: cur.title, revision: $('#bu-rev').value.trim() || file.name, date: $('#bu-date').value, status: st, text: '', params: { ...(cur.params || RULE_2025) }, summary: [], notes: '' };
+      if (st === 'current') { for (const x of dd.bylaws) if (x.status === 'current') { x.status = 'old'; await saveBylaw(dd, x); } }
+      dd.bylaws.push(target);
+    }
+    target.text = text;
+    let stored = false;
+    if (file && buf && buf.byteLength < 650 * 1024) { const u8 = new Uint8Array(buf); let bin = ''; for (let i = 0; i < u8.length; i += 0x8000) bin += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); await backend.set(`depts/young/bylawFiles/${target.id}`, { name: file.name, type: file.type || '', size: file.size, data: btoa(bin), at: today() }); stored = true; }
+    if (file) target.file = { name: file.name, size: file.size, at: today(), stored };
+    await saveBylaw(dd, target); closeModal(); S.sub = { bylaw: target.id }; render(); toast('회칙 본문을 넣었습니다');
+  };
+}
 BIND.bylaws = () => {
   const dd = S.data.young; const b = dd.bylaws.find(x => x.id === S.sub.bylaw) || currentBylaw(dd);
   document.querySelectorAll('[data-bylaw]').forEach(x => x.onclick = () => { S.sub = { bylaw: x.dataset.bylaw }; render(); });
   const pr = $('#bl-print'); if (pr) pr.onclick = () => { S.sub.print = true; render(); };
+  const up = $('#bl-upload'); if (up) up.onclick = () => bylawUploadDialog(dd, b);
+  const dn = $('#bl-down'); if (dn) dn.onclick = async () => { const f = await backend.get(`depts/young/bylawFiles/${b.id}`); if (!f || !f.data) { toast('원본 파일을 찾지 못했습니다'); return; } const bin = atob(f.data); const u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([u8], { type: f.type || 'application/octet-stream' })); a.download = f.name || 'bylaw'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); };
   const bk = $('#bl-back'); if (bk) { bk.onclick = () => { delete S.sub.print; render(); }; $('#bl-pr').onclick = () => window.print(); return; }
   const ed = $('#bl-edit'); if (ed) ed.onclick = () => { S.sub.editText = true; S.sub.bylaw = b.id; render(); };
   const cc = $('#bt-cancel'); if (cc) { cc.onclick = () => { delete S.sub.editText; render(); }; $('#bt-save').onclick = async () => { Object.assign(b, { title: $('#bt-title').value.trim(), revision: $('#bt-rev').value.trim(), date: $('#bt-date').value, text: $('#bt-text').value }); await saveBylaw(dd, b); delete S.sub.editText; render(); toast('회칙을 저장했습니다'); }; return; }
@@ -2096,7 +2173,7 @@ BIND.vehicles = () => {
 
 /* ───────────── 자료 내려받기 · 영수증 사진 정리 (교육위원회) ─────────────
    새 자료 종류(하위 묶음)를 만들면 아래 두 목록에 이름을 추가해야 내려받기에 포함된다. */
-const BACKUP_DEPT_SUBS = ['students', 'reports', 'expenses', 'incomes', 'events', 'notices', 'assets', 'plans', 'timeline', 'officers', 'retreats', 'receipts', 'receiptImgs', 'bylaws', 'assemblies']; // care(심방 카드)는 부서 관리자만 읽을 수 있어 넣지 못함
+const BACKUP_DEPT_SUBS = ['bylawFiles', 'students', 'reports', 'expenses', 'incomes', 'events', 'notices', 'assets', 'plans', 'timeline', 'officers', 'retreats', 'receipts', 'receiptImgs', 'bylaws', 'assemblies']; // care(심방 카드)는 부서 관리자만 읽을 수 있어 넣지 못함
 const BACKUP_TOP = ['scholarship', 'archive', 'promotions', 'vehicles', 'siblings', 'meta'];
 async function collectAll(withImgs, say) {
   const raw = []; const miss = []; const put = (path, x) => { const { _id, ...data } = x; raw.push({ path, data }); };
