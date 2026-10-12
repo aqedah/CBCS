@@ -128,9 +128,13 @@ function ledgerSummary(dd, ledgerId, m) {
 }
 const activeStudents = dd => dd.students.filter(s => s.status === 'active' || s.status === 'longabsent');
 // 교사·임원 표시 순서: 교역자 → 부장 → 부감 → 회장 → 부회장 → 총무 → 서기 → 회계 → 부총무 등 → 팀장 → 팸장 → 담임·보조 → 나머지 (같은 순위면 등록 순서)
-const STAFF_ORDER = ['교역자', '목사', '전도사', '부장', '부감', '회장', '부회장', '총무', '서기', '회계', '부총무', '부서기', '부회계', '팀장', '리더', '인도자', '팸장', '부팸장', '담임', '교사', '보조'];
-const staffRank = t => { const r = String(t.role || ''); const i = STAFF_ORDER.findIndex(k => r.split(/[,·\/]/)[0].trim().startsWith(k) || r.includes(k)); return i < 0 ? 99 : i; };
-const visibleStaff = dd => dd.doc.staff.filter(t => t.status !== 'left').map((t, i) => [t, i]).sort((a, b) => staffRank(a[0]) - staffRank(b[0]) || a[1] - b[1]).map(x => x[0]);
+// 교사·임원 표시 순서(모든 화면, 표기상 순서일 뿐 — 교역자와 부장·부감은 협력 관계): 교역자 → 부장 → 부감 → 교사(팸장·담임·보조 등) → 임원(회장·부회장·총무·서기·회계, 부임원) → 팀장(사역팀) · 같은 자리면 등록 순서
+const STAFF_GROUPS = ['교역자', '부장', '부감', '교사', '임원', '팀장'];
+const OFFICER_SEQ = ['회장', '부회장', '총무', '서기', '회계', '부총무', '부서기', '부회계'];
+function staffGroup(part) { const r = String(part || '').trim(); if (/교역자|목사|전도사|디렉터/.test(r)) return 0; if (/^부장/.test(r)) return 1; if (/^부감/.test(r)) return 2; if (/^임원/.test(r) || OFFICER_SEQ.includes(r)) return 4; if (/팀장|리더|인도자/.test(r)) return 5; return 3; }
+const staffRank = t => { const parts = String(t.role || '').split(/[,·\/]/).map(x => x.trim()).filter(Boolean); if (!parts.length) return [3, 99]; const g = Math.min(...parts.map(staffGroup)); const p = parts.find(x => staffGroup(x) === g) || ''; const sub = g === 4 ? OFFICER_SEQ.indexOf(p) : g === 3 ? (/^팸장|^담임/.test(p) ? 0 : /^부팸장/.test(p) ? 1 : /보조/.test(p) ? 3 : 2) : 0; return [g, sub < 0 ? 50 : sub]; };
+const staffCmp = (a, b) => { const x = staffRank(a), y = staffRank(b); return x[0] - y[0] || x[1] - y[1]; };
+const visibleStaff = dd => dd.doc.staff.filter(t => t.status !== 'left').map((t, i) => [t, i]).sort((a, b) => staffCmp(a[0], b[0]) || a[1] - b[1]).map(x => x[0]);
 const sName = (dd, sid) => { const s = dd.students.find(x => x.id === sid); return s ? s.name : sid; };
 const classOf = (dd, s) => dd.doc.classes.find(c => c.id === s.classId);
 const classStudents = (dd, cid) => activeStudents(dd).filter(s => s.classId === cid);
@@ -1130,7 +1134,7 @@ const ROLE_PILL = { 임원: 'ok', 팀장: 'info', 팸장: 'mute', '교역자·�
 function staffByKind(dd) { const g = { 임원: [], 팀장: [], 팸장: [], '교역자·부장': [] }; dd.doc.staff.filter(t => t.status !== 'left').forEach(t => roleParts(t.role).forEach(r => { const k = roleKind(r); if (g[k]) g[k].push({ name: t.name, role: r, cls: t.classId || '' }); })); const ord = r => { const i = [...OFFICER_CORE, ...ASSEMBLY_POS_SUB].indexOf(r); return i < 0 ? 99 : i; }; g.임원.sort((a, b) => ord(a.role) - ord(b.role)); const lead = r => { const i = ['교역자', '전도사', '부장', '부감', '지도교사'].findIndex(k => r.startsWith(k)); return i < 0 ? 99 : i; }; g['교역자·부장'].sort((a, b) => lead(a.role) - lead(b.role)); g.팸장.sort((a, b) => (a.role.startsWith('부') ? 1 : 0) - (b.role.startsWith('부') ? 1 : 0)); return g; }
 function staffKindsHTML(dd) { const g = staffByKind(dd); const line = (k, list) => `<div class="kind-row"><span class="pill ${ROLE_PILL[k]}">${k} ${list.length}</span><div>${list.map(x => `<span class="chip">${esc(x.role)} <b>${esc(x.name)}</b></span>`).join('') || '<span class="note">없음</span>'}</div></div>`;
   const missing = OFFICER_CORE.filter(r => !g.임원.some(x => x.role === r));
-  return `${line('임원', g.임원)}${missing.length ? `<div class="note" style="margin:-2px 0 6px 0">비어 있는 임원 자리: ${missing.join(', ')}</div>` : ''}${line('팀장', g.팀장)}${line('팸장', g.팸장)}${line('교역자·부장', g['교역자·부장'])}`; }
+  return `${line('교역자·부장', g['교역자·부장'])}${line('팸장', g.팸장)}${line('임원', g.임원)}${missing.length ? `<div class="note" style="margin:-2px 0 6px 0">비어 있는 임원 자리: ${missing.join(', ')}</div>` : ''}${line('팀장', g.팀장)}`; }
 const iso = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 const addMonths = (date, k) => { const d = new Date(date + 'T00:00:00'); d.setMonth(d.getMonth() + k); return iso(d); };
 const ageAt = (birth, ref) => { if (!birth || !/^\d{4}-\d\d-\d\d$/.test(birth)) return null; const [y, m, d] = birth.split('-').map(Number), [Y, M, D2] = ref.split('-').map(Number); return Y - y - (M < m || (M === m && D2 < d) ? 1 : 0); };
