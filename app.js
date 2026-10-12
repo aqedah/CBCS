@@ -77,11 +77,11 @@ const isCommittee = () => S.user === 'committee';
 const canEdit = () => !isMobile();
 async function loadDept(d, force) {
   if (S.data[d] && !force) return S.data[d];
-  const [docu, students, reports, expenses, incomes, events, notices] = await Promise.all([
+  const [docu, students, reports, expenses, incomes, events, notices, assets] = await Promise.all([
     backend.get(`depts/${d}`), backend.list(`depts/${d}/students`), backend.list(`depts/${d}/reports`),
-    backend.list(`depts/${d}/expenses`), backend.list(`depts/${d}/incomes`), backend.list(`depts/${d}/events`), backend.list(`depts/${d}/notices`)]);
+    backend.list(`depts/${d}/expenses`), backend.list(`depts/${d}/incomes`), backend.list(`depts/${d}/events`), backend.list(`depts/${d}/notices`), backend.list(`depts/${d}/assets`)]);
   const dd = { id: d, doc: docu || { name: DEPTS[d], classLabel: '반', year: YEAR, classes: [], staff: [], ledgers: [], budgetPlan: [], monthlyPlans: {}, monthlyTexts: {}, notes: {} },
-    students, reports: Object.fromEntries(reports.map(r => [r.date, r])), expenses, incomes, events, notices };
+    students, reports: Object.fromEntries(reports.map(r => [r.date, r])), expenses, incomes, events, notices, assets: assets.map(a => ({ ...a, id: a.id || a._id })) };
   dd.doc.ledgers = dd.doc.ledgers || []; dd.doc.classes = dd.doc.classes || []; dd.doc.staff = dd.doc.staff || []; dd.doc.budgetPlan = dd.doc.budgetPlan || []; dd.doc.monthlyPlans = dd.doc.monthlyPlans || {}; dd.doc.monthlyTexts = dd.doc.monthlyTexts || {}; dd.doc.notes = dd.doc.notes || {};
   S.data[d] = dd; return dd;
 }
@@ -127,9 +127,9 @@ const phoneLabel = s => s.phone ? `${s.phone} (본인)` : s.guardianPhone ? `${s
 const isUnited = r => !!(r.united || /세대통합/.test(r.type || ''));
 
 /* ───────────── 화면 뼈대 ───────────── */
-const NAV_PC = [['home','메인','⌂'],['weekly','주일 보고서','✎'],['roster','출석부','☰'],['ledger','회계','₩'],['monthly','월간 보고서','▤'],['plan','연간 계획','▦'],['stats','출석 통계','↗'],['archive','보관함','▣'],['tutorial','사용 안내','?']];
+const NAV_PC = [['home','메인','⌂'],['weekly','주일 보고서','✎'],['roster','출석부','☰'],['ledger','회계','₩'],['assets','물품대장','▢'],['monthly','월간 보고서','▤'],['plan','연간 계획','▦'],['stats','출석 통계','↗'],['archive','보관함','▣'],['tutorial','사용 안내','?']];
 const NAV_MOBILE = [['home','메인'],['attend','출석 체크'],['reports','보고서'],['members','멤버'],['stats','통계'],['tutorial','안내']];
-const NAV_COMMITTEE = [['home','메인','⌂'],['monthly','월간 보고서','▤'],['reports','보고서 열람','✎'],['roster','출석부 열람','☰'],['scholarship','장학','★'],['archive','보관함','▣'],['import','데이터 가져오기','⇪'],['tutorial','사용 안내','?']];
+const NAV_COMMITTEE = [['home','메인','⌂'],['monthly','월간 보고서','▤'],['assets','물품대장 열람','▢'],['reports','보고서 열람','✎'],['roster','출석부 열람','☰'],['scholarship','장학','★'],['archive','보관함','▣'],['import','데이터 가져오기','⇪'],['tutorial','사용 안내','?']];
 const NAV_COMMITTEE_MOBILE = [['home','메인'],['reports','보고서'],['monthly','월간'],['scholarship','장학'],['tutorial','안내']];
 const VIEWS = {}, BIND = {};
 const FOOTER = `<footer class="foot"><p>🔒 모든 자료는 교육부 전용 서버(데이터베이스)에만 보관되며, 부서 비밀번호로 로그인한 사람만 볼 수 있습니다. 외부에 공개하거나 제공하지 않습니다.</p><p>제작자: 이삭 목사 · 중앙성서교회</p></footer>`;
@@ -625,7 +625,7 @@ BIND.ledger = () => {
   const dd = D(); const lid = S.sub.ledger || (dd.doc.ledgers[0] || {}).id; const L = dd.doc.ledgers.find(l => l.id === lid);
   if (S.sub.voucherView) { $('#v-back').onclick = () => { delete S.sub.voucherView; render(); }; $('#v-print').onclick = () => window.print(); $('#v-edit').onclick = () => { S.sub.voucherEdit = S.sub.voucherView; delete S.sub.voucherView; render(); }; return; }
   if (S.sub.voucherEdit) { bindVoucherForm(); $('#v-cancel').onclick = () => { delete S.sub.voucherEdit; render(); };
-    $('#v-save').onclick = async () => { const isNew = S.sub.voucherEdit === 'new'; const e = isNew ? { id: 'e_' + uid(), dept: dd.id, approver: '', settled: '', source: '지출결의서' } : dd.expenses.find(x => x.id === S.sub.voucherEdit); readVoucherForm(e); if (!e.amount || !e.desc) { toast('적요와 금액을 넣어 주세요'); return; } await backend.set(`depts/${dd.id}/expenses/${e.id}`, e); if (isNew) dd.expenses.push(e); S.sub = { ledger: e.ledgerId, month: ym(e.date), voucherView: e.id }; render(); toast('저장했습니다 — 결의서를 인쇄하세요'); };
+    $('#v-save').onclick = async () => { const isNew = S.sub.voucherEdit === 'new'; const e = isNew ? { id: 'e_' + uid(), dept: dd.id, approver: '', settled: '', source: '지출결의서' } : dd.expenses.find(x => x.id === S.sub.voucherEdit); readVoucherForm(e); if (!e.amount || !e.desc) { toast('적요와 금액을 넣어 주세요'); return; } await backend.set(`depts/${dd.id}/expenses/${e.id}`, e); if (isNew) dd.expenses.push(e); const na = await syncAssetsFromExpense(dd, e); S.sub = { ledger: e.ledgerId, month: ym(e.date), voucherView: e.id }; render(); toast('저장했습니다' + (na ? ` · 물품대장 ${na}건 등록` : '') + ' — 결의서를 인쇄하세요'); };
     return; }
   const vn = $('#v-new'); if (vn) vn.onclick = () => { S.sub.voucherEdit = 'new'; render(); };
   document.querySelectorAll('[data-voucher]').forEach(b => b.onclick = () => { S.sub.voucherView = b.dataset.voucher; render(); });
@@ -633,7 +633,7 @@ BIND.ledger = () => {
   const la = $('#l-all'); if (la) la.onclick = () => { S.sub.all = !S.sub.all; render(); };
   const add = $('#l-add'); if (add) add.onclick = async () => { const n = $('#l-new').value.trim(); if (!n) return; const b = +$('#l-new-budget').value || 0; const id = `${dd.id}_${uid()}`; dd.doc.ledgers.push({ id, name: n, budget: b, carry: 0, kind: b ? 'budget' : 'balance', note: '', flags: [] }); await saveDeptDoc(dd.id); S.sub.ledger = id; render(); };
   if (!L) return;
-  const ea = $('#e-add'); if (ea) ea.onclick = async () => { const a = +$('#e-amt').value; const ds = $('#e-desc').value.trim(); if (!a || !ds) { toast('내역과 금액을 넣어 주세요'); return; } const e = { id: 'e_' + uid(), dept: dd.id, ledgerId: lid, date: $('#e-date').value, category: $('#e-cat').value, desc: ds, amount: a, requester: $('#e-req').value.trim(), approver: '', receipt: $('#e-rc').value === '1', settled: '', note: '', flags: [], source: '앱 입력' }; await backend.set(`depts/${dd.id}/expenses/${e.id}`, e); dd.expenses.push(e); S.sub.month = ym(e.date); render(); toast('지출 추가'); };
+  const ea = $('#e-add'); if (ea) ea.onclick = async () => { const a = +$('#e-amt').value; const ds = $('#e-desc').value.trim(); if (!a || !ds) { toast('내역과 금액을 넣어 주세요'); return; } const e = { id: 'e_' + uid(), dept: dd.id, ledgerId: lid, date: $('#e-date').value, category: $('#e-cat').value, desc: ds, amount: a, requester: $('#e-req').value.trim(), approver: '', receipt: $('#e-rc').value === '1', settled: '', note: '', flags: [], source: '앱 입력' }; if (isAssetLike(e.desc, e.category)) e.items = [{ desc: e.desc, qty: '', price: '', amount: e.amount, asset: true }]; await backend.set(`depts/${dd.id}/expenses/${e.id}`, e); dd.expenses.push(e); const na = await syncAssetsFromExpense(dd, e); S.sub.month = ym(e.date); render(); toast('지출 추가' + (na ? ' · 물품대장에 자동 등록' : '')); };
   document.querySelectorAll('[data-del-e]').forEach(b => b.onclick = async () => { await backend.del(`depts/${dd.id}/expenses/${b.dataset.delE}`); dd.expenses = dd.expenses.filter(e => e.id !== b.dataset.delE); render(); });
   document.querySelectorAll('[data-edit-e]').forEach(b => b.onclick = () => { const e = dd.expenses.find(x => x.id === b.dataset.editE); openModal(`<h2>지출 수정<button class="btn s" id="modal-close">닫기</button></h2>${e.flags && e.flags.length ? `<div class="flags">${e.flags.map(esc).join('<br>')}</div>` : ''}<div class="fields" style="margin-top:8px"><label class="f"><span>날짜</span><input type="date" id="ee-date" value="${esc(e.date || '')}"></label><label class="f"><span>항목</span><select id="ee-cat">${CATS.map(c => `<option ${c === e.category ? 'selected' : ''}>${c}</option>`).join('')}${CATS.includes(e.category) ? '' : `<option selected>${esc(e.category)}</option>`}</select></label><label class="f" style="grid-column:span 2"><span>세부 내역</span><input type="text" id="ee-desc" value="${esc(e.desc)}"></label><label class="f"><span>금액</span><input type="number" id="ee-amt" value="${e.amount}"></label><label class="f"><span>청구인</span><input type="text" id="ee-req" value="${esc(e.requester || '')}"></label><label class="f"><span>영수증</span><select id="ee-rc"><option value="1" ${e.receipt ? 'selected' : ''}>있음</option><option value="0" ${e.receipt ? '' : 'selected'}>없음</option></select></label><label class="f"><span>장부</span><select id="ee-ledger">${dd.doc.ledgers.map(l => `<option value="${esc(l.id)}" ${l.id === e.ledgerId ? 'selected' : ''}>${esc(l.name)}</option>`).join('')}</select></label><label class="f" style="grid-column:span 2"><span>메모</span><input type="text" id="ee-note" value="${esc(e.note || '')}"></label></div><div class="row" style="margin-top:10px"><button class="btn p" id="ee-save">저장</button></div>`); $('#ee-save').onclick = async () => { Object.assign(e, { date: $('#ee-date').value, category: $('#ee-cat').value, desc: $('#ee-desc').value.trim(), amount: +$('#ee-amt').value || 0, requester: $('#ee-req').value.trim(), receipt: $('#ee-rc').value === '1', ledgerId: $('#ee-ledger').value, note: $('#ee-note').value.trim(), flags: [] }); await backend.set(`depts/${dd.id}/expenses/${e.id}`, e); closeModal(); render(); }; });
   const ia = $('#i-add'); if (ia) ia.onclick = async () => { const a = +$('#i-amt').value; const ds = $('#i-desc').value.trim(); if (!a || !ds) return; const e = { id: 'i_' + uid(), dept: dd.id, ledgerId: lid, date: $('#i-date').value, desc: ds, amount: a, note: '', flags: [], source: '앱 입력' }; await backend.set(`depts/${dd.id}/incomes/${e.id}`, e); dd.incomes.push(e); render(); };
@@ -679,21 +679,122 @@ function voucherForm(dd, e) {
     <label class="f"><span>영수증</span><select id="v-rc"><option value="1" ${e.receipt !== false ? 'selected' : ''}>있음</option><option value="0" ${e.receipt === false ? 'selected' : ''}>없음</option></select></label>
   </div>
   <h3 style="font-size:13px;margin:12px 0 6px">지출 내역 <span class="note">금액은 수량×단가로 자동 계산, 직접 넣어도 됩니다</span></h3>
-  <div class="tw"><table id="v-items"><thead><tr><th>내역</th><th>수량</th><th>단가</th><th>금액</th><th></th></tr></thead><tbody>${items.map((i, k) => `<tr><td><input type="text" class="vi-desc" value="${esc(i.desc || '')}"></td><td><input type="number" class="vi-qty" value="${i.qty || ''}" style="width:70px"></td><td><input type="number" class="vi-price" value="${i.price || ''}" style="width:110px"></td><td><input type="number" class="vi-amt" value="${i.amount || ''}" style="width:120px"></td><td><button class="btn s d vi-del">×</button></td></tr>`).join('')}</tbody></table></div>
-  <div class="row" style="margin-top:6px"><button class="btn s" id="v-add-item">줄 추가</button><span class="note" id="v-total"></span></div>
+  <div class="tw"><table id="v-items"><thead><tr><th>내역</th><th>수량</th><th>단가</th><th>금액</th><th title="기자재·교재·비품이면 물품대장에 자동 등록">물품대장</th><th></th></tr></thead><tbody>${items.map((i, k) => `<tr><td><input type="text" class="vi-desc" value="${esc(i.desc || '')}"></td><td><input type="number" class="vi-qty" value="${i.qty || ''}" style="width:70px"></td><td><input type="number" class="vi-price" value="${i.price || ''}" style="width:110px"></td><td><input type="number" class="vi-amt" value="${i.amount || ''}" style="width:120px"></td><td class="c"><input type="checkbox" class="vi-asset" ${i.asset || (i.asset === undefined && isAssetLike(i.desc, e.category)) ? 'checked' : ''}></td><td><button class="btn s d vi-del">×</button></td></tr>`).join('')}</tbody></table></div>
+  <div class="row" style="margin-top:6px"><button class="btn s" id="v-add-item">줄 추가</button><span class="note" id="v-total"></span><span class="note">· "물품대장"에 체크한 줄은 저장할 때 물품대장에 자동으로 들어갑니다(기자재·교재·비품은 자동 체크).</span></div>
   <label class="f" style="margin-top:10px"><span>메모</span><input type="text" id="v-note" value="${esc(e.note || '')}"></label>`;
 }
 function bindVoucherForm() {
   const recalc = () => { let t = 0; document.querySelectorAll('#v-items tbody tr').forEach(tr => { const q = +tr.querySelector('.vi-qty').value, p = +tr.querySelector('.vi-price').value, a = tr.querySelector('.vi-amt'); if (q && p && document.activeElement !== a) a.value = q * p; t += +a.value || 0; }); $('#v-total').textContent = `합계 ${won(t)}원`; };
-  const wire = () => { document.querySelectorAll('#v-items input').forEach(i => i.oninput = recalc); document.querySelectorAll('.vi-del').forEach(b => b.onclick = () => { if (document.querySelectorAll('#v-items tbody tr').length > 1) { b.closest('tr').remove(); recalc(); } }); };
-  $('#v-add-item').onclick = () => { const tr = document.querySelector('#v-items tbody tr').cloneNode(true); tr.querySelectorAll('input').forEach(i => i.value = ''); document.querySelector('#v-items tbody').appendChild(tr); wire(); };
+  const wire = () => { document.querySelectorAll('#v-items input').forEach(i => i.oninput = recalc); document.querySelectorAll('#v-items .vi-desc').forEach(i => i.addEventListener('change', () => { const cb = i.closest('tr').querySelector('.vi-asset'); if (!cb.dataset.touched) cb.checked = isAssetLike(i.value, $('#v-cat').value); })); document.querySelectorAll('#v-items .vi-asset').forEach(cb => cb.onchange = () => { cb.dataset.touched = '1'; }); document.querySelectorAll('.vi-del').forEach(b => b.onclick = () => { if (document.querySelectorAll('#v-items tbody tr').length > 1) { b.closest('tr').remove(); recalc(); } }); };
+  $('#v-add-item').onclick = () => { const tr = document.querySelector('#v-items tbody tr').cloneNode(true); tr.querySelectorAll('input').forEach(i => { if (i.type === 'checkbox') { i.checked = false; delete i.dataset.touched; } else i.value = ''; }); document.querySelector('#v-items tbody').appendChild(tr); wire(); };
   wire(); recalc();
 }
 function readVoucherForm(e) {
-  const items = [...document.querySelectorAll('#v-items tbody tr')].map(tr => ({ desc: tr.querySelector('.vi-desc').value.trim(), qty: +tr.querySelector('.vi-qty').value || '', price: +tr.querySelector('.vi-price').value || '', amount: +tr.querySelector('.vi-amt').value || 0 })).filter(i => i.desc || i.amount);
+  const items = [...document.querySelectorAll('#v-items tbody tr')].map(tr => ({ desc: tr.querySelector('.vi-desc').value.trim(), qty: +tr.querySelector('.vi-qty').value || '', price: +tr.querySelector('.vi-price').value || '', amount: +tr.querySelector('.vi-amt').value || 0, asset: tr.querySelector('.vi-asset').checked })).filter(i => i.desc || i.amount);
   Object.assign(e, { date: $('#v-date').value, ledgerId: $('#v-ledger').value, category: $('#v-cat').value, requester: $('#v-req').value.trim(), desc: $('#v-desc').value.trim() || (items[0] || {}).desc || '', payMethod: $('#v-pay').value, payTo: $('#v-payto').value.trim(), receipt: $('#v-rc').value === '1', note: $('#v-note').value.trim(), items, amount: items.reduce((a, i) => a + i.amount, 0), voucher: true, flags: [] });
   return e;
 }
+
+/* ───────────── 물품대장 ───────────── */
+const ASSET_KW = /(교재|공과|워크북|성경|도서|책\b|교구|기자재|스피커|마이크|앰프|믹서|프로젝터|빔|스크린|모니터|TV|티비|노트북|태블릿|아이패드|컴퓨터|카메라|삼각대|키보드|피아노|악기|기타줄|케이블|젠더|충전기|멀티탭|프린터|토너|복합기|의자|책상|테이블|선반|수납|정리함|보관함|캐비닛|사물함|화이트보드|칠판|이젤|현수막|배너|텐트|천막|공놀이|공\b|블록|퍼즐|장난감|매트|에어바운스|헌금바구니|가운|비품|가습기|선풍기|청소기|정수기|전기포트|분리수거함)/;
+const ASSET_EXCLUDE = /(간식|식사|식비|점심|저녁|아침|도시락|피자|치킨|커피|음료|과자|케이크|선물|생일|상품권|문화상품권|기프트|축하|회비|교통|택시|주유|입장료|숙박|대여료|장소\s*사용)/;
+const ASSET_CATS = ['기자재','교재·도서','교구·놀이','가구·비품','악기·음향','소모품','기타'];
+const ASSET_STATUS = ['사용 중','보관','수리 필요','대여 중','폐기','분실'];
+function isAssetLike(desc, category) { const t = String(desc || ''); if (ASSET_EXCLUDE.test(t)) return false; return category === '비품' || ASSET_KW.test(t); }
+function guessAssetCat(t) { t = String(t || ''); if (/(교재|공과|워크북|성경|도서|책)/.test(t)) return '교재·도서'; if (/(스피커|마이크|앰프|믹서|피아노|악기|기타줄)/.test(t)) return '악기·음향'; if (/(프로젝터|빔|스크린|모니터|TV|티비|노트북|태블릿|아이패드|컴퓨터|카메라|삼각대|키보드|케이블|젠더|충전기|프린터|복합기)/.test(t)) return '기자재'; if (/(교구|블록|퍼즐|장난감|공놀이|공\b|매트|에어바운스)/.test(t)) return '교구·놀이'; if (/(의자|책상|테이블|선반|수납|정리함|보관함|캐비닛|사물함|화이트보드|칠판|이젤|분리수거함)/.test(t)) return '가구·비품'; if (/(토너|멀티탭)/.test(t)) return '소모품'; return '기타'; }
+function assetNo(dd) { const y = String(YEAR).slice(2); const nums = dd.assets.map(a => +(String(a.no || '').split('-')[2] || 0)); return `${dd.id.slice(0, 1).toUpperCase()}${y}-${pad2(new Date().getMonth() + 1)}-${String(Math.max(0, ...nums) + 1).padStart(3, '0')}`; }
+function assetFromItem(dd, e, it, idx) {
+  return { id: `as_${e.id}_${idx}`, no: '', name: it.desc || e.desc, category: guessAssetCat(it.desc || e.desc), spec: '', qty: +it.qty || 1, unit: '개', price: +it.price || (+it.qty ? Math.round((+it.amount || 0) / +it.qty) : +it.amount || 0), total: +it.amount || 0, purchaseDate: e.date || '', vendor: e.payTo || '', location: '', manager: e.requester || '', status: '사용 중', expenseId: e.id, ledgerId: e.ledgerId, source: 'auto', note: '', disposedAt: '', updated: today() };
+}
+async function syncAssetsFromExpense(dd, e) { // 결의서 줄 중 "물품대장" 체크된 줄을 등록·갱신
+  const items = (e.items && e.items.length ? e.items : [{ desc: e.desc, qty: '', price: '', amount: e.amount, asset: false }]);
+  let n = 0;
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i], id = `as_${e.id}_${i}`, cur = dd.assets.find(a => a.id === id);
+    if (it.asset) {
+      const base = assetFromItem(dd, e, it, i);
+      const rec = cur ? { ...cur, name: cur.nameEdited ? cur.name : base.name, qty: base.qty, price: base.price, total: base.total, purchaseDate: base.purchaseDate, vendor: cur.vendor || base.vendor, manager: cur.manager || base.manager, ledgerId: base.ledgerId, updated: today() } : { ...base, no: assetNo(dd) };
+      await backend.set(`depts/${dd.id}/assets/${id}`, rec); if (cur) Object.assign(cur, rec); else { dd.assets.push(rec); n++; }
+    } else if (cur && cur.source === 'auto' && !cur.location && cur.status === '사용 중') { await backend.del(`depts/${dd.id}/assets/${id}`); dd.assets = dd.assets.filter(a => a.id !== id); }
+  }
+  return n;
+}
+function assetCandidates(dd) { // 이전(변환) 지출 중 물품으로 보이는 것 — 아직 등록·제외하지 않은 것
+  const linked = new Set(dd.assets.map(a => a.expenseId)); const skip = new Set(dd.doc.assetSkip || []);
+  return dd.expenses.filter(e => !linked.has(e.id) && !skip.has(e.id) && isAssetLike(e.desc, e.category) && !/수련회/.test(e.ledgerId || '') ).sort((a, b) => (b.date || '') < (a.date || '') ? -1 : 1);
+}
+function assetForm(dd, a) {
+  return `<div class="fields">
+    <label class="f" style="grid-column:span 2"><span>품명</span><input type="text" id="as-name" value="${esc(a.name || '')}"></label>
+    <label class="f"><span>분류</span><select id="as-cat">${ASSET_CATS.map(c => `<option ${a.category === c ? 'selected' : ''}>${c}</option>`).join('')}</select></label>
+    <label class="f"><span>규격·모델</span><input type="text" id="as-spec" value="${esc(a.spec || '')}"></label>
+    <label class="f"><span>수량</span><input type="number" id="as-qty" value="${a.qty || 1}"></label>
+    <label class="f"><span>단위</span><input type="text" id="as-unit" value="${esc(a.unit || '개')}"></label>
+    <label class="f"><span>단가</span><input type="number" id="as-price" value="${a.price || ''}"></label>
+    <label class="f"><span>금액</span><input type="number" id="as-total" value="${a.total || ''}"></label>
+    <label class="f"><span>구매일</span><input type="date" id="as-date" value="${esc(a.purchaseDate || '')}"></label>
+    <label class="f"><span>구매처</span><input type="text" id="as-vendor" value="${esc(a.vendor || '')}"></label>
+    <label class="f"><span>보관 장소</span><input type="text" id="as-loc" value="${esc(a.location || '')}" placeholder="예: 유치부실 수납장 2칸"></label>
+    <label class="f"><span>관리자</span><input type="text" id="as-mgr" value="${esc(a.manager || '')}"></label>
+    <label class="f"><span>상태</span><select id="as-status">${ASSET_STATUS.map(c => `<option ${a.status === c ? 'selected' : ''}>${c}</option>`).join('')}</select></label>
+    <label class="f"><span>폐기·분실일</span><input type="date" id="as-disposed" value="${esc(a.disposedAt || '')}"></label>
+    <label class="f" style="grid-column:span 2"><span>비고</span><input type="text" id="as-note" value="${esc(a.note || '')}"></label>
+  </div>`;
+}
+function readAssetForm(a) {
+  const name = $('#as-name').value.trim(); if (a.name && name !== a.name) a.nameEdited = true;
+  Object.assign(a, { name, category: $('#as-cat').value, spec: $('#as-spec').value.trim(), qty: +$('#as-qty').value || 1, unit: $('#as-unit').value.trim() || '개', price: +$('#as-price').value || 0, total: +$('#as-total').value || (+$('#as-price').value || 0) * (+$('#as-qty').value || 1), purchaseDate: $('#as-date').value, vendor: $('#as-vendor').value.trim(), location: $('#as-loc').value.trim(), manager: $('#as-mgr').value.trim(), status: $('#as-status').value, disposedAt: $('#as-disposed').value, note: $('#as-note').value.trim(), updated: today() });
+  return a;
+}
+function assetPaper(dd, list) {
+  return `<section class="paper"><div class="hd"><div><h1>${esc(dd.doc.name)} 물품관리대장</h1><div class="sub">중앙성서교회 교육위원회 · ${today()} 기준</div></div><div class="meta">${list.length}건 · 합계 ${won(list.reduce((a, x) => a + (+x.total || 0), 0))}원</div></div>
+    <table><thead><tr><th>관리번호</th><th>품명</th><th>분류</th><th class="n">수량</th><th class="n">금액</th><th>구매일</th><th>보관 장소</th><th>관리자</th><th>상태</th><th>확인</th></tr></thead><tbody>${list.map(a => `<tr><td>${esc(a.no || '')}</td><td>${esc(a.name)}${a.spec ? ' (' + esc(a.spec) + ')' : ''}</td><td>${esc(a.category)}</td><td class="n">${a.qty || ''}${esc(a.unit || '')}</td><td class="n">${won(a.total)}</td><td>${esc(a.purchaseDate || '')}</td><td>${esc(a.location || '')}</td><td>${esc(a.manager || '')}</td><td>${esc(a.status || '')}</td><td></td></tr>`).join('')}</tbody></table>
+    <div class="merge">"확인" 칸은 연말 재물 조사 때 실물 확인 표시용입니다.</div>
+    <div class="ft"><b>중앙성서교회 교육위원회</b><span>CBCS에서 생성 · ${esc(dd.doc.name)}-물품대장-${today()}.pdf</span></div></section>`;
+}
+VIEWS.assets = async () => {
+  let dd; if (isCommittee()) { dd = await loadDept(S.sub.dept || 'kinder'); } else dd = D();
+  const q = (S.sub.q || '').trim(), st = S.sub.st || 'live', cat = S.sub.cat || '';
+  let list = dd.assets.filter(a => (st === 'all' || (st === 'live' ? !['폐기', '분실'].includes(a.status) : ['폐기', '분실'].includes(a.status))) && (!cat || a.category === cat) && (!q || [a.name, a.spec, a.location, a.manager, a.note, a.no].join(' ').includes(q)));
+  list.sort((a, b) => (b.purchaseDate || '') < (a.purchaseDate || '') ? -1 : 1);
+  if (S.sub.print) return `<div class="topbar no-print"><div><h1>물품대장 출력</h1></div><div class="row"><button class="btn" id="as-back">물품대장으로</button><button class="btn p" id="as-print">PDF로 저장 / 인쇄</button></div></div>${assetPaper(dd, list)}`;
+  const edit = canEdit() && !isCommittee();
+  const cand = edit ? assetCandidates(dd) : [];
+  const pick = isCommittee() ? `<div class="row" style="margin-bottom:10px">${Object.entries(DEPTS).map(([k, v]) => `<button class="btn ${dd.id === k ? 'p' : ''}" data-dept="${k}">${v}</button>`).join('')}</div>` : '';
+  const total = list.reduce((a, x) => a + (+x.total || 0), 0);
+  return `<div class="topbar"><div><h1>물품대장${isCommittee() ? ' — ' + esc(dd.doc.name) : ''}</h1><div class="sub">지출결의서에서 기자재·교재·비품을 사면 자동으로 들어옵니다. 직접 입력도 됩니다.</div></div><div class="row">${edit ? '<button class="btn p" id="as-new">물품 직접 등록</button>' : ''}${canEdit() ? '<button class="btn" id="as-open-print">대장 출력</button>' : ''}</div></div>
+  ${pick}
+  <div class="stack">
+    ${cand.length ? `<div class="card"><h2>회계에서 찾은 물품 후보 <span class="r">${cand.length}건 · 이전 지출 중 기자재·교재·비품으로 보이는 것</span></h2><div class="tw"><table><thead><tr><th>구매일</th><th>내역</th><th class="n">금액</th><th>청구</th><th></th></tr></thead><tbody>${cand.slice(0, S.sub.allCand ? 999 : 8).map(e => `<tr><td>${esc(e.date || '')}</td><td class="wrap">${esc(e.desc)}</td><td class="n">${won(e.amount)}</td><td>${esc(e.requester || '')}</td><td style="white-space:nowrap"><button class="btn s" data-cand-add="${e.id}">등록</button> <button class="btn s" data-cand-skip="${e.id}">물품 아님</button></td></tr>`).join('')}</tbody></table></div>
+      <div class="row" style="margin-top:8px">${cand.length > 8 && !S.sub.allCand ? `<button class="btn s" id="cand-all">전체 ${cand.length}건 보기</button>` : ''}<button class="btn s" id="cand-add-all">후보 ${cand.length}건 모두 등록</button></div></div>` : ''}
+    <div class="card"><h2>물품 <span class="r">${list.length}건 · 합계 ${won(total)}원</span></h2>
+      <div class="row" style="margin-bottom:10px"><input type="text" id="as-q" value="${esc(q)}" placeholder="품명·보관 장소·관리자 검색" style="flex:1;min-width:180px"><select id="as-cat-f" style="width:auto"><option value="">모든 분류</option>${ASSET_CATS.map(c => `<option ${cat === c ? 'selected' : ''}>${c}</option>`).join('')}</select>${[['live', '보유'], ['gone', '폐기·분실'], ['all', '전체']].map(([k, v]) => `<button class="btn s ${st === k ? 'p' : ''}" data-st="${k}">${v}</button>`).join('')}</div>
+      <div class="tw"><table><thead><tr><th>관리번호</th><th>품명</th><th>분류</th><th class="n">수량</th><th class="n">금액</th><th>구매일</th><th>보관 장소</th><th>관리자</th><th>상태</th><th></th></tr></thead><tbody>
+      ${list.map(a => `<tr class="click" data-asset="${a.id}"><td>${esc(a.no || '')}</td><td class="wrap">${esc(a.name)}${a.spec ? ` <span class="note">${esc(a.spec)}</span>` : ''}</td><td>${esc(a.category)}</td><td class="n">${a.qty || ''}${esc(a.unit || '')}</td><td class="n">${won(a.total)}</td><td>${esc(a.purchaseDate || '')}</td><td class="wrap">${a.location ? esc(a.location) : '<span class="pill warn">미입력</span>'}</td><td>${esc(a.manager || '')}</td><td><span class="pill ${a.status === '사용 중' || a.status === '보관' ? 'ok' : a.status === '폐기' || a.status === '분실' ? 'mute' : 'warn'}">${esc(a.status)}</span></td><td>${a.source === 'auto' ? '<span class="pill mute" title="지출에서 자동 등록">자동</span>' : ''}</td></tr>`).join('') || '<tr><td colspan="10" class="note">등록된 물품이 없습니다.</td></tr>'}
+      </tbody></table></div></div>
+  </div>`;
+};
+BIND.assets = () => {
+  const dd = isCommittee() ? S.data[S.sub.dept || 'kinder'] : D();
+  document.querySelectorAll('[data-dept]').forEach(b => b.onclick = () => { S.sub = { dept: b.dataset.dept }; render(); });
+  const op = $('#as-open-print'); if (op) op.onclick = () => { S.sub.print = true; render(); };
+  const bk = $('#as-back'); if (bk) { bk.onclick = () => { delete S.sub.print; render(); }; $('#as-print').onclick = () => window.print(); return; }
+  const qi = $('#as-q'); if (qi) qi.onchange = () => { S.sub.q = qi.value; render(); };
+  const cf = $('#as-cat-f'); if (cf) cf.onchange = () => { S.sub.cat = cf.value; render(); };
+  document.querySelectorAll('[data-st]').forEach(b => b.onclick = () => { S.sub.st = b.dataset.st; render(); });
+  const ca = $('#cand-all'); if (ca) ca.onclick = () => { S.sub.allCand = true; render(); };
+  const addFromExpense = async e => { const items = e.items && e.items.length ? e.items : [{ desc: e.desc, qty: '', price: '', amount: e.amount }]; let n = 0; for (let i = 0; i < items.length; i++) { const id = `as_${e.id}_${i}`; if (dd.assets.some(a => a.id === id)) continue; const rec = { ...assetFromItem(dd, e, items[i], i), no: assetNo(dd) }; await backend.set(`depts/${dd.id}/assets/${id}`, rec); dd.assets.push(rec); n++; } return n; };
+  document.querySelectorAll('[data-cand-add]').forEach(b => b.onclick = async () => { await addFromExpense(dd.expenses.find(e => e.id === b.dataset.candAdd)); render(); toast('물품대장에 등록 — 보관 장소를 넣어 주세요'); });
+  document.querySelectorAll('[data-cand-skip]').forEach(b => b.onclick = async () => { dd.doc.assetSkip = [...(dd.doc.assetSkip || []), b.dataset.candSkip]; await saveDeptDoc(dd.id); render(); });
+  const aa = $('#cand-add-all'); if (aa) aa.onclick = async () => { let n = 0; for (const e of assetCandidates(dd)) n += await addFromExpense(e); render(); toast(`${n}건 등록했습니다`); };
+  const nw = $('#as-new'); if (nw) nw.onclick = () => { const a = { id: 'as_' + uid(), no: assetNo(dd), name: '', category: '기자재', qty: 1, unit: '개', status: '사용 중', purchaseDate: today(), source: 'manual' }; openModal(`<h2>물품 직접 등록<button class="btn s" id="modal-close">닫기</button></h2><div class="note" style="margin-bottom:8px">관리번호 ${esc(a.no)} (자동)</div>${assetForm(dd, a)}<div class="row" style="margin-top:10px"><button class="btn p" id="as-save">저장</button></div>`); $('#as-save').onclick = async () => { readAssetForm(a); if (!a.name) { toast('품명을 넣어 주세요'); return; } await backend.set(`depts/${dd.id}/assets/${a.id}`, a); dd.assets.push(a); closeModal(); render(); }; };
+  document.querySelectorAll('[data-asset]').forEach(tr => tr.onclick = () => { const a = dd.assets.find(x => x.id === tr.dataset.asset); const ex = a.expenseId ? dd.expenses.find(e => e.id === a.expenseId) : null; const ed = canEdit() && !isCommittee();
+    openModal(`<h2>${esc(a.name)} <span class="note">${esc(a.no || '')}</span><button class="btn s" id="modal-close">닫기</button></h2>${ex ? `<div class="note" style="margin-bottom:8px">연결된 지출: ${esc(ex.date || '')} · ${esc(ex.desc)} · ${won(ex.amount)}원 ${ed ? `<button class="btn s" id="as-voucher">결의서 보기</button>` : ''}</div>` : '<div class="note" style="margin-bottom:8px">직접 등록한 물품</div>'}${ed ? assetForm(dd, a) + `<div class="row" style="margin-top:10px"><button class="btn p" id="as-save">저장</button><button class="btn d" id="as-del">삭제</button></div>` : `<dl class="kvl"><dt>분류</dt><dd>${esc(a.category)}</dd><dt>수량</dt><dd>${a.qty}${esc(a.unit || '')}</dd><dt>금액</dt><dd>${won(a.total)}원</dd><dt>구매일</dt><dd>${esc(a.purchaseDate || '')}</dd><dt>보관 장소</dt><dd>${esc(a.location || '')}</dd><dt>관리자</dt><dd>${esc(a.manager || '')}</dd><dt>상태</dt><dd>${esc(a.status)}</dd><dt>비고</dt><dd>${esc(a.note || '')}</dd></dl>`}`);
+    const sv = $('#as-save'); if (sv) sv.onclick = async () => { readAssetForm(a); await backend.set(`depts/${dd.id}/assets/${a.id}`, a); closeModal(); render(); toast('저장했습니다'); };
+    const dl = $('#as-del'); if (dl) dl.onclick = async () => { await backend.del(`depts/${dd.id}/assets/${a.id}`); dd.assets = dd.assets.filter(x => x.id !== a.id); if (a.expenseId) { dd.doc.assetSkip = [...(dd.doc.assetSkip || []), a.expenseId]; await saveDeptDoc(dd.id); } closeModal(); render(); };
+    const vv = $('#as-voucher'); if (vv) vv.onclick = () => { closeModal(); S.view = 'ledger'; S.sub = { ledger: ex.ledgerId, voucherView: ex.id }; render(); };
+  });
+};
 
 /* ───────────── 월간 보고서 ───────────── */
 VIEWS.monthly = async () => {
@@ -885,7 +986,7 @@ VIEWS.tutorial = async () => {
     <div class="step"><div><h3>연초에 한 번: 출석부와 연간 계획</h3><p><b>출석부</b>에서 반(또는 팸·학년) 편성, 학생, 교사·임원을 넣습니다. <b>연간 계획</b>에 행사표와 예산안을 넣습니다. 연간교육계획안을 그대로 옮기면 됩니다.</p><div class="who">교역자 · 총무 — 11~12월 · PC</div>${mob ? '' : '<button class="btn s" data-go="roster">출석부 열기</button> <button class="btn s" data-go="plan">연간 계획 열기</button>'}</div></div>
     <div class="step"><div><h3>매주 주일: 출석 체크와 보고서</h3><p>예배 후 담임은 휴대폰 <b>출석 체크</b>에서 학생 이름을 누릅니다(한 번 출석, 두 번 온라인·본당, 세 번 결석). 총무는 PC <b>주일 보고서</b>에서 설교·헌금·회의 내용을 채웁니다. 남·여·합계·출석률은 앱이 셉니다.</p><div class="who">담임(휴대폰) · 총무(PC) — 예배 후 10분</div><button class="btn s" data-go="${mob ? 'attend' : 'weekly'}">${mob ? '출석 체크 열기' : '주일 보고서 열기'}</button></div></div>
     <div class="step"><div><h3>작성 완료 → PDF → 종이로 보고</h3><p>"작성 완료"를 누르면 보고서 모양 그대로 미리보기가 뜹니다. "PDF로 저장 / 인쇄"를 누르고 브라우저 인쇄 창에서 "PDF로 저장"을 고르면 됩니다. 지금처럼 부장에게 종이로 보고합니다.</p><div class="who">총무 → 부장 서명 · PC</div></div></div>
-    <div class="step"><div><h3>지출이 생길 때마다: 회계</h3><p><b>회계</b>에서 "지출결의서 작성"으로 날짜·항목·내역·금액을 넣고 결의서를 인쇄해 결재를 받습니다(영수증은 뒷면에). 월 합계, 누계, 예산 잔액, 집행률이 바로 계산됩니다. 찬조금·수련회처럼 잔액을 따로 보는 돈은 장부를 하나 더 만듭니다.</p><div class="who">회계 — 지출 당일 · PC</div>${mob ? '' : '<button class="btn s" data-go="ledger">회계 열기</button>'}</div></div>
+    <div class="step"><div><h3>지출이 생길 때마다: 회계</h3><p><b>회계</b>에서 "지출결의서 작성"으로 (기자재·교재·비품은 <b>물품대장</b>에 자동 등록) 날짜·항목·내역·금액을 넣고 결의서를 인쇄해 결재를 받습니다(영수증은 뒷면에). 월 합계, 누계, 예산 잔액, 집행률이 바로 계산됩니다. 찬조금·수련회처럼 잔액을 따로 보는 돈은 장부를 하나 더 만듭니다.</p><div class="who">회계 — 지출 당일 · PC</div>${mob ? '' : '<button class="btn s" data-go="ledger">회계 열기</button>'}</div></div>
     <div class="step"><div><h3>월말: 월간 보고서는 이미 만들어져 있습니다</h3><p><b>월간 보고서</b>를 열면 그 달 주일 보고서 4~5장과 회계가 모여 있습니다. 부장은 "다음 달 계획" 칸만 적고, 부장·총무·회계가 확인한 뒤 PDF로 출력해 교육위원회 월례회에 냅니다.</p><div class="who">부장 · 총무 · 회계 — 매월 마지막 주 · PC</div>${mob ? '' : '<button class="btn s" data-go="monthly">월간 보고서 열기</button>'}</div></div>
     <div class="step"><div><h3>가끔: 통계와 공지</h3><p><b>출석 통계</b>에서 주별 추이와 4주 연속 결석자를 봅니다(심방·연말 제적 정리에 씁니다). <b>메인</b>의 공지는 부서 교사들에게, 교육위원회 공지는 모든 부서에 보입니다.</p><div class="who">부장 · 교역자</div><button class="btn s" data-go="stats">출석 통계 열기</button></div></div>
     `}
