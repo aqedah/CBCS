@@ -115,6 +115,8 @@ async function loadDept(d, force) {
     students, reports: Object.fromEntries(reports.map(r => [r.date, r])), expenses, incomes, events, notices, assets: assets.map(a => ({ ...a, id: a.id || a._id })), officers: officers.map(o => ({ ...o, role: canonRole(o.role) })), timeline, retreats, careRaw: care, care: [] };
   if (S.careKey && S.careDept === d) await decryptCare(dd);
   dd.doc.ledgers = dd.doc.ledgers || []; dd.doc.classes = dd.doc.classes || []; dd.doc.staff = dd.doc.staff || []; dd.doc.budgetPlan = dd.doc.budgetPlan || []; dd.doc.monthlyPlans = dd.doc.monthlyPlans || {}; dd.doc.monthlyTexts = dd.doc.monthlyTexts || {}; dd.doc.notes = dd.doc.notes || {};
+  const fixed = dd.students.filter(normalizeFaith); // 화면에는 바로 정리된 값으로 보이고, 고칠 권한이 있으면 저장까지 한다
+  if (fixed.length && canEdit() && (!isCommittee() || d === S.dept)) Promise.all(fixed.map(x => backend.set(`depts/${d}/students/${x.id}`, x))).then(() => toast(`신급 칸 ${fixed.length}명 정리(학습대상 등은 비고로)`)).catch(() => {});
   S.data[d] = dd; return dd;
 }
 async function loadCommittee(force) {
@@ -165,7 +167,26 @@ const classStudents = (dd, cid) => activeStudents(dd).filter(s => s.classId === 
 // 신급 보기: 빈값은 '모름'(아직 확인 안 함), '없음'은 신급이 없음(세례교인 아님). 출석부·총회자료 공통
 const FAITH_OPTS = ['', '없음', '유아세례', '학습', '세례', '입교'];
 const faithOptions = s => { const cur = s.faith === '모름' || s.faith === '미정' ? '' : (s.faith || ''); return FAITH_OPTS.map(k => `<option value="${k}" ${cur === k ? 'selected' : ''}>${k || '모름'}</option>`).join('') + (FAITH_OPTS.includes(cur) ? '' : `<option selected>${esc(cur)}</option>`); };
-const NOTE_TAGS = ['학습대상자', '세례대상자', '입교대상자'];
+const NOTE_TAGS = ['학습대상자', '세례대상자', '입교대상자', '어린이세례(타교단)'];
+// 신급 칸 정리: 신급에는 없음·모름·유아세례·학습·입교·세례만 둔다. "학습대상"·"?" 같은 값과 연도 표기는 비고로 옮긴다.
+function normalizeFaith(s) {
+  const raw = String(s.faith || '').trim(); if (!raw || FAITH_OPTS.includes(raw)) return false;
+  if (raw === '모름' || raw === '미정') { s.faith = ''; return true; }
+  const yr = raw.match(/\(?\s*(\d{2}|\d{4})\s*(상|하)?\s*\)?\s*$/);
+  let base = '', tag = '';
+  if (/어린이\s*세례/.test(raw)) { tag = '어린이세례(타교단)'; }
+  else if (/대상/.test(raw)) { base = ''; tag = /입교\s*대상/.test(raw) ? '입교대상자' : /학습\s*대상/.test(raw) ? '학습대상자' : /세례\s*대상/.test(raw) ? '세례대상자' : '학습대상자'; if (/유아세례/.test(raw)) base = '유아세례'; }
+  else if (/유아\s*세례/.test(raw)) base = '유아세례';
+  else if (/입교/.test(raw)) base = '입교';
+  else if (/세례/.test(raw)) base = '세례';
+  else if (/학습/.test(raw)) base = '학습';
+  else if (/없음/.test(raw)) base = '없음';
+  if (!tag && base && yr && !s.faithYear) { const y = yr[1].length === 2 ? 2000 + +yr[1] : +yr[1]; s.faithYear = y; if (yr[2]) s.faithHalf = yr[2]; }
+  else if (!tag && !(base && raw.replace(/\s+/g, '') === base)) tag = /^[?？]+$/.test(raw) ? '신급 확인 필요' : !base ? `신급 기록: ${raw}` : (yr ? '' : `신급 기록: ${raw}`);
+  s.faith = base; s.faithRaw = s.faithRaw || raw;
+  if (tag) { const parts = String(s.note || '').split(/\s*[,，]\s*/).filter(Boolean); if (!parts.includes(tag)) s.note = [...parts, tag].join(', '); }
+  return true;
+}
 const noteTagsHTML = inputId => `<div class="tags" style="margin-top:4px">${NOTE_TAGS.map(t => `<button type="button" class="btn s" data-notetag="${inputId}" data-tag="${t}">+ ${t}</button>`).join(' ')}</div>`;
 const bindNoteTags = () => document.querySelectorAll('[data-notetag]').forEach(b => b.onclick = () => { const el = document.getElementById(b.dataset.notetag); if (!el) return; const parts = el.value.split(/[,，]\s*/).map(x => x.trim()).filter(Boolean); if (parts.includes(b.dataset.tag)) return; parts.push(b.dataset.tag); el.value = parts.join(', '); el.dispatchEvent(new Event('input')); });
 const faithLabel = s => { if (!s.faith) return ''; const y = s.faithYear ? String(s.faithYear).slice(-2) + (s.faithHalf || '') : ''; return y ? `${s.faith}(${y})` : s.faith; };
@@ -455,7 +476,7 @@ function leftPaper(dd) {
 }
 function studentRow(dd, s, edit, no) {
   const c = classOf(dd, s);
-  return `<tr class="click" data-student="${s.id}">${no ? `<td class="n no">${no}</td>` : ''}<td>${esc(s.name)}${s.flags && s.flags.length ? ' <span class="tag flag" title="확인 필요">!</span>' : ''}</td><td>${esc(c ? c.name : s.classId)}</td><td>${esc(s.sex)}</td><td>${s.birth || ''}</td><td>${esc(faithLabel(s))}</td><td>${esc(phoneLabel(s))}</td><td class="wrap note">${esc(s.school || '')}</td><td class="wrap note">${esc(s.note || '')}</td><td><span class="pill ${s.status === 'active' ? 'ok' : s.status === 'newcomer' ? 'info' : s.status === 'longabsent' ? 'warn' : 'mute'}">${{ active: '재적', newcomer: '새친구', longabsent: '장기결석', left: '제적·졸업' }[s.status] || s.status}</span></td></tr>`;
+  return `<tr class="click" data-student="${s.id}">${no ? `<td class="n no">${no}</td>` : ''}<td>${esc(s.name)}${s.flags && s.flags.length ? ' <span class="tag flag" title="확인 필요">!</span>' : ''}</td><td>${esc(c ? c.name : s.classId)}</td><td>${esc(s.sex)}</td><td>${s.birth || ''}</td><td title="${esc(faithLabel(s))}">${s.faith ? esc(s.faith) : '<span class="note">모름</span>'}</td><td>${esc(phoneLabel(s))}</td><td class="wrap note">${esc(s.school || '')}</td><td class="wrap note">${esc(s.note || '')}</td><td><span class="pill ${s.status === 'active' ? 'ok' : s.status === 'newcomer' ? 'info' : s.status === 'longabsent' ? 'warn' : 'mute'}">${{ active: '재적', newcomer: '새친구', longabsent: '장기결석', left: '제적·졸업' }[s.status] || s.status}</span></td></tr>`;
 }
 VIEWS.roster = async () => {
   let dd; if (isCommittee()) { const d = S.sub.dept || 'kinder'; dd = await loadDept(d); } else dd = D();
