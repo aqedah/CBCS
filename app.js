@@ -1161,6 +1161,9 @@ function youngStartRaw(dd, s) {
   // 제적됐다가 복적한 사람은 복적일부터 새로 센다 (제적 뒤 재등록은 새가족과 같음) — 복적 기록은 statusLog의 left→active
   const back = (s.statusLog || []).filter(l => l.from === 'left' && l.to !== 'left' && l.date).map(l => l.date).sort().pop();
   if (back) return { date: back, est: false, rejoined: true };
+  // 제적 기록은 있는데 복적 기록이 없고 지금 재적이면: 제적 뒤 첫 출석 기록을 복적일로 추정
+  const lastLeft = (s.statusLog || []).filter(l => l.to === 'left' && l.date).map(l => l.date).sort().pop();
+  if (lastLeft && s.status !== 'left') { const first = namedReports(dd).find(r => r.date > lastLeft && attEvidence(r, s).v); if (first) return { date: first.date, est: true, rejoined: true }; return { date: today(), est: true, rejoined: true, noReturn: true }; }
   if (s.joinDate) return { date: s.joinDate, est: false };
   const c = []; const h = s.history || [];
   const yh = h.filter(x => x.dept === 'young').map(x => x.year); if (yh.length) c.push(`${Math.min(...yh)}-01-01`);
@@ -1202,7 +1205,7 @@ function judge(dd, s, base, R) {
   const ys = youngStart(dd, s), cs = churchStart(dd, s);
   const yYears = ys ? yearsSince(ys.date, base) : null, cYears = cs ? yearsSince(cs.date, base) : null;
   if (extra) why.push(`출석 ${extra}주는 교사·임원 참석 명단 또는 이름만 적힌 출석자에서 보탬`);
-  if (ys && ys.rejoined) why.push(`제적 후 ${ys.date} 복적 — 출석 연수·6개월은 복적일부터`);
+  if (ys && ys.rejoined) why.push(ys.noReturn ? '제적 기록 뒤 출석 기록이 없음 — 복적일 확인 필요' : `제적 후 ${ys.date} 복적${ys.est ? '(추정: 제적 뒤 첫 출석)' : ''} — 출석 연수·6개월은 복적일부터`);
   if (ys && ys.floored) why.push(`청년부 등록 ${ys.date} (만 19세 되는 해 1월, 그 전은 중고등부)`);
   // 4조 회원
   let member = 'ok';
