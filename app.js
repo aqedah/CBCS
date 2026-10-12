@@ -1301,7 +1301,7 @@ VIEWS.bylaws = async () => {
   </div>`;
 };
 /* 회칙 파일 올리기: HWP(한글 5.0)·HWPX·PDF에서 본문 글자를 브라우저 안에서 읽는다(서버로 보내지 않음) */
-const LIBS = { cfb: 'https://cdn.jsdelivr.net/npm/cfb@1.2.2/dist/cfb.min.js', pako: 'https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js', jszip: 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js', pdf: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js', pdfw: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js' };
+const LIBS = { cfb: 'https://cdn.jsdelivr.net/npm/cfb@1.2.2/dist/cfb.min.js', pako: 'https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js', jszip: 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js', pdf: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js', pdfw: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js', xlsx: 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js', html2pdf: 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js' };
 const _libs = {};
 function loadLib(k, global) { if (window[global]) return Promise.resolve(window[global]); return _libs[k] || (_libs[k] = new Promise((ok, no) => { const sc = document.createElement('script'); sc.src = LIBS[k]; sc.onload = () => ok(window[global]); sc.onerror = () => no(new Error('도구를 불러오지 못했습니다(인터넷 연결 확인)')); document.head.appendChild(sc); })); }
 function hwpParaText(u8) { const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength); let out = ''; let j = 0; while (j + 1 < u8.length) { const c = dv.getUint16(j, true); if (c === 10) { out += '\n'; j += 2; continue; } if (c === 0 || c === 13 || (c >= 24 && c <= 31)) { j += 2; continue; } if (c === 9) { out += ' '; j += 16; continue; } if (c < 32) { j += 16; continue; } out += String.fromCharCode(c); j += 2; } return out; }
@@ -1405,9 +1405,55 @@ function assemblyPaper(dd, a, J) {
     <h2>3. 후보자 명단 (회칙 11조)</h2><table><thead><tr><th>직위</th><th>후보</th><th>비고</th></tr></thead><tbody>${[...ASSEMBLY_POS, ...ASSEMBLY_POS_SUB].map(p => { const c = (a.candidates || []).filter(x => x.pos === p); return c.length ? c.map((x, i) => `<tr>${i ? '' : `<th rowspan="${c.length}">${p}</th>`}<td>${esc(x.name)}</td><td>${esc(x.note || '')}</td></tr>`).join('') : ''; }).join('') || '<tr><td colspan="3">후보 미정</td></tr>'}</tbody></table>
     <div class="ft"><b>중앙성서교회 청년부</b><span>CBCS에서 생성 · ${esc(a.date)}-총회자료.pdf</span></div></section>`;
 }
+/* 총회 자료 내보내기 — 엑셀(시트 5개)·PDF 파일로 바로 받기 */
+function saveBlob(blob, name) { const url = URL.createObjectURL(blob); const el = document.createElement('a'); el.href = url; el.download = name; document.body.appendChild(el); el.click(); el.remove(); setTimeout(() => URL.revokeObjectURL(url), 4000); }
+async function exportPaperPDF(html, fileName) {
+  const h2p = await loadLib('html2pdf', 'html2pdf');
+  const box = document.createElement('div'); box.setAttribute('data-theme', 'light');
+  box.style.cssText = 'position:fixed;left:0;top:0;width:794px;z-index:-1;opacity:0;pointer-events:none;background:#fff';
+  Object.entries({ '--fg': '#1d1c19', '--muted': '#6b675d', '--accent': '#8a1f2b', '--line': '#d9d5cc', '--line-soft': '#ebe8e1', '--panel': '#fff', '--bg': '#fff' }).forEach(([k, v]) => box.style.setProperty(k, v)); box.style.color = '#1d1c19';
+  box.innerHTML = html; const sec = box.querySelector('.paper'); if (sec) sec.style.cssText = 'max-width:none;border:0;padding:0;background:#fff;color:#1d1c19';
+  document.body.appendChild(box);
+  try { await h2p().set({ margin: [12, 12, 14, 12], filename: fileName, image: { type: 'jpeg', quality: 0.96 }, html2canvas: { scale: 2, backgroundColor: '#ffffff', useCORS: true }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }, pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', 'h2'] } }).from(box.firstElementChild).outputPdf('blob').then(bl => saveBlob(bl, fileName)); }
+  finally { box.remove(); }
+}
+async function exportAssemblyXLSX(dd, a, J) {
+  const X = await loadLib('xlsx', 'XLSX');
+  const pill = k => (JP[k] || ['', ''])[1]; const fam = s => (classOf(dd, s) || {}).name || '';
+  const bl = currentBylaw(dd) || {}; const g = staffByKind(dd); const cnt = k => J.list.filter(j => j.voter === k).length;
+  const voters = J.list.filter(j => j.voter === 'ok');
+  const sheet = (rows, widths) => { const ws = X.utils.aoa_to_sheet(rows); ws['!cols'] = widths.map(w => ({ wch: w })); return ws; };
+  const wb = X.utils.book_new();
+  X.utils.book_append_sheet(wb, sheet([
+    [`${a.title} 자료`], ['중앙성서교회 청년부'], [],
+    ['총회 날짜', a.date], ['구분', a.kind || ''], ['장소', a.place || ''], ['판정 기준 회칙', bl.revision || ''], [],
+    ['정족수 (회칙 13조)'], ...J.q.rows.map(r => ['  ' + r.date, r.p]), ['직전 평균 출석', +J.q.avg.toFixed(1)], ['정족수', J.q.need, `평균의 ${J.R.quorumNum}/${J.R.quorumDen}`], [],
+    ['결의권자 (회칙 5조)', cnt('ok')], ['확인 필요', cnt('check')], ['해당 아님', cnt('no')], [],
+    ['현 임원 구성'], ...['임원', '팀장', '팸장'].map(k => [k, g[k].map(x => `${x.role} ${x.name}`).join(', ')]), [],
+    ['만든 날', today(), 'CBCS에서 생성']], [18, 14, 60]), '요약');
+  X.utils.book_append_sheet(wb, sheet([['번호', '이름', '팸', '나이', '1년 출석', '출석 체크 주일', '출석률(%)', '출석 서명'],
+    ...voters.map((j, i) => [i + 1, j.s.name, fam(j.s), j.age ?? '', j.cnt ?? '', j.of ?? '', j.rate ?? '', ''])], [6, 10, 16, 6, 9, 13, 10, 16]), '결의권자 명단');
+  X.utils.book_append_sheet(wb, sheet([['직위', '이름', '자격 판정', '비고'],
+    ...[...ASSEMBLY_POS, ...ASSEMBLY_POS_SUB].flatMap(pos => (a.candidates || []).filter(c => c.pos === pos).map(c => { const j = J.list.find(x => x.s.id === c.sid); const k = pos === '회장' ? 'pres' : pos === '부회장' ? 'vp' : 'appt'; return [pos, c.name, j ? pill(j[k]) : '', c.note || '']; }))], [10, 10, 10, 40]), '후보자 명단');
+  X.utils.book_append_sheet(wb, sheet([['이름', '팸', '나이', '신급', '청년부 출석 시작', '추정', '1년 출석', '출석 체크 주일', '출석률(%)', '선거권', '회장', '부회장', '임명직', '판정 사유', '직접 지정'],
+    ...J.list.map(j => { const o = (a.overrides || {})[j.s.id]; return [j.s.name, fam(j.s), j.age ?? '', j.s.faith || '', j.ys ? j.ys.date : '', j.ys && j.ys.est ? '추정' : '', j.cnt ?? '', j.of ?? '', j.rate ?? '', pill(j.voter), pill(j.pres), pill(j.vp), pill(j.appt), (j.why || []).join(', '), o ? [o.voter === 'ok' ? '결의권자로 넣음' : o.voter === 'no' ? '결의권자에서 뺌' : '', o.note || ''].filter(Boolean).join(' · ') : '']; })],
+    [10, 14, 6, 8, 14, 6, 9, 13, 10, 8, 8, 8, 8, 50, 24]), '판정표');
+  const yrFrom = addMonths(a.date, -12); const reps = namedReports(dd).filter(r => r.date < a.date && r.date >= yrFrom);
+  const mark = v => v === 'P' ? '●' : v === 'O' ? '◐' : v ? '○' : '';
+  X.utils.book_append_sheet(wb, sheet([['이름', '팸', ...reps.map(r => r.date.slice(5).replace('-', '/')), '출석'],
+    ...J.list.map(j => { const ms = reps.map(r => mark(attEvidence(r, j.s).v)); return [j.s.name, fam(j.s), ...ms, ms.filter(Boolean).length]; }),
+    [], ['● 출석  ◐ 온라인  ○ 이름만·교사 명단  (빈칸) 기록 없음']], [10, 14, ...reps.map(() => 5.5), 6]), '직전 1년 주별 출석');
+  saveBlob(new Blob([X.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `${a.date}-청년부-총회자료.xlsx`);
+}
+function bindAssemblyExport(dd, a) {
+  const run = async (btn, job) => { const t = btn.textContent; btn.disabled = true; btn.textContent = '만드는 중…'; try { await job(); toast('파일을 받았습니다'); } catch (e) { toast(e.message || '내보내기에 실패했습니다'); } finally { btn.disabled = false; btn.textContent = t; } };
+  document.querySelectorAll('[data-asx]').forEach(b => b.onclick = () => run(b, () => exportAssemblyXLSX(dd, a, assemblyJudge(dd, a))));
+  document.querySelectorAll('[data-asp]').forEach(b => b.onclick = () => run(b, () => exportPaperPDF(assemblyPaper(dd, a, assemblyJudge(dd, a)), `${a.date}-청년부-총회자료.pdf`)));
+}
+const asmExportBtns = () => '<button class="btn" data-asx>엑셀로 받기</button><button class="btn" data-asp>PDF로 받기</button>';
 VIEWS.assembly = async () => {
   const dd = await loadYoung(); const { a, list } = pickAssembly(dd); const J = assemblyJudge(dd, a); const edit = canYoung();
-  if (S.sub.print) return `<div class="topbar no-print"><div><h1>총회 자료 출력</h1></div><div class="row"><button class="btn" id="as-back">돌아가기</button><button class="btn p" id="as-pr">PDF로 저장 / 인쇄</button></div></div>${assemblyPaper(dd, a, J)}`;
+  if (S.sub.print) return `<div class="topbar no-print"><div><h1>총회 자료 출력</h1></div><div class="row"><button class="btn" id="as-back">돌아가기</button>${asmExportBtns()}<button class="btn p" id="as-pr">인쇄</button></div></div>${assemblyPaper(dd, a, J)}`;
   const cnt = k => J.list.filter(j => j.voter === k).length;
   const filter = S.sub.vf || 'ok';
   const rows = J.list.filter(j => filter === 'all' || (filter === 'border' ? (j.rate !== null && j.rate >= 55 && j.rate <= 65) : j.voter === filter));
@@ -1418,7 +1464,7 @@ VIEWS.assembly = async () => {
   const col = (k, label) => { const ok = J.list.filter(j => j[k] === 'ok'), ck = J.list.filter(j => j[k] === 'check'); return `<div class="cand-col"><h3>${label} <span class="note">${ok.length}명${ck.length ? ` · 확인 ${ck.length}` : ''}</span></h3><div class="row" style="gap:4px">${ok.map(j => `<button class="chip" data-mi="${j.s.id}">${esc(j.s.name)}</button>`).join('') || '<span class="note">없음</span>'}</div>${ck.length ? `<div class="note" style="margin-top:6px">확인 필요: ${ck.map(j => `<a href="#" data-mi="${j.s.id}">${esc(j.s.name)}</a>`).join(', ')}</div>` : ''}</div>`; };
   const R = J.R;
   return `<div class="topbar"><div><h1>총회 자료</h1><div class="sub">${esc(a.title)} · ${fmtK(a.date)} · 회칙 ${esc((currentBylaw(dd) || {}).revision || '')} 기준 자동 판정${a.unsaved ? ' · <b>아직 저장 안 됨</b>' : ''}</div></div>
-    <div class="row">${asmPicker(list, a)}${canEdit() ? '<button class="btn" id="as-print">총회 자료 출력</button>' : ''}</div></div>
+    <div class="row">${asmPicker(list, a)}${canEdit() ? `<button class="btn" id="as-print">총회 자료 출력</button>${a.unsaved ? '' : asmExportBtns()}` : ''}</div></div>
   <div class="stack">
     ${edit ? `<div class="card"><div class="fields"><label class="f"><span>총회 날짜 (판정 기준일)</span><input type="date" id="as-date" value="${esc(a.date)}"></label><label class="f"><span>구분</span><select id="as-kind">${['정기총회', '임시총회'].map(k => `<option ${a.kind === k ? 'selected' : ''}>${k}</option>`).join('')}</select></label><label class="f"><span>제목</span><input type="text" id="as-title" value="${esc(a.title)}"></label><label class="f"><span>장소</span><input type="text" id="as-place" value="${esc(a.place || '')}"></label></div><div class="row" style="margin-top:8px"><button class="btn p" id="as-save">${a.unsaved ? '이 총회 만들기' : '저장'}</button></div></div>` : ''}
     <div class="grid2">
@@ -1462,7 +1508,7 @@ function bindAsmPicker(dd) {
   const nw = $('#as-new'); if (nw) nw.onclick = () => { const d = lastSundayOfYear(YEAR); S.sub = { asm: 'new', newDate: dd.assemblies.some(x => x.id === d) ? today() : d }; render(); };
 }
 BIND.assembly = () => {
-  const dd = S.data.young; const { a } = pickAssembly(dd); bindAsmPicker(dd);
+  const dd = S.data.young; const { a } = pickAssembly(dd); bindAsmPicker(dd); bindAssemblyExport(dd, a);
   const pr = $('#as-print'); if (pr) pr.onclick = () => { S.sub = { ...S.sub, print: true }; render(); };
   const bk = $('#as-back'); if (bk) { bk.onclick = () => { delete S.sub.print; render(); }; $('#as-pr').onclick = () => window.print(); return; }
   document.querySelectorAll('[data-vf]').forEach(b => b.onclick = () => { S.sub.vf = b.dataset.vf; render(); });
