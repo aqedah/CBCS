@@ -40,6 +40,7 @@ depts/{d}/students/{id}                    학생: name, sex, birth, classId, st
 depts/{d}/reports/{YYYY-MM-DD}             주일 보고서: 예배 정보, counts{}, att{studentId: P|O}, absent{}, newcomers[], offering{}, teachersPresent[], teachersAbsent{}, activity, meeting, special, status, imported
 depts/{d}/expenses/{id} · incomes/{id}     회계: ledgerId, date, category, desc, amount, requester, receipt
 depts/{d}/events/{id} · notices/{id}       연간 행사 · 부서 공지
+depts/young/bylaws/{id}                   청년부 회칙 판(kind 없음) · 한국성서선교회 헌장 판(kind: 'charter', 판정에는 안 씀)
 depts/{d}/timeline/{id}                    교회생활(제적·팸·수련회·교육·직접 적은 기록) · depts/young/officers · depts/young/retreats
 depts/{d}/care/{studentId}                 심방 카드 — 부서 관리자 비밀번호로 암호화(AES-GCM) 저장, `_verify`는 비밀번호 확인용
 depts/{d}/plans/{year}                     연간계획서: status(draft|confirmed), slogan, verse, goals[], methods, ministry, worship, budget[], notes

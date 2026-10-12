@@ -150,7 +150,7 @@ const NAV_COMMITTEE_MOBILE = [['home','메인'],['reports','보고서'],['schola
 const VIEWS = {}, BIND = {};
 // 메뉴 묶음: 사이드 메뉴에서 누르면 아래로 펼쳐지는 하위 메뉴 (휴대폰은 화면 위 탭)
 const DOC_TABS = () => [[isCommittee() || isMobile() ? 'reports' : 'weekly', '주일 보고서'], ['monthly', '월간 보고서'], ['plan', '연간계획서']];
-const YOUNG_TABS = () => [['bylaws', '회칙'], ['assembly', '총회 자료'], ['minutes', '총회 회의록']];
+const YOUNG_TABS = () => [['bylaws', '회칙·헌장'], ['assembly', '총회 자료'], ['minutes', '총회 회의록']];
 const ROSTER_TABS = () => [['roster', isCommittee() ? '출석부 열람' : '출석부'], ['attlog', '출석 기록'], ...(isCommittee() ? [] : [['stats', '출석 통계']]), ['dropouts', '제적 관리'], ...(isCommittee() ? [] : [['care', isCare() ? '♥ 심방 카드' : '🔒 심방 카드']])];
 const NAV_GROUPS = () => isMobile() ? [{ id: 'docs', items: DOC_TABS() }] : [{ id: 'docs', items: DOC_TABS() }, { id: 'roster', items: ROSTER_TABS() }, { id: 'young', items: YOUNG_TABS() }];
 const groupOfView = v => NAV_GROUPS().find(g => g.items.some(t => t[0] === v));
@@ -1175,10 +1175,16 @@ function churchStart(dd, s) { if (s.churchJoin) return { date: s.churchJoin, est
 async function loadYoung() {
   const dd = isCommittee() ? await loadDept('young') : D();
   if (!dd.bylaws) { const l = await backend.list('depts/young/bylaws'); dd.bylaws = l.length ? l.map(b => ({ ...b, id: b.id || b._id })) : BYLAW_SEED.map(b => ({ ...b, unsaved: true })); }
+  if (!dd.bylaws.some(b => b.kind === 'charter')) dd.bylaws.push({ id: 'charter', kind: 'charter', title: '한국성서선교회 헌장', revision: '', date: '', status: 'current', text: '', summary: [], notes: '', unsaved: true });
   if (!dd.assemblies) dd.assemblies = (await backend.list('depts/young/assemblies')).map(a => ({ ...a, id: a.id || a._id }));
   return dd;
 }
-const currentBylaw = dd => dd.bylaws.find(b => b.status === 'current') || dd.bylaws[0];
+/* 회칙 화면의 규례 종류: 청년부 회칙(총회 자동 판정 기준) · 한국성서선교회 헌장(통상 규례, 판정에는 안 씀) */
+const RULE_DOCS = { young: { name: '청년부 회칙', org: '중앙성서교회 청년부' }, charter: { name: '한국성서선교회 헌장', org: '한국성서선교회' } };
+const bylawKind = b => (b && b.kind) || 'young';
+const bylawsOf = (dd, k) => dd.bylaws.filter(b => bylawKind(b) === k);
+const currentOf = (dd, k) => { const l = bylawsOf(dd, k); return l.find(b => b.status === 'current') || l[0]; };
+const currentBylaw = dd => currentOf(dd, 'young');
 const canYoung = () => canEdit() && (S.dept === 'young' || isCommittee());
 async function saveBylaw(dd, b) { const { unsaved, _id, ...data } = b; await backend.set(`depts/young/bylaws/${b.id}`, data); delete b.unsaved; }
 async function saveAssembly(dd, a) { const { _id, unsaved, ...data } = a; await backend.set(`depts/young/assemblies/${a.id}`, data); delete a.unsaved; if (!dd.assemblies.includes(a)) dd.assemblies.push(a); }
@@ -1274,29 +1280,31 @@ function bylawHTML(t) {
 VIEWS.bylaws = async () => {
   const dd = await loadYoung();
   const order = { current: 0, draft: 1, old: 2 };
-  const vs = dd.bylaws.slice().sort((a, b) => order[a.status] - order[b.status] || (a.date < b.date ? 1 : -1));
-  const b = vs.find(x => x.id === S.sub.bylaw) || currentBylaw(dd);
+  const sel = dd.bylaws.find(x => x.id === S.sub.bylaw); const kind = sel ? bylawKind(sel) : (S.sub.rdoc || 'young'); const DOC = RULE_DOCS[kind]; const isYoung = kind === 'young';
+  const vs = bylawsOf(dd, kind).sort((a, b) => order[a.status] - order[b.status] || (a.date < b.date ? 1 : -1));
+  const b = vs.find(x => x.id === S.sub.bylaw) || currentOf(dd, kind);
+  const docTabs = `<div class="row" style="gap:6px;margin:-4px 0 14px">${Object.entries(RULE_DOCS).map(([k, d]) => `<button class="btn ${k === kind ? 'p' : ''}" data-rdoc="${k}">${d.name}</button>`).join('')}<span class="note" style="margin-left:6px">${isYoung ? '청년부 총회 자동 판정의 기준' : '통상 규례 — 총회 자동 판정에는 쓰지 않습니다'}</span></div>`;
   const edit = canYoung();
-  if (S.sub.print) return `<div class="topbar no-print"><div><h1>회칙 출력</h1></div><div class="row"><button class="btn" id="bl-back">돌아가기</button><button class="btn p" id="bl-pr">PDF로 저장 / 인쇄</button></div></div><section class="paper"><div class="hd"><div><h1>${esc(b.title)}</h1><div class="sub">${esc(b.revision)} · ${esc(b.date)}</div></div><div class="meta">${{ current: '현행', draft: '개정안', old: '이전 판' }[b.status]}</div></div><div class="bylaw-text">${bylawHTML(b.text) || '<p>(본문 없음)</p>'}</div><div class="ft"><b>중앙성서교회 청년부</b><span>CBCS에서 생성</span></div></section>`;
-  if (S.sub.editText) return `<div class="topbar"><div><h1>회칙 본문 수정</h1><div class="sub">${esc(b.revision)} · 한글 파일에서 전체 선택 → 복사 → 아래에 붙여넣기. "제1조", "제1장"으로 시작하는 줄은 자동으로 제목이 됩니다.</div></div><div class="row"><button class="btn" id="bt-cancel">취소</button><button class="btn p" id="bt-save">저장</button></div></div>
+  if (S.sub.print) return `<div class="topbar no-print"><div><h1>회칙 출력</h1></div><div class="row"><button class="btn" id="bl-back">돌아가기</button><button class="btn p" id="bl-pr">PDF로 저장 / 인쇄</button></div></div><section class="paper"><div class="hd"><div><h1>${esc(b.title)}</h1><div class="sub">${esc(b.revision)} · ${esc(b.date)}</div></div><div class="meta">${{ current: '현행', draft: '개정안', old: '이전 판' }[b.status]}</div></div><div class="bylaw-text">${bylawHTML(b.text) || '<p>(본문 없음)</p>'}</div><div class="ft"><b>${esc(DOC.org)}</b><span>CBCS에서 생성</span></div></section>`;
+  if (S.sub.editText) return `<div class="topbar"><div><h1>${esc(DOC.name)} 본문 수정</h1><div class="sub">${esc(b.revision)} · 한글 파일에서 전체 선택 → 복사 → 아래에 붙여넣기. "제1조", "제1장"으로 시작하는 줄은 자동으로 제목이 됩니다.</div></div><div class="row"><button class="btn" id="bt-cancel">취소</button><button class="btn p" id="bt-save">저장</button></div></div>
     <div class="card"><div class="fields"><label class="f"><span>제목</span><input type="text" id="bt-title" value="${esc(b.title)}"></label><label class="f"><span>개정 차수</span><input type="text" id="bt-rev" value="${esc(b.revision)}"></label><label class="f"><span>개정일</span><input type="date" id="bt-date" value="${esc(b.date)}"></label></div>
     <textarea id="bt-text" style="width:100%;min-height:520px;margin-top:10px;font-size:14px;line-height:1.7">${esc(b.text)}</textarea></div>`;
   const R = b.params || RULE_2025;
-  return `<div class="topbar"><div><h1>청년부 회칙</h1><div class="sub">${b.status === 'current' ? '<span class="pill ok">현행</span>' : b.status === 'draft' ? '<span class="pill warn">개정안 · 총회 통과 전</span>' : '<span class="pill mute">이전 판</span>'} ${esc(b.revision)} · ${esc(b.date)}${b.status === 'current' ? ' · 총회 자료의 자동 판정이 이 판을 따릅니다' : ''}</div></div>
-    <div class="row">${canEdit() ? '<button class="btn" id="bl-print">회칙 출력</button>' : ''}${edit ? `<button class="btn p" id="bl-upload">회칙 파일 올리기 (HWP·PDF)</button><button class="btn" id="bl-edit">본문 수정</button>${b.status !== 'current' ? '<button class="btn p" id="bl-current">현행으로 지정</button>' : ''}` : ''}</div></div>
+  return `<div class="topbar"><div><h1>${esc(DOC.name)}</h1><div class="sub">${b.status === 'current' ? '<span class="pill ok">현행</span>' : b.status === 'draft' ? '<span class="pill warn">개정안 · 총회 통과 전</span>' : '<span class="pill mute">이전 판</span>'} ${esc(b.revision)}${b.date ? ' · ' + esc(b.date) : ''}${b.status === 'current' && isYoung ? ' · 총회 자료의 자동 판정이 이 판을 따릅니다' : ''}</div></div>
+    <div class="row">${canEdit() ? `<button class="btn" id="bl-print">${isYoung ? '회칙' : '헌장'} 출력</button>` : ''}${edit ? `<button class="btn p" id="bl-upload">파일 올리기 (HWP·PDF·Word)</button><button class="btn" id="bl-edit">본문 수정</button>${b.status !== 'current' ? '<button class="btn p" id="bl-current">현행으로 지정</button>' : ''}` : ''}</div></div>${docTabs}
   <div class="grid2 bylaw-grid">
-    <div class="card"><h2>${esc(b.title)}</h2>${b.text.trim() ? `<div class="bylaw-text">${bylawHTML(b.text)}</div>` : `<div class="hint">아직 본문이 없습니다. ${edit ? '"회칙 파일 올리기"로 HWP·PDF 원본을 올리면 본문을 자동으로 읽어 넣습니다. "본문 수정"으로 직접 붙여넣어도 됩니다.' : ''}</div>`}
+    <div class="card"><h2>${esc(b.title)}</h2>${b.text.trim() ? `<div class="bylaw-text">${bylawHTML(b.text)}</div>` : `<div class="hint">아직 본문이 없습니다. ${edit ? '"파일 올리기"로 HWP·HWPX·PDF·Word(DOCX) 원본을 올리면 본문을 자동으로 읽어 넣습니다. "본문 수정"으로 직접 붙여넣어도 됩니다.' : ''}</div>`}
       ${b.file ? `<div class="note" style="margin-top:10px">원본 파일: ${esc(b.file.name)} (${Math.round((b.file.size || 0) / 1024)}KB, ${esc(b.file.at || '')})${b.file.stored ? ' <button class="btn s" id="bl-down">원본 내려받기</button>' : ' — 파일이 커서 원본은 저장하지 않고 본문만 넣음'}</div>` : ''}
       ${b.notes ? `<div class="note" style="margin-top:10px">${esc(b.notes)}</div>` : ''}</div>
     <div class="stack">
-      <div class="card"><h2>판(版) 목록</h2><div class="list vlist">${vs.map(x => `<button class="item ${x.id === b.id ? 'on' : ''}" data-bylaw="${esc(x.id)}" style="text-align:left;width:100%"><div><div class="t">${esc(x.revision)}</div><div class="d">${esc(x.date)} · ${{ current: '현행', draft: '개정안', old: '이전 판' }[x.status]}</div></div></button>`).join('')}</div>
+      <div class="card"><h2>판(版) 목록</h2><div class="list vlist">${vs.map(x => `<button class="item ${x.id === b.id ? 'on' : ''}" data-bylaw="${esc(x.id)}" style="text-align:left;width:100%"><div><div class="t">${esc(x.revision || DOC.name)}</div><div class="d">${x.date ? esc(x.date) + ' · ' : ''}${{ current: '현행', draft: '개정안', old: '이전 판' }[x.status]}</div></div></button>`).join('')}</div>
         ${edit ? '<div class="row" style="margin-top:10px"><button class="btn s" id="bl-add">새 개정안 추가</button></div>' : ''}</div>
-      <div class="card"><h2>${b.status === 'current' ? '앱이 판정하는 조문' : '현행과 달라지는 점'}</h2><div class="tw"><table><tbody>${(b.summary || []).map(x => Array.isArray(x) ? x : [x.no, x.title, x.body]).map(([n, t, d]) => `<tr><th style="white-space:nowrap">${esc(n)}</th><td><b>${esc(t)}</b> <span class="note">${esc(d)}</span></td></tr>`).join('')}</tbody></table></div></div>
+      ${isYoung ? `<div class="card"><h2>${b.status === 'current' ? '앱이 판정하는 조문' : '현행과 달라지는 점'}</h2><div class="tw"><table><tbody>${(b.summary || []).map(x => Array.isArray(x) ? x : [x.no, x.title, x.body]).map(([n, t, d]) => `<tr><th style="white-space:nowrap">${esc(n)}</th><td><b>${esc(t)}</b> <span class="note">${esc(d)}</span></td></tr>`).join('')}</tbody></table></div></div>
       <div class="card"><h2>판정 기준값 <span class="r">${edit ? '개정되면 여기 숫자만 고치면 됩니다' : ''}</span></h2><div class="fields" style="grid-template-columns:1fr 1fr">
         ${[['ageMin', '회원 최소 나이'], ['ageMax', '회원 최대 나이'], ['voterMonths', '선거권: 수료 후 개월'], ['voterRate', '선거권: 1년 출석률(%)'], ['presAgeMax', '회장 최대 나이 (0=제한 없음)'], ['presYears', '회장 출석 연수'], ['vpYears', '부회장 출석 연수'], ['apptYears', '임명직 출석 연수'], ['sameRoleMax', '같은 직위 연속 최대 연수 (9조)'], ['chairTeamMax', '회장단 연속 최대 연수 (0=제한 없음)'], ['quorumWeeks', '정족수: 직전 몇 주']].map(([k, l]) => `<label class="f"><span>${l}</span><input type="number" data-rp="${k}" value="${R[k] ?? ''}" ${edit ? '' : 'readonly'}></label>`).join('')}
         <label class="f"><span>정족수 비율</span><div class="row" style="gap:4px"><input type="number" data-rp="quorumNum" value="${R.quorumNum}" style="width:60px" ${edit ? '' : 'readonly'}>/<input type="number" data-rp="quorumDen" value="${R.quorumDen}" style="width:60px" ${edit ? '' : 'readonly'}></div></label>
         <div class="note" style="grid-column:span 2">세례교인 요건은 교회 원칙으로 <b>결의권자·회장·부회장·임명직 모두</b>에 항상 적용되며 판마다 바꾸지 않습니다 (학습·유아세례만으로는 안 됨).</div>
-      </div>${edit ? '<div class="row" style="margin-top:8px"><button class="btn s" id="rp-save">기준값 저장</button></div>' : ''}</div>
+      </div>${edit ? '<div class="row" style="margin-top:8px"><button class="btn s" id="rp-save">기준값 저장</button></div>' : ''}</div>` : `<div class="card"><h2>헌장에 대하여</h2><p class="note" style="margin:0">한국성서선교회 헌장은 통상 규례 중 하나입니다. 원본(HWP·PDF·Word)을 올려 두고 판(개정)별로 보관합니다. 청년부 총회 자료의 자동 판정은 청년부 회칙만 따릅니다.</p></div>`}
     </div>
   </div>`;
 };
@@ -1333,12 +1341,36 @@ async function pdfToText(buf) {
   for (let p = 1; p <= pdf.numPages; p++) { const tc = await (await pdf.getPage(p)).getTextContent(); let line = '', y = null; tc.items.forEach(it => { const yy = Math.round(it.transform[5]); if (y !== null && Math.abs(yy - y) > 2) { lines.push(line); line = ''; } line += it.str; y = yy; if (it.hasEOL) { lines.push(line); line = ''; y = null; } }); if (line) lines.push(line); }
   return lines.join('\n');
 }
+async function docxToText(buf) {
+  const JSZip = await loadLib('jszip', 'JSZip'); const z = await JSZip.loadAsync(buf); const f = z.file('word/document.xml'); if (!f) throw new Error('Word(DOCX) 파일이 아닙니다');
+  const doc = new DOMParser().parseFromString(await f.async('string'), 'application/xml'); const lines = [];
+  doc.querySelectorAll('*').forEach(el => { if (el.localName !== 'p') return; let t = ''; el.querySelectorAll('*').forEach(x => { if (x.localName === 't') t += x.textContent; else if (x.localName === 'tab') t += ' '; else if (x.localName === 'br') t += '\n'; }); lines.push(t); });
+  return lines.join('\n');
+}
+async function odtToText(buf) {
+  const JSZip = await loadLib('jszip', 'JSZip'); const z = await JSZip.loadAsync(buf); const f = z.file('content.xml'); if (!f) throw new Error('ODT 파일이 아닙니다');
+  const doc = new DOMParser().parseFromString(await f.async('string'), 'application/xml'); const lines = [];
+  doc.querySelectorAll('*').forEach(el => { if (el.localName === 'p' || el.localName === 'h') lines.push(el.textContent); });
+  return lines.join('\n');
+}
+async function fileToRuleText(file, buf) {
+  const ext = (file.name.split('.').pop() || '').toLowerCase();
+  if (ext === 'pdf') return pdfToText(buf);
+  if (ext === 'hwpx') return hwpxToText(buf);
+  if (ext === 'hwp') return hwpToText(buf);
+  if (ext === 'docx') return docxToText(buf);
+  if (ext === 'odt') return odtToText(buf);
+  if (ext === 'txt' || ext === 'md') return new TextDecoder('utf-8').decode(buf);
+  if (ext === 'doc') throw new Error('옛 Word(.doc) 파일은 읽을 수 없습니다. Word에서 .docx로 저장하거나 PDF로 저장해 올려 주세요');
+  throw new Error('HWP·HWPX·PDF·DOCX·ODT·TXT 파일만 읽을 수 있습니다');
+}
 function cleanBylawText(t) { return t.replace(/\r/g, '').split('\n').map(l => l.replace(/[\u0000-\u0008-]/g, '').replace(/\s+$/, '')).join('\n').replace(/\n{3,}/g, '\n\n').trim(); }
 function bylawUploadDialog(dd, b) {
-  openModal(`<h2>회칙 파일 올리기<button class="btn s" id="modal-close">닫기</button></h2>
-    <p class="note">한글(.hwp, .hwpx)이나 PDF 회칙 원본을 고르면 본문 글자를 읽어 옵니다. 파일은 이 컴퓨터의 브라우저 안에서만 읽고, 원본은 청년부 자료에 함께 보관합니다(큰 파일은 본문만).</p>
-    <div class="stack" style="margin-top:8px"><input type="file" id="bu-file" accept=".hwp,.hwpx,.pdf">
-      <div class="fields"><label class="f"><span>넣을 곳</span><select id="bu-to"><option value="this">지금 보고 있는 판: ${esc(b.revision)}</option><option value="new">새 판으로 추가</option></select></label>
+  const kind = bylawKind(b); const DOC = RULE_DOCS[kind];
+  openModal(`<h2>${esc(DOC.name)} 파일 올리기<button class="btn s" id="modal-close">닫기</button></h2>
+    <p class="note">한글(.hwp, .hwpx), PDF, Word(.docx) 원본을 고르면 본문 글자를 읽어 옵니다. 구글 문서는 "파일 → 다운로드 → Microsoft Word(.docx)" 또는 PDF로 받은 뒤 올려 주세요. 파일은 이 컴퓨터의 브라우저 안에서만 읽고, 원본은 청년부 자료에 함께 보관합니다(큰 파일은 본문만).</p>
+    <div class="stack" style="margin-top:8px"><input type="file" id="bu-file" accept=".hwp,.hwpx,.pdf,.docx,.odt,.txt,.doc">
+      <div class="fields"><label class="f"><span>넣을 곳</span><select id="bu-to"><option value="this">지금 보고 있는 판: ${esc(b.revision || DOC.name)}</option><option value="new">새 판으로 추가</option></select></label>
       <label class="f"><span>새 판 이름(개정 차수)</span><input type="text" id="bu-rev" placeholder="예: 24차 수정"></label><label class="f"><span>개정일</span><input type="date" id="bu-date" value="${today()}"></label>
       <label class="f"><span>새 판 상태</span><select id="bu-status"><option value="draft">개정안</option><option value="old">이전 판</option><option value="current">현행</option></select></label></div>
       <div id="bu-msg" class="note"></div><textarea id="bu-text" style="width:100%;min-height:300px;font-size:13.5px;line-height:1.7" placeholder="파일을 고르면 여기에 본문이 나옵니다. 저장 전에 고칠 수 있습니다."></textarea>
@@ -1349,8 +1381,8 @@ function bylawUploadDialog(dd, b) {
   $('#bu-file').onchange = async e => {
     file = e.target.files[0]; if (!file) return; const msg = $('#bu-msg'); msg.textContent = '읽는 중…'; $('#bu-save').disabled = true;
     try {
-      buf = await file.arrayBuffer(); const ext = (file.name.split('.').pop() || '').toLowerCase();
-      const raw = ext === 'pdf' ? await pdfToText(buf) : ext === 'hwpx' ? await hwpxToText(buf) : await hwpToText(buf);
+      buf = await file.arrayBuffer();
+      const raw = await fileToRuleText(file, buf);
       const txt = cleanBylawText(raw); $('#bu-text').value = txt;
       const arts = (txt.match(/^제\s*\d+\s*조/gm) || []).length;
       msg.textContent = `${file.name} — ${txt.length.toLocaleString()}자, 조문 ${arts}개를 찾았습니다.${arts ? '' : ' 조문 제목을 찾지 못했으니 내용을 확인해 주세요.'}`;
@@ -1362,20 +1394,22 @@ function bylawUploadDialog(dd, b) {
     const text = $('#bu-text').value; if (!text.trim()) return;
     let target = b;
     if ($('#bu-to').value === 'new') {
-      const st = $('#bu-status').value; const cur = currentBylaw(dd);
-      target = { id: 'rev_' + uid(), title: cur.title, revision: $('#bu-rev').value.trim() || file.name, date: $('#bu-date').value, status: st, text: '', params: { ...(cur.params || RULE_2025) }, summary: [], notes: '' };
-      if (st === 'current') { for (const x of dd.bylaws) if (x.status === 'current') { x.status = 'old'; await saveBylaw(dd, x); } }
+      const st = $('#bu-status').value; const cur = currentOf(dd, kind) || { title: DOC.name };
+      target = { id: (kind === 'charter' ? 'charter_' : 'rev_') + uid(), ...(kind === 'young' ? {} : { kind }), title: cur.title, revision: $('#bu-rev').value.trim() || file.name, date: $('#bu-date').value, status: st, text: '', params: { ...(cur.params || RULE_2025) }, summary: [], notes: '' };
+      if (st === 'current') { for (const x of bylawsOf(dd, kind)) if (x.status === 'current' && !x.unsaved) { x.status = 'old'; await saveBylaw(dd, x); } }
+      if (st === 'current') bylawsOf(dd, kind).filter(x => x.unsaved && !x.text).forEach(x => dd.bylaws.splice(dd.bylaws.indexOf(x), 1));
       dd.bylaws.push(target);
     }
-    target.text = text;
+    target.text = text; if (!target.revision && file) target.revision = file.name.replace(/\.[^.]+$/, '');
     let stored = false;
     if (file && buf && buf.byteLength < 650 * 1024) { const u8 = new Uint8Array(buf); let bin = ''; for (let i = 0; i < u8.length; i += 0x8000) bin += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); await backend.set(`depts/young/bylawFiles/${target.id}`, { name: file.name, type: file.type || '', size: file.size, data: btoa(bin), at: today() }); stored = true; }
     if (file) target.file = { name: file.name, size: file.size, at: today(), stored };
-    await saveBylaw(dd, target); closeModal(); S.sub = { bylaw: target.id }; render(); toast('회칙 본문을 넣었습니다');
+    await saveBylaw(dd, target); closeModal(); S.sub = { bylaw: target.id }; render(); toast(`${DOC.name} 본문을 넣었습니다`);
   };
 }
 BIND.bylaws = () => {
-  const dd = S.data.young; const b = dd.bylaws.find(x => x.id === S.sub.bylaw) || currentBylaw(dd);
+  const dd = S.data.young; const kind = (dd.bylaws.find(x => x.id === S.sub.bylaw) ? bylawKind(dd.bylaws.find(x => x.id === S.sub.bylaw)) : (S.sub.rdoc || 'young')); const b = dd.bylaws.find(x => x.id === S.sub.bylaw) || currentOf(dd, kind);
+  document.querySelectorAll('[data-rdoc]').forEach(x => x.onclick = () => { S.sub = { rdoc: x.dataset.rdoc }; render(); });
   document.querySelectorAll('[data-bylaw]').forEach(x => x.onclick = () => { S.sub = { bylaw: x.dataset.bylaw }; render(); });
   const pr = $('#bl-print'); if (pr) pr.onclick = () => { S.sub.print = true; render(); };
   const up = $('#bl-upload'); if (up) up.onclick = () => bylawUploadDialog(dd, b);
@@ -1383,8 +1417,8 @@ BIND.bylaws = () => {
   const bk = $('#bl-back'); if (bk) { bk.onclick = () => { delete S.sub.print; render(); }; $('#bl-pr').onclick = () => window.print(); return; }
   const ed = $('#bl-edit'); if (ed) ed.onclick = () => { S.sub.editText = true; S.sub.bylaw = b.id; render(); };
   const cc = $('#bt-cancel'); if (cc) { cc.onclick = () => { delete S.sub.editText; render(); }; $('#bt-save').onclick = async () => { Object.assign(b, { title: $('#bt-title').value.trim(), revision: $('#bt-rev').value.trim(), date: $('#bt-date').value, text: $('#bt-text').value }); await saveBylaw(dd, b); delete S.sub.editText; render(); toast('회칙을 저장했습니다'); }; return; }
-  const cu = $('#bl-current'); if (cu) cu.onclick = () => { openModal(`<h2>현행 회칙 지정<button class="btn s" id="modal-close">닫기</button></h2><p>"${esc(b.revision)}"을 현행 회칙으로 지정할까요? 지금 현행인 판은 "이전 판"이 되고, 총회 자료의 자동 판정은 이 판의 기준값을 따릅니다. 보통 총회에서 개정안이 통과된 뒤에 누릅니다.</p><div class="row"><button class="btn p" id="cu-yes">지정</button><button class="btn" id="cu-no">취소</button></div>`); $('#cu-no').onclick = closeModal; $('#cu-yes').onclick = async () => { for (const x of dd.bylaws) { if (x.status === 'current') { x.status = 'old'; await saveBylaw(dd, x); } } b.status = 'current'; await saveBylaw(dd, b); closeModal(); render(); toast('현행 회칙으로 지정했습니다'); }; };
-  const ad = $('#bl-add'); if (ad) ad.onclick = async () => { const cur = currentBylaw(dd); const n = { id: 'rev_' + uid(), title: cur.title + ' 개정안', revision: `${YEAR + 1} 개정안`, date: today(), status: 'draft', text: cur.text, params: { ...(cur.params || RULE_2025) }, summary: [], notes: '' }; await saveBylaw(dd, n); dd.bylaws.push(n); S.sub = { bylaw: n.id, editText: true }; render(); };
+  const cu = $('#bl-current'); if (cu) cu.onclick = () => { openModal(`<h2>현행 ${esc(RULE_DOCS[kind].name)} 지정<button class="btn s" id="modal-close">닫기</button></h2><p>"${esc(b.revision)}"을 현행으로 지정할까요? 지금 현행인 판은 "이전 판"이 됩니다.${kind === 'young' ? ' 총회 자료의 자동 판정은 이 판의 기준값을 따릅니다. 보통 총회에서 개정안이 통과된 뒤에 누릅니다.' : ''}</p><div class="row"><button class="btn p" id="cu-yes">지정</button><button class="btn" id="cu-no">취소</button></div>`); $('#cu-no').onclick = closeModal; $('#cu-yes').onclick = async () => { for (const x of bylawsOf(dd, kind)) { if (x.status === 'current' && x !== b && !x.unsaved) { x.status = 'old'; await saveBylaw(dd, x); } } b.status = 'current'; await saveBylaw(dd, b); closeModal(); render(); toast('현행으로 지정했습니다'); }; };
+  const ad = $('#bl-add'); if (ad) ad.onclick = async () => { const cur = currentOf(dd, kind); const n = { id: (kind === 'charter' ? 'charter_' : 'rev_') + uid(), ...(kind === 'young' ? { params: { ...(cur.params || RULE_2025) } } : { kind }), title: cur.title.replace(/ 개정안$/, '') + ' 개정안', revision: `${YEAR + 1} 개정안`, date: today(), status: 'draft', text: cur.text, summary: [], notes: '' }; await saveBylaw(dd, n); dd.bylaws.push(n); S.sub = { bylaw: n.id, editText: true }; render(); };
   const rs = $('#rp-save'); if (rs) rs.onclick = async () => { const R = { ...(b.params || RULE_2025) }; document.querySelectorAll('[data-rp]').forEach(i => { const k = i.dataset.rp; R[k] = /Baptized/.test(k) ? i.value === '1' : +i.value || 0; }); b.params = R; await saveBylaw(dd, b); render(); toast('기준값을 저장했습니다'); };
 };
 
