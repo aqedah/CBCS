@@ -2322,6 +2322,8 @@ function importYoungAttendance(dd) {
         for (const k of ['prayer', 'text', 'title', 'preacher', 'writer']) if (!doc[k] && r[k]) doc[k] = r[k];
         if (r.offering && !(doc.offering && (doc.offering.sunday || doc.offering.tithe))) doc.offering = { ...(doc.offering || {}), sunday: r.offering, tithe: 0, thanks: 0, other: 0, raw: r.offeringRaw || '' };
         if (r.meeting && !doc.meeting) doc.meeting = r.meeting;
+        if ((r.teachersPresent || []).length && !(doc.teachersPresent || []).length) doc.teachersPresent = r.teachersPresent.slice();
+        if (r.teachersUnsure) doc.teachersUnsure = r.teachersUnsure.slice(); if (r.teacherCount) doc.teacherCount = r.teacherCount;
         items.push({ path: `depts/young/reports/${r.date}`, data: doc });
       }
       log(`학생: 기존과 합침 ${mergedS}명 · 새로 추가 ${newS}명 (제적·졸업 상태) · 보고서: 새로 ${newR}장 · 출석만 채움 ${mergedR}장 → 문서 ${items.length}개 올립니다…`);
