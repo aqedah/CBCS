@@ -231,7 +231,8 @@ async function render() {
   const mob = isMobile();
   let nav = isCommittee() ? (mob ? NAV_COMMITTEE_MOBILE : NAV_COMMITTEE) : (mob ? NAV_MOBILE : NAV_PC);
   if (!mob && (S.dept === 'young' || isCommittee())) { const at = nav.findIndex(n => n[0] === (isCommittee() ? 'scholarship' : 'archive')); nav = [...nav.slice(0, at), ['bylaws', isCommittee() ? '청년부 회칙·총회' : '회칙·총회', '§'], ...nav.slice(at)]; }
-  if (!nav.some(n => n[0] === navKeyOf(S.view))) S.view = 'home';
+  const MOBILE_EXTRA = mob && !isCommittee() ? ['ledger'] : []; // 휴대폰 메뉴에는 없지만 메인 숫자 칸에서 열람으로 들어가는 화면
+  if (!nav.some(n => n[0] === navKeyOf(S.view)) && !MOBILE_EXTRA.includes(S.view)) S.view = 'home';
   let body = '';
   try { await loadCommittee(); if (S.dept) await loadDept(S.dept); body = await (VIEWS[S.view] ? VIEWS[S.view]() : ''); if (mob && groupOfView(S.view)) body = docTabBar() + body; } catch (e) { console.error(e); body = `<div class="hint">화면을 그리는 중 문제가 생겼습니다: ${esc(e.message)}</div>`; }
   root.innerHTML = `<div class="app ${mob ? 'ro' : ''}">
@@ -400,7 +401,7 @@ VIEWS.home = async () => {
 };
 BIND.home = () => {
   bindMonthNav(); bindBoard(); bindHomeExtras();
-  document.querySelectorAll('[data-goto]').forEach(b => b.onclick = () => { const g = b.dataset.goto; S.navOpen = {}; if (g === 'report') { S.view = isCommittee() || isMobile() ? 'reports' : 'weekly'; S.sub = { date: b.dataset.date }; } else { S.view = g; S.sub = {}; } render(); });
+  document.querySelectorAll('[data-goto]').forEach(b => b.onclick = () => { const g = b.dataset.goto; S.navOpen = {}; if (g === 'report') { S.view = isCommittee() || isMobile() ? 'reports' : 'weekly'; S.sub = { date: b.dataset.date }; } else { S.view = isMobile() && g === 'roster' ? 'members' : g; S.sub = {}; } render(); });
   if (isCommittee()) {
     const g = $('#c-date-go'); if (g) g.onclick = () => { S.sub.date = $('#c-date').value; render(); };
     const a = $('#cn-add'); if (a) a.onclick = async () => { const t = $('#cn-title').value.trim(); if (!t) return; const n = { id: uid(), date: today(), title: t, body: $('#cn-body').value.trim() }; await backend.set(`committee/main/notices/${n.id}`, n); C().notices.push({ _id: n.id, ...n }); render(); };
