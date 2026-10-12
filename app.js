@@ -1260,6 +1260,9 @@ async function loadYoung() {
   return dd;
 }
 /* 회칙 화면의 규례 종류: 청년부 회칙(총회 자동 판정 기준) · 한국성서선교회 헌장(통상 규례, 판정에는 안 씀) */
+// 청년부 회칙 화면 맨 위에 늘 보이는 원칙
+const YOUNG_PRINCIPLE = { src: '사단법인 한국성서선교회 헌장 제29조(기관의 권리 및 의무)', lead: '각 회원교회는 남, 녀 전도회, 장년회, 청년회, 각급 주일학교 등 여러 기관을 가지며 다음과 같은 권리 및 의무를 갖는다.', items: ['전 기관은 그 교회에 소속된다.', '각 기관은 그 교회에 봉사하기 위하여 존재한다.', '각 기관은 당회의 관할 하에 그 지도 및 치리를 받는다.', '각 기관은 당회의 지도하에 사업을 운영한다.', '각 기관은 사업을 위한 예산 결산을 당회에 제출하여 감사를 받는다.'] };
+const principleHTML = () => `<div class="card principle"><h2>원칙 <span class="r">${esc(YOUNG_PRINCIPLE.src)}</span></h2><p>${esc(YOUNG_PRINCIPLE.lead)}</p><ol>${YOUNG_PRINCIPLE.items.map(x => `<li>${esc(x)}</li>`).join('')}</ol></div>`;
 const RULE_DOCS = { young: { name: '청년부 회칙', org: '중앙성서교회 청년부' }, charter: { name: '한국성서선교회 헌장', org: '한국성서선교회' } };
 const bylawKind = b => (b && b.kind) || 'young';
 const bylawsOf = (dd, k) => dd.bylaws.filter(b => bylawKind(b) === k);
@@ -1393,7 +1396,7 @@ VIEWS.bylaws = async () => {
     <textarea id="bt-text" style="width:100%;min-height:520px;margin-top:10px;font-size:14px;line-height:1.7">${esc(b.text)}</textarea></div>`;
   const R = b.params || RULE_2025;
   return `<div class="topbar"><div><h1>${esc(DOC.name)}</h1><div class="sub">${b.status === 'current' ? '<span class="pill ok">현행</span>' : b.status === 'draft' ? '<span class="pill warn">개정안 · 총회 통과 전</span>' : '<span class="pill mute">이전 판</span>'} ${esc(b.revision)}${b.date ? ' · ' + esc(b.date) : ''}${b.status === 'current' && isYoung ? ' · 총회 자료의 자동 판정이 이 판을 따릅니다' : ''}</div></div>
-    <div class="row">${canEdit() ? `<button class="btn" id="bl-print">${isYoung ? '회칙' : '헌장'} 출력</button>` : ''}${edit ? `<button class="btn p" id="bl-upload">파일 올리기 (HWP·PDF·Word)</button><button class="btn" id="bl-edit">본문 수정</button>${b.status !== 'current' ? '<button class="btn p" id="bl-current">현행으로 지정</button>' : ''}` : ''}</div></div>${docTabs}
+    <div class="row">${canEdit() ? `<button class="btn" id="bl-print">${isYoung ? '회칙' : '헌장'} 출력</button>` : ''}${edit ? `<button class="btn p" id="bl-upload">파일 올리기 (HWP·PDF·Word)</button><button class="btn" id="bl-edit">본문 수정</button><button class="btn d" id="bl-del">이 판 삭제</button>${b.status !== 'current' ? '<button class="btn p" id="bl-current">현행으로 지정</button>' : ''}` : ''}</div></div>${docTabs}${isYoung ? principleHTML() : ''}
   <div class="grid2 bylaw-grid">
     <div class="card"><h2>${esc(b.title)}</h2>${b.text.trim() ? `<div class="bylaw-text">${bylawHTML(b.text)}</div>` : `<div class="hint">아직 본문이 없습니다. ${edit ? '"파일 올리기"로 HWP·HWPX·PDF·Word(DOCX) 원본을 올리면 본문을 자동으로 읽어 넣습니다. "본문 수정"으로 직접 붙여넣어도 됩니다.' : ''}</div>`}
       ${b.file ? `<div class="note" style="margin-top:10px">원본 파일: ${esc(b.file.name)} (${Math.round((b.file.size || 0) / 1024)}KB, ${esc(b.file.at || '')})${b.file.stored ? ' <button class="btn s" id="bl-down">원본 내려받기</button>' : ' — 파일이 커서 원본은 저장하지 않고 본문만 넣음'}</div>` : ''}
@@ -1518,6 +1521,17 @@ BIND.bylaws = () => {
   const up = $('#bl-upload'); if (up) up.onclick = () => bylawUploadDialog(dd, b);
   const dn = $('#bl-down'); if (dn) dn.onclick = async () => { const f = await backend.get(`depts/young/bylawFiles/${b.id}`); if (!f || !f.data) { toast('원본 파일을 찾지 못했습니다'); return; } const bin = atob(f.data); const u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([u8], { type: f.type || 'application/octet-stream' })); a.download = f.name || 'bylaw'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); };
   const bk = $('#bl-back'); if (bk) { bk.onclick = () => { delete S.sub.print; render(); }; $('#bl-pr').onclick = () => window.print(); return; }
+  const dl = $('#bl-del'); if (dl) dl.onclick = () => {
+    const DOCN = RULE_DOCS[kind].name; const same = bylawsOf(dd, kind); const isCur = b.status === 'current' && kind === 'young';
+    openModal(`<h2>${esc(DOCN)} 판 삭제<button class="btn s" id="modal-close">닫기</button></h2><p>"${esc(b.revision || DOCN)}"${b.date ? ' (' + esc(b.date) + ')' : ''}을(를) 지울까요? 본문과 올린 원본 파일이 함께 지워지고 되돌릴 수 없습니다.</p>${isCur ? `<div class="hint">지금 <b>현행</b> 회칙입니다. 지우면 총회 자료의 자동 판정은 남은 판${same.length > 1 ? ' 중 하나' : '이 없어 기본 기준값'}을 따릅니다. 새 현행을 먼저 지정하는 것이 좋습니다.</div>` : ''}<div class="row" style="margin-top:10px"><button class="btn d" id="bd-yes">삭제</button><button class="btn" id="bd-no">취소</button></div>`);
+    $('#bd-no').onclick = closeModal;
+    $('#bd-yes').onclick = async () => { $('#bd-yes').disabled = true;
+      if (!b.unsaved) { await backend.del(`depts/young/bylaws/${b.id}`); if (b.file) await backend.del(`depts/young/bylawFiles/${b.id}`).catch(() => {}); }
+      dd.bylaws.splice(dd.bylaws.indexOf(b), 1);
+      if (kind === 'young' && !bylawsOf(dd, 'young').length) dd.bylaws.push(...BYLAW_SEED.map(x => ({ ...x, unsaved: true })));
+      if (kind === 'charter' && !bylawsOf(dd, 'charter').length) dd.bylaws.push({ id: 'charter', kind: 'charter', title: '한국성서선교회 헌장', revision: '', date: '', status: 'current', text: '', summary: [], notes: '', unsaved: true });
+      closeModal(); S.sub = { rdoc: kind }; render(); toast('삭제했습니다'); };
+  };
   const ed = $('#bl-edit'); if (ed) ed.onclick = () => { S.sub.editText = true; S.sub.bylaw = b.id; render(); };
   const cc = $('#bt-cancel'); if (cc) { cc.onclick = () => { delete S.sub.editText; render(); }; $('#bt-save').onclick = async () => { Object.assign(b, { title: $('#bt-title').value.trim(), revision: $('#bt-rev').value.trim(), date: $('#bt-date').value, text: $('#bt-text').value }); await saveBylaw(dd, b); delete S.sub.editText; render(); toast(`${RULE_DOCS[kind].name}을(를) 저장했습니다`); }; return; }
   const cu = $('#bl-current'); if (cu) cu.onclick = () => { openModal(`<h2>현행 ${esc(RULE_DOCS[kind].name)} 지정<button class="btn s" id="modal-close">닫기</button></h2><p>"${esc(b.revision)}"을 현행으로 지정할까요? 지금 현행인 판은 "이전 판"이 됩니다.${kind === 'young' ? ' 총회 자료의 자동 판정은 이 판의 기준값을 따릅니다. 보통 총회에서 개정안이 통과된 뒤에 누릅니다.' : ''}</p><div class="row"><button class="btn p" id="cu-yes">지정</button><button class="btn" id="cu-no">취소</button></div>`); $('#cu-no').onclick = closeModal; $('#cu-yes').onclick = async () => { for (const x of bylawsOf(dd, kind)) { if (x.status === 'current' && x !== b && !x.unsaved) { x.status = 'old'; await saveBylaw(dd, x); } } b.status = 'current'; await saveBylaw(dd, b); closeModal(); render(); toast('현행으로 지정했습니다'); }; };

@@ -398,3 +398,6 @@ td.no,th.no{width:42px;color:var(--muted);font-variant-numeric:tabular-nums}
 .bl-toc a.t-chap{padding-left:12px}
 .bl-toc a.t-special{color:var(--info)}
 @media print{.bylaw-text .bl-part{font-weight:700;background:none}}
+.card.principle{margin-bottom:14px;border-left:4px solid var(--accent)}
+.card.principle p{margin:0 0 6px;line-height:1.7}
+.card.principle ol{margin:0;padding-left:1.4em;line-height:1.8}
