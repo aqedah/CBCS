@@ -346,3 +346,10 @@ table.attlog .al-o{color:var(--warn)}
 table.attlog .al-x{color:var(--muted)}
 table.attlog .al-sum{font-weight:600}
 @media print{.al-wrap{max-height:none;overflow:visible}table.attlog{font-size:8px}table.attlog th,table.attlog td{padding:1px 2px}@page{size:A4 landscape}}
+
+/* 총회 판정표: 직전 1년 주별 출석 띠 */
+.ystrip{display:flex;gap:1px;flex-wrap:nowrap;align-items:flex-end}
+.ystrip .yw{display:inline-block;width:7px;height:12px;border-radius:1px;background:var(--line-soft);flex:none;font-size:9px;line-height:12px;color:var(--muted);text-align:left;overflow:visible;white-space:nowrap}
+.ystrip .yw.p{background:var(--ok)}.ystrip .yw.o{background:var(--warn)}.ystrip .yw.x{background:var(--line-soft)}
+.ystrip .yw.ym{border-left:1px solid var(--line);width:8px}
+th.ystrip-h .ystrip .yw{background:none;height:12px}
