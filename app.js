@@ -2549,7 +2549,7 @@ function importYoungAttendance(dd) {
         s.history.sort((a, b) => a.year - b.year);
         s.statusLog = s.statusLog || [];
         if (x.rejoin && !s.statusLog.some(q => q.from === 'left' && q.date === x.rejoin)) { s.statusLog.push({ date: x.rejoin, from: 'left', to: 'active', reason: '복적', source: '과거 출석부 변환(사용자 확인)' }); }
-        for (const l of x.left || []) { if (!s.statusLog.some(q => q.to === 'left' && String(q.date || '').startsWith(String(l.year)))) s.statusLog.push({ date: `${l.year}-12-31`, from: 'active', to: 'left', kind: '제적', reason: l.reason || '', source: l.source }); if (s.status === 'left' && !s.leftDate && l.year === Math.max(...(x.left || []).map(q => q.year))) { s.leftDate = `${l.year}-12-31`; s.leftKind = s.leftKind || '제적'; s.leftReason = s.leftReason || l.reason || ''; } }
+        for (const l of x.left || []) { if (!s.statusLog.some(q => q.to === 'left' && String(q.date || '').startsWith(String(l.year)))) s.statusLog.push({ date: `${l.year}-12-31`, from: 'active', to: 'left', kind: l.kind || '제적', reason: l.reason || '', source: l.source }); if (s.status === 'left' && l.year === Math.max(...(x.left || []).map(q => q.year)) && (!s.leftDate || s.leftDate < `${l.year}-12-31`)) { s.leftDate = `${l.year}-12-31`; s.leftKind = l.kind || s.leftKind || '제적'; s.leftReason = l.reason || s.leftReason || ''; } }
         byKey[x.name + '|' + md(x.birth)] = s;
         items.push({ path: `depts/young/students/${s.id}`, data: s });
       }
@@ -2569,6 +2569,10 @@ function importYoungAttendance(dd) {
         items.push({ path: `depts/young/reports/${r.date}`, data: doc });
       }
       (d.officers || []).forEach(o => { items.push({ path: `depts/young/officers/${o.id}`, data: o }); if (!(dd.officers || []).some(q => q.id === o.id || q._id === o.id)) (dd.officers = dd.officers || []).push({ _id: o.id, ...o }); });
+      // 교사인데 예전 가져오기로 학생이 돼 버린 기록은 지운다 (이 가져오기가 만든 기록만: flags에 '과거 출석부(' 표시가 있는 것)
+      const rmS = []; for (const r of d.removeStudents || []) for (const s of dd.students.filter(s => normName(s.name) === normName(r.name) && (s.flags || []).some(f => String(f).startsWith('과거 출석부(')))) rmS.push(s);
+      for (const s of rmS) { await backend.del(`depts/young/students/${s.id}`); dd.students.splice(dd.students.indexOf(s), 1); const i = items.findIndex(it => it.path === `depts/young/students/${s.id}`); if (i >= 0) items.splice(i, 1); }
+      if (rmS.length) { for (const it of items) if (it.path.startsWith('depts/young/reports/') && it.data.att) for (const s of rmS) delete it.data.att[s.id]; log(`교사인데 학생으로 들어가 있던 기록 삭제: ${rmS.map(s => s.name).join(', ')}`); }
       log(`학생: 기존과 합침 ${mergedS}명 · 새로 추가 ${newS}명 (제적·졸업 상태) · 보고서: 새로 ${newR}장 · 출석만 채움 ${mergedR}장 · 임원 이력 ${(d.officers || []).length}건 → 문서 ${items.length}개 올립니다…`);
       await backend.batchSet(items, (a, b) => { $('#ya-log').textContent = $('#ya-log').textContent.replace(/\n진행.*$/, '') + `\n진행 ${a}/${b}`; });
       log('완료. 출석부의 연도 버튼(2021~2024)과 총회 자료의 직전 1년 띠에 반영됩니다.'); (d._review || []).forEach(x => log('※ ' + x)); S.data = {};
