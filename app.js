@@ -204,7 +204,10 @@ const isUnited = r => !!(r.united || /세대통합/.test(r.type || ''));
 
 /* ───────────── 화면 뼈대 ───────────── */
 const NAV_PC = [['home','메인','⌂'],['weekly','보고서','✎'],['roster','출석부','☰'],['ledger','회계','₩'],['assets','물품대장','▢'],['vehicles','차량 신청','⇄'],['archive','보관함','▣'],['tutorial','사용 안내','?']];
-const NAV_MOBILE = [['home','메인'],['attend','출석 체크'],['receipt','영수증'],['reports','보고서'],['members','멤버'],['stats','통계'],['tutorial','안내']];
+const NAV_MOBILE = [['home','홈'],['attend','출결'],['ledger','회계'],['reports','보고서'],['tutorial','안내']];
+// 휴대폰: 출석부(출석 체크·명단·통계), 회계(열람·영수증)는 위쪽 탭으로 나눈다
+const M_ROSTER_TABS = [['attend', '출석 체크'], ['members', '명단'], ['stats', '통계']];
+const M_MONEY_TABS = [['ledger', '회계 열람'], ['receipt', '영수증']];
 const NAV_COMMITTEE = [['home','메인','⌂'],['reports','보고서 열람','✎'],['assets','물품대장 열람','▢'],['roster','출석부 열람','☰'],['vehicles','차량 신청','⇄'],['scholarship','장학','★'],['archive','보관함','▣'],['backup','자료 내려받기','⇩'],['import','데이터 가져오기','⇪'],['tutorial','사용 안내','?']];
 const NAV_COMMITTEE_MOBILE = [['home','메인'],['reports','보고서'],['scholarship','장학'],['tutorial','안내']];
 const VIEWS = {}, BIND = {};
@@ -212,7 +215,7 @@ const VIEWS = {}, BIND = {};
 const DOC_TABS = () => [[isCommittee() || isMobile() ? 'reports' : 'weekly', '주일 보고서'], ['monthly', '월간 보고서'], ['plan', '연간계획서']];
 const YOUNG_TABS = () => [['bylaws', '회칙·헌장'], ['assembly', '총회 자료'], ['minutes', '총회 회의록']];
 const ROSTER_TABS = () => [['roster', isCommittee() ? '출석부 열람' : '출석부'], ['attlog', '출석 기록'], ...(isCommittee() ? [] : [['stats', '출석 통계']]), ['dropouts', '제적 관리'], ...(isCommittee() ? [] : [['care', isCare() ? '♥ 심방 카드' : '🔒 심방 카드']])];
-const NAV_GROUPS = () => isMobile() ? [{ id: 'docs', items: DOC_TABS() }] : [{ id: 'docs', items: DOC_TABS() }, { id: 'roster', items: ROSTER_TABS() }, { id: 'young', items: YOUNG_TABS() }];
+const NAV_GROUPS = () => isMobile() ? (isCommittee() ? [{ id: 'docs', items: DOC_TABS() }] : [{ id: 'docs', items: DOC_TABS() }, { id: 'mroster', items: M_ROSTER_TABS }, { id: 'mmoney', items: M_MONEY_TABS }]) : [{ id: 'docs', items: DOC_TABS() }, { id: 'roster', items: ROSTER_TABS() }, { id: 'young', items: YOUNG_TABS() }];
 const groupOfView = v => NAV_GROUPS().find(g => g.items.some(t => t[0] === v));
 const navKeyOf = v => { const g = groupOfView(v); return g ? g.items[0][0] : v; };
 const docTabBar = () => { const g = groupOfView(S.view); return g ? `<div class="doc-tabs no-print">${g.items.map(([k, l]) => `<button data-doctab="${k}" class="${S.view === k ? 'on' : ''}">${l}</button>`).join('')}</div>` : ''; };
@@ -231,8 +234,7 @@ async function render() {
   const mob = isMobile();
   let nav = isCommittee() ? (mob ? NAV_COMMITTEE_MOBILE : NAV_COMMITTEE) : (mob ? NAV_MOBILE : NAV_PC);
   if (!mob && (S.dept === 'young' || isCommittee())) { const at = nav.findIndex(n => n[0] === (isCommittee() ? 'scholarship' : 'archive')); nav = [...nav.slice(0, at), ['bylaws', isCommittee() ? '청년부 회칙·총회' : '회칙·총회', '§'], ...nav.slice(at)]; }
-  const MOBILE_EXTRA = mob && !isCommittee() ? ['ledger'] : []; // 휴대폰 메뉴에는 없지만 메인 숫자 칸에서 열람으로 들어가는 화면
-  if (!nav.some(n => n[0] === navKeyOf(S.view)) && !MOBILE_EXTRA.includes(S.view)) S.view = 'home';
+  if (!nav.some(n => n[0] === navKeyOf(S.view))) S.view = 'home';
   let body = '';
   try { await loadCommittee(); if (S.dept) await loadDept(S.dept); body = await (VIEWS[S.view] ? VIEWS[S.view]() : ''); if (mob && groupOfView(S.view)) body = docTabBar() + body; } catch (e) { console.error(e); body = `<div class="hint">화면을 그리는 중 문제가 생겼습니다: ${esc(e.message)}</div>`; }
   root.innerHTML = `<div class="app ${mob ? 'ro' : ''}">
