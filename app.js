@@ -34,22 +34,42 @@ const backend = MOCK ? mockBackend() : await firebaseBackend();
 async function firebaseBackend() {
   const FB = 'https://www.gstatic.com/firebasejs/10.14.1/';
   const [{ initializeApp }, { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged }, { getFirestore, doc, getDoc, setDoc, deleteDoc, collection, getDocs, writeBatch }] = await Promise.all([import(FB + 'firebase-app.js'), import(FB + 'firebase-auth.js'), import(FB + 'firebase-firestore.js')]);
-  const app = initializeApp(window.CBCS_FIREBASE);
-  const auth = getAuth(app); const db = getFirestore(app);
-  fb = { auth, db };
+  // 한 기기에서 여러 부서 계정을 함께 로그인해 둘 수 있다(초등부 교사 + 교육위원회 임원 등). 부서마다 따로 로그인 상태를 둔다.
+  const cfg = window.CBCS_FIREBASE; const base = initializeApp(cfg);
+  const mk = app => ({ app, auth: getAuth(app), db: getFirestore(app) });
+  const baseSlot = mk(base); const slots = {}; const named = {};
+  const deptOfUser = u => u ? deptOfAccount((u.email || '').split('@')[0]) : null;
+  const ready = a => a.authStateReady ? a.authStateReady() : new Promise(ok => { const off = onAuthStateChanged(a, () => { off(); ok(); }); });
+  const slotFor = d => named[d] || (named[d] = mk(initializeApp(cfg, 'cbcs-' + d)));
+  let saved = []; try { saved = JSON.parse(localStorage.getItem('cbcs-sessions') || '[]'); } catch (e) {}
+  let active = null; try { active = localStorage.getItem('cbcs-active'); } catch (e) {}
+  await ready(baseSlot.auth); { const d = deptOfUser(baseSlot.auth.currentUser); if (d) slots[d] = baseSlot; else if (baseSlot.auth.currentUser) await signOut(baseSlot.auth); }
+  await Promise.all(saved.filter(d => ACCOUNTS[d] && !slots[d]).map(async d => { const sl = slotFor(d); await ready(sl.auth); if (deptOfUser(sl.auth.currentUser) === d) slots[d] = sl; }));
+  const persist = () => { try { localStorage.setItem('cbcs-sessions', JSON.stringify(Object.keys(slots))); if (active) localStorage.setItem('cbcs-active', active); else localStorage.removeItem('cbcs-active'); } catch (e) {} };
+  if (!slots[active]) active = Object.keys(slots)[0] || null; persist();
+  const cur = () => slots[active] || baseSlot;
+  fb = { get auth() { return cur().auth; }, get db() { return cur().db; } };
   const emailOf = d => `${ACCOUNTS[d] || d}@${window.CBCS_EMAIL_DOMAIN}`;
-  const ref = p => doc(db, ...p.split('/'));
+  const ref = p => doc(cur().db, ...p.split('/'));
   return {
-    async login(d, pw) { await signInWithEmailAndPassword(auth, emailOf(d), pw); return d; },
-    async logout() { await signOut(auth); },
-    onSession(cb) { onAuthStateChanged(auth, u => { if (!u) return cb(null); const d = deptOfAccount((u.email || '').split('@')[0]); if (!d) { signOut(auth); return cb(null); } cb(d); }); },
+    async login(d, pw) {
+      const baseFree = !Object.values(slots).includes(baseSlot) && !baseSlot.auth.currentUser;
+      const sl = slots[d] || (baseFree ? baseSlot : slotFor(d));
+      await signInWithEmailAndPassword(sl.auth, emailOf(d), pw); slots[d] = sl; active = d; persist(); return d;
+    },
+    sessions() { return Object.keys(slots).filter(d => slots[d].auth.currentUser); },
+    current() { return active; },
+    switchTo(d) { if (!slots[d] || !slots[d].auth.currentUser) return false; active = d; persist(); return true; },
+    async logoutOne(d) { const sl = slots[d]; if (sl) { await signOut(sl.auth); delete slots[d]; } if (active === d) active = Object.keys(slots)[0] || null; persist(); return active; },
+    async logout() { for (const d of Object.keys(slots)) { await signOut(slots[d].auth); delete slots[d]; } active = null; persist(); },
+    onSession(cb) { cb(active); },
     async get(p) { const s = await getDoc(ref(p)); return s.exists() ? s.data() : null; },
     async set(p, data) { await setDoc(ref(p), data); },
     async del(p) { await deleteDoc(ref(p)); },
-    async list(p) { const s = await getDocs(collection(db, ...p.split('/'))); return s.docs.map(x => ({ _id: x.id, ...x.data() })); },
+    async list(p) { const s = await getDocs(collection(cur().db, ...p.split('/'))); return s.docs.map(x => ({ _id: x.id, ...x.data() })); },
     async batchSet(items, progress) { // items: [{path, data}]
       for (let i = 0; i < items.length; i += 400) {
-        const b = writeBatch(db); items.slice(i, i+400).forEach(it => b.set(ref(it.path), it.data)); await b.commit();
+        const b = writeBatch(cur().db); items.slice(i, i+400).forEach(it => b.set(ref(it.path), it.data)); await b.commit();
         if (progress) progress(Math.min(i+400, items.length), items.length);
       }
     }
@@ -59,11 +79,15 @@ function mockBackend() { // 로컬 시험용: data/import_data.json을 읽어 �
   let store = {}; const KEY = DEMO ? 'cbcs-demo-store' : 'cbcs-mock-store'; const SKEY = DEMO ? 'cbcs-demo-session' : 'cbcs-mock-session';
   try { store = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) {}
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(store)); } catch (e) {} };
-  let session = null; try { session = localStorage.getItem(SKEY); } catch (e) {}
+  let session = null, mockList = []; try { session = localStorage.getItem(SKEY); mockList = JSON.parse(localStorage.getItem(SKEY + 's') || '[]'); } catch (e) {}
   const seeded = (async () => { if (Object.keys(store).length) return; try { let payload; if (DEMO) payload = (await import('./demo-data.js')).default; else { const r = await fetch('data/import_data.json'); if (!r.ok) return; payload = await r.json(); } payloadToItems(payload, { students: 1, reports: 1, money: 1, plan: 1, sch: 1, arch: 1 }).forEach(it => { store[it.path] = it.data; }); save(); } catch (e) { console.warn('mock seed 실패', e); } })();
   return {
-    async login(d) { await seeded; session = d; try { localStorage.setItem(SKEY, d); } catch (e) {} return d; },
-    async logout() { session = null; try { localStorage.removeItem(SKEY); } catch (e) {} },
+    async login(d) { await seeded; session = d; mockList = [...new Set([...mockList, d])]; try { localStorage.setItem(SKEY, d); localStorage.setItem(SKEY + 's', JSON.stringify(mockList)); } catch (e) {} return d; },
+    sessions() { return session ? [...new Set([...mockList, session])] : []; },
+    current() { return session; },
+    switchTo(d) { if (!this.sessions().includes(d)) return false; session = d; try { localStorage.setItem(SKEY, d); } catch (e) {} return true; },
+    async logoutOne(d) { mockList = mockList.filter(x => x !== d); if (session === d) session = mockList[0] || null; try { localStorage.setItem(SKEY + 's', JSON.stringify(mockList)); if (session) localStorage.setItem(SKEY, session); else localStorage.removeItem(SKEY); } catch (e) {} return session; },
+    async logout() { session = null; mockList = []; try { localStorage.removeItem(SKEY); localStorage.removeItem(SKEY + 's'); } catch (e) {} },
     reset() { try { localStorage.removeItem(KEY); localStorage.removeItem(SKEY); } catch (e) {} },
     onSession(cb) { seeded.then(() => cb(session)); },
     async get(p) { return store[p] ? JSON.parse(JSON.stringify(store[p])) : null; },
@@ -177,7 +201,7 @@ async function render() {
   root.innerHTML = `<div class="app ${mob ? 'ro' : ''}">
     <aside class="side">
       <div class="brand">CBCS<small>중앙성서교회 교육부</small></div>
-      <div class="dept-chip"><b>${esc(isCommittee() ? '교육위원회' : DEPTS[S.dept])}${isCare() ? ' <span class="pill info">관리자 모드</span>' : ''}</b><button class="btn s" data-logout>나가기</button></div>
+      <div class="dept-chip"><button class="who" data-account title="로그인 정보 · 다른 부서로 옮기기"><b>${esc(acctName(S.user))}</b>${isCare() ? ' <span class="pill info">관리자 모드</span>' : ''}<span class="sw">${backend.sessions().length > 1 ? `⇄ ${backend.sessions().length}개 부서` : '부서 바꾸기 ▾'}</span></button><button class="btn s" data-logout>나가기</button></div>
       ${!isCommittee() && !mob ? (isCare() ? `<button class="btn s" id="admin-off" style="margin:0 0 8px">관리자 모드 끝내기</button>` : `<button class="btn s" id="admin-mode" style="margin:0 0 8px">🔒 관리자 모드</button>`) : ''}
       <nav class="nav">${nav.filter(n => n[0] === 'home').map(n => `<button data-nav="home" class="home ${S.view === 'home' ? 'on' : ''}"><span class="k">${n[2] || '⌂'}</span>${n[1]}</button>`).join('')}
       <div class="nav-sep"></div>
@@ -188,13 +212,14 @@ async function render() {
       ${FOOTER}
     </aside>
     <main class="main" id="main">${DEMO ? `<div class="demo-bar no-print"><b>체험 모드</b> · 모든 이름과 숫자는 가상입니다. 바꾼 내용은 이 브라우저에만 저장됩니다.<span style="flex:1"></span><button class="btn s" data-tour>튜토리얼</button><button class="btn s" data-demo-reset>체험 자료 초기화</button></div>` : ''}${body}<div class="main-foot">${FOOTER}</div></main>
-    <nav class="mobile-nav">${nav.map(n => `<button data-nav="${n[0]}" class="${navKeyOf(S.view) === n[0] ? 'on' : ''}">${n[1]}</button>`).join('')}<button data-logout>나가기</button></nav>
+    <nav class="mobile-nav">${nav.map(n => `<button data-nav="${n[0]}" class="${navKeyOf(S.view) === n[0] ? 'on' : ''}">${n[1]}</button>`).join('')}<button data-account>${esc(acctShort(S.user))} ⇄</button></nav>
   </div>`;
   const go = v => { const same = groupOfView(v) && groupOfView(v) === groupOfView(S.view); const keep = same && S.sub.dept ? { dept: S.sub.dept } : {}; S.view = v; S.sub = keep; S.navOpen = {}; render(); };
   root.querySelectorAll('[data-nav]').forEach(b => b.onclick = () => go(b.dataset.nav));
   root.querySelectorAll('[data-navgroup]').forEach(b => b.onclick = () => { const g = NAV_GROUPS().find(x => x.id === b.dataset.navgroup); const inside = g.items.some(t => t[0] === S.view); const open = S.navOpen[g.id] ?? inside; if (!open && !inside) go(g.items[0][0]); else { S.navOpen = { [g.id]: !open }; render(); } });
   root.querySelectorAll('[data-doctab]').forEach(b => b.onclick = () => go(b.dataset.doctab));
-  root.querySelectorAll('[data-logout]').forEach(b => b.onclick = async () => { await backend.logout(); S.user = null; S.dept = null; S.careKey = null; S.careDept = null; S.data = {}; S.committee = null; render(); });
+  root.querySelectorAll('[data-logout]').forEach(b => b.onclick = async () => { const others = backend.sessions().filter(d => d !== S.user); if (others.length) { accountDialog(); return; } await backend.logout(); enterAccount(null); });
+  root.querySelectorAll('[data-account]').forEach(b => b.onclick = () => accountDialog());
   const am = $('#admin-mode'); if (am) am.onclick = () => adminModeDialog(D());
   const ao = $('#admin-off'); if (ao) ao.onclick = () => { S.careKey = null; S.careDept = null; if (D()) D().care = []; if (S.view === 'care') S.view = 'roster'; render(); toast('관리자 모드를 끝냈습니다'); };
   const rf = root.querySelector('[data-refresh]'); if (rf) rf.onclick = async () => { S.data = {}; S.committee = null; toast('다시 불러오는 중…'); await render(); toast('새로고침 완료'); };
@@ -210,6 +235,30 @@ function startTour() { if (!DEMO) { window.open(location.pathname + '?demo=1&tou
 matchMedia('(max-width:760px)').addEventListener('change', () => { if (S.user) render(); });
 
 /* ───────────── 로그인 ───────────── */
+const acctName = d => d === 'committee' ? '교육위원회' : DEPTS[d] || '';
+const acctShort = d => d === 'committee' ? '위원회' : (DEPTS[d] || '').replace('부', '') || '';
+function enterAccount(d, view) {
+  Object.assign(S, { user: d || null, dept: d && d !== 'committee' ? d : null, careKey: null, careDept: null, data: {}, committee: null, scholarship: null, archive: null, view: view || 'home', sub: {}, navOpen: {} });
+  render();
+}
+// 로그인 정보: 이 기기에 로그인해 둔 부서 사이를 비밀번호 없이 오가고, 다른 부서는 그 부서 비밀번호로 더한다(권한이 있는 사람만 비밀번호를 앎)
+function accountDialog() {
+  const on = backend.sessions(); const all = [...Object.keys(DEPTS), 'committee'];
+  openModal(`<h2>로그인 정보<button class="btn s" id="modal-close">닫기</button></h2>
+    <p class="note">지금: <b>${esc(acctName(S.user))}</b>. 두 부서 이상을 맡은 분(예: 초등부 교사이면서 교육위원회 임원)은 그 부서 비밀번호로 한 번 더 로그인해 두면, 다음부터는 여기서 바로 옮겨 갈 수 있습니다.</p>
+    <div class="acct-list">${all.map(d => { const me = d === S.user, has = on.includes(d); return `<div class="acct ${me ? 'me' : ''}"><div><b>${esc(acctName(d))}</b> <span class="note">${me ? '지금 보는 중' : has ? '로그인되어 있음' : ''}</span></div><div class="row" style="gap:6px">${me ? (on.length > 1 ? `<button class="btn s" data-acct-out="${d}">이 부서에서 나가기</button>` : '') : has ? `<button class="btn s p" data-acct-go="${d}">이 부서로 옮기기</button><button class="btn s" data-acct-out="${d}">나가기</button>` : `<button class="btn s" data-acct-add="${d}">비밀번호로 추가</button>`}</div></div>`; }).join('')}</div>
+    <div id="acct-pw" class="stack" hidden style="margin-top:10px"><label class="f"><span id="acct-pw-l">비밀번호</span><input type="password" id="acct-pw-in" autocomplete="current-password"></label><div id="acct-err" class="note" style="color:var(--bad)" hidden></div><div class="row"><button class="btn p" id="acct-pw-go">로그인하고 옮기기</button></div></div>
+    <div class="row" style="margin-top:14px;justify-content:space-between"><span class="note">공용 컴퓨터에서는 다 쓰고 "모두 나가기"를 눌러 주세요.</span><button class="btn d" id="acct-all-out">모두 나가기</button></div>`);
+  document.querySelectorAll('[data-acct-go]').forEach(b => b.onclick = () => { if (backend.switchTo(b.dataset.acctGo)) { closeModal(); enterAccount(b.dataset.acctGo); toast(`${acctName(b.dataset.acctGo)}(으)로 옮겼습니다`); } else toast('로그인이 끝났습니다. 비밀번호로 다시 추가해 주세요'); });
+  document.querySelectorAll('[data-acct-out]').forEach(b => b.onclick = async () => { const d = b.dataset.acctOut; const next = await backend.logoutOne(d); closeModal(); if (d === S.user) enterAccount(next); else accountDialog(); toast(`${acctName(d)}에서 나갔습니다`); });
+  let target = null;
+  document.querySelectorAll('[data-acct-add]').forEach(b => b.onclick = () => { target = b.dataset.acctAdd; $('#acct-pw').hidden = false; $('#acct-pw-l').textContent = `${acctName(target)} 비밀번호`; $('#acct-err').hidden = true; $('#acct-pw-in').value = ''; $('#acct-pw-in').focus(); });
+  const add = async () => { if (!target) return; const btn = $('#acct-pw-go'); btn.disabled = true; btn.textContent = '확인 중…';
+    try { await backend.login(target, $('#acct-pw-in').value); closeModal(); enterAccount(target); toast(`${acctName(target)}(으)로 옮겼습니다`); }
+    catch (e) { const el = $('#acct-err'); el.hidden = false; el.textContent = /password|credential|user-not-found|invalid/i.test(e.code || e.message) ? '비밀번호가 맞지 않습니다. 이 부서 권한이 있는 분만 추가할 수 있습니다.' : '로그인 실패: ' + (e.code || e.message); btn.disabled = false; btn.textContent = '로그인하고 옮기기'; } };
+  $('#acct-pw-go').onclick = add; $('#acct-pw-in').onkeydown = e => { if (e.key === 'Enter') add(); };
+  $('#acct-all-out').onclick = async () => { await backend.logout(); closeModal(); enterAccount(null); };
+}
 function loginView() {
   return `<div class="login"><div class="box">
     <div class="brand">CBCS</div><p>중앙성서교회 교육부 보고서·출결·회계</p>
@@ -1896,14 +1945,17 @@ BIND.care = () => {
 };
 // 과거 자료(young_history.json) 가져오기 — 교회생활·임원 이력·수련회는 청년부 자료로, 명부(care)는 심방 카드로
 function importYoungHistory(dd) {
-  openModal(`<h2>청년부 과거 자료 가져오기<button class="btn s" id="modal-close">닫기</button></h2><p class="note">tools/young_history.py로 만든 <b>young_history.json</b>을 올립니다. 임원 이력·교회생활·수련회는 청년부 자료에, 명부(직장·가족·상담내용)는 심방 카드에 들어갑니다. 같은 id는 덮어쓰고, 파일의 removeOfficers에 적힌 임원 이력은 지웁니다.</p><input type="file" id="yh-file" accept=".json,application/json"><pre class="progress" id="yh-log" style="margin-top:10px"></pre>`);
-  $('#yh-file').onchange = async e => {
-    const f = e.target.files[0]; if (!f) return; const log = m => { $('#yh-log').textContent += m + '\n'; };
+  openModal(`<h2>청년부 과거 자료 가져오기<button class="btn s" id="modal-close">닫기</button></h2><p class="note">tools/young_history.py로 만든 <b>young_history.json</b>을 올립니다. 임원 이력·교회생활·수련회는 청년부 자료에, 명부(직장·가족·상담내용)는 심방 카드에 들어갑니다. 같은 id는 덮어쓰고, 파일의 removeOfficers에 적힌 임원 이력은 지웁니다.</p><div class="row" style="margin-top:6px"><input type="file" id="yh-file" accept=".json,application/json"><button class="btn p" id="yh-go" disabled>가져오기 시작</button></div><pre class="progress" id="yh-log" style="margin-top:10px"></pre>`);
+  let picked = null; const go = $('#yh-go');
+  $('#yh-file').onchange = e => { picked = e.target.files[0] || null; go.disabled = !picked; $('#yh-log').textContent = picked ? `${picked.name} (${Math.round(picked.size / 1024).toLocaleString()}KB) — "가져오기 시작"을 누르면 올립니다.\n` : ''; };
+  go.onclick = async () => {
+    const f = picked; if (!f) return; go.disabled = true; go.textContent = '가져오는 중…'; const log = m => { $('#yh-log').textContent += m + '\n'; };
     try { const d = JSON.parse(await f.text()); const items = await youngHistoryItems(d, dd, true); log(`임원 ${(d.officers || []).length} · 교회생활 ${(d.timeline || []).length} · 수련회 ${(d.retreats || []).length} · 명부 ${(d.care || []).length} → 문서 ${items.length}개`);
       await backend.batchSet(items, (a, b) => { $('#yh-log').textContent = $('#yh-log').textContent.replace(/\n진행.*$/, '') + `\n진행 ${a}/${b}`; });
       const rm = d.removeOfficers || []; for (const id of rm) await backend.del(`depts/${dd.id}/officers/${id}`); if (rm.length) log(`예전 자료에서 잘못 들어간 임원 이력 ${rm.length}건 삭제`);
       log('완료. 새로고침하면 반영됩니다.'); (d._review || []).forEach(r => log('※ ' + r)); S.data = {}; }
-    catch (err) { log('실패: ' + (err.code || err.message)); }
+    catch (err) { log('실패: ' + (err.code || err.message)); go.disabled = false; }
+    go.textContent = '가져오기 시작';
   };
 }
 async function youngHistoryItems(d, dd, withCare) {
@@ -2381,9 +2433,11 @@ function yearRoster(dd, yr, grp, yearBar) {
 
 // 과거 출석부 엑셀 변환 파일(young_attendance.json) 가져오기 — 기존 학생과 이름·생일로 합치고, 주일 보고서에 출석을 채운다
 function importYoungAttendance(dd) {
-  openModal(`<h2>과거 출석부 가져오기<button class="btn s" id="modal-close">닫기</button></h2><p class="note">young_attendance.py로 만든 <b>young_attendance.json</b>(2021~2024 출석부·주일보고서 엑셀)을 올립니다. 같은 이름·생일의 학생은 소속 이력만 보태고, 없는 학생은 "제적·졸업" 상태로 새로 넣습니다. 그 날 보고서가 이미 있으면 출석 칸만 채웁니다.</p><input type="file" id="ya-file" accept=".json,application/json"><pre class="progress" id="ya-log" style="margin-top:10px"></pre>`);
-  $('#ya-file').onchange = async e => {
-    const f = e.target.files[0]; if (!f) return; const log = m => { $('#ya-log').textContent += m + '\n'; };
+  openModal(`<h2>과거 출석부 가져오기<button class="btn s" id="modal-close">닫기</button></h2><p class="note">young_attendance.py로 만든 <b>young_attendance.json</b>(2021~2024 출석부·주일보고서 엑셀)을 올립니다. 같은 이름·생일의 학생은 소속 이력만 보태고, 없는 학생은 "제적·졸업" 상태로 새로 넣습니다. 그 날 보고서가 이미 있으면 출석 칸만 채웁니다.</p><div class="row" style="margin-top:6px"><input type="file" id="ya-file" accept=".json,application/json"><button class="btn p" id="ya-go" disabled>가져오기 시작</button></div><pre class="progress" id="ya-log" style="margin-top:10px"></pre>`);
+  let picked = null; const go = $('#ya-go');
+  $('#ya-file').onchange = e => { picked = e.target.files[0] || null; go.disabled = !picked; $('#ya-log').textContent = picked ? `${picked.name} (${Math.round(picked.size / 1024).toLocaleString()}KB) — "가져오기 시작"을 누르면 올립니다.\n` : ''; };
+  go.onclick = async () => {
+    const f = picked; if (!f) return; go.disabled = true; go.textContent = '가져오는 중…'; const log = m => { $('#ya-log').textContent += m + '\n'; };
     try {
       const d = JSON.parse(await f.text()); const items = []; let newS = 0, mergedS = 0, newR = 0, mergedR = 0;
       const md = b => (b || '').slice(5); const byKey = {};
@@ -2421,7 +2475,8 @@ function importYoungAttendance(dd) {
       log(`학생: 기존과 합침 ${mergedS}명 · 새로 추가 ${newS}명 (제적·졸업 상태) · 보고서: 새로 ${newR}장 · 출석만 채움 ${mergedR}장 · 임원 이력 ${(d.officers || []).length}건 → 문서 ${items.length}개 올립니다…`);
       await backend.batchSet(items, (a, b) => { $('#ya-log').textContent = $('#ya-log').textContent.replace(/\n진행.*$/, '') + `\n진행 ${a}/${b}`; });
       log('완료. 출석부의 연도 버튼(2021~2024)과 총회 자료의 직전 1년 띠에 반영됩니다.'); (d._review || []).forEach(x => log('※ ' + x)); S.data = {};
-    } catch (err) { console.error(err); log('실패: ' + (err.code || err.message)); }
+    } catch (err) { console.error(err); log('실패: ' + (err.code || err.message)); go.disabled = false; }
+    go.textContent = '가져오기 시작';
   };
 }
 
