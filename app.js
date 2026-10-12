@@ -1038,12 +1038,12 @@ function planBanner(dd, plan, compact) {
 
 /* ───────────── 청년부 회칙·총회 ───────────── */
 // 판정 기준값: 회칙 판마다 저장(params). 개정안이 통과되어 "현행"으로 지정되면 그 판의 값으로 자동 판정
-const RULE_2025 = { ageMin: 19, ageMax: 39, voterMonths: 6, voterRate: 60, absentYears: 1, presAgeMax: 33, presYears: 3, vpYears: 2, apptYears: 1, presBaptized: false, vpBaptized: false, apptBaptized: true, quorumWeeks: 5, quorumNum: 2, quorumDen: 3 };
+const RULE_2025 = { ageMin: 19, ageMax: 39, voterMonths: 6, voterRate: 60, absentYears: 1, presAgeMax: 33, presYears: 3, vpYears: 2, apptYears: 1, presBaptized: false, vpBaptized: false, apptBaptized: true, quorumWeeks: 5, quorumNum: 2, quorumDen: 3, sameRoleMax: 2, chairTeamMax: 0 }; // sameRoleMax: 같은 직위 연속 최대 연수(9조: 임기 1년 + 1년 연임) · chairTeamMax: 회장단(회장·부회장) 연속 최대 연수(0=제한 없음)
 const BYLAW_SEED = [
   { id: '2025-24', title: '중앙성서교회 청년부 회칙', revision: '24차 수정', date: '2025-12-28', status: 'current', text: '', params: RULE_2025,
-    summary: [{ no: '4조', title: '회원', body: '만 19~39세 미혼, 직분자 제외, 타 목장 소속 제외' }, { no: '5조', title: '선거권', body: '새가족반 수료 후 6개월 이상 출석, 1년 내 출석률 60% 이상' }, { no: '6조', title: '제명', body: '1년 이상 결석 제명 대상, 3년 이상 결석 제명 (유학·군복무·온라인 출석 제외)' }, { no: '9조', title: '임기', body: '1년, 1년 연임 가능 (연임 뒤 직위를 바꾸면 더 가능)' }, { no: '10조', title: '겸임', body: '회장·부회장은 타 부서 활동 겸임 불가 (교역자와 상의해 예외)' }, { no: '11조', title: '자격', body: '회장: 만 33세 이하, 제명 없이 3년 이상 출석 / 부회장: 2년 이상 / 임명직: 본 교회 1년 이상 출석한 세례교인' }, { no: '13조', title: '정족수', body: '직전 5주 평균 출석의 2/3' }, { no: '14조', title: '선출', body: '정·부회장은 총회 무기명 비밀투표 과반수' }],
+    summary: [{ no: '4조', title: '회원', body: '만 19~39세 미혼, 직분자 제외, 타 목장 소속 제외' }, { no: '5조', title: '선거권', body: '새가족반 수료 후 6개월 이상 출석, 1년 내 출석률 60% 이상' }, { no: '6조', title: '제명', body: '1년 이상 결석 제명 대상, 3년 이상 결석 제명 (유학·군복무·온라인 출석 제외)' }, { no: '9조', title: '임기', body: '1년, 1년 연임 가능 (연임 뒤 직위를 바꾸면 더 가능) — 임원 이력으로 자동 판정' }, { no: '10조', title: '겸임', body: '회장·부회장은 타 부서 활동 겸임 불가 (교역자와 상의해 예외)' }, { no: '11조', title: '자격', body: '회장: 만 33세 이하, 제명 없이 3년 이상 출석 / 부회장: 2년 이상 / 임명직: 본 교회 1년 이상 출석한 세례교인' }, { no: '13조', title: '정족수', body: '직전 5주 평균 출석의 2/3' }, { no: '14조', title: '선출', body: '정·부회장은 총회 무기명 비밀투표 과반수' }],
     notes: '본문은 회칙 원본(HWP)에서 옮겨 넣으면 이 화면에 그대로 보입니다.' },
-  { id: '2026-draft', title: '중앙성서교회 청년부 회칙 개정안', revision: '2026 개정안(0814 수정)', date: '2026-08-14', status: 'draft', text: '', params: { ...RULE_2025, presAgeMax: 0, presBaptized: true, vpBaptized: true },
+  { id: '2026-draft', title: '중앙성서교회 청년부 회칙 개정안', revision: '2026 개정안(0814 수정)', date: '2026-08-14', status: 'draft', text: '', params: { ...RULE_2025, presAgeMax: 0, presBaptized: true, vpBaptized: true, chairTeamMax: 3 },
     summary: [{ no: '11조', title: '자격', body: '회장 나이 제한 삭제, 회장·부회장도 세례교인 요건' }, { no: '9조', title: '임기', body: '동일 직위 1회 연임 + 회장단 연속 3년 제한' }, { no: '10조', title: '겸임', body: '겸임 금지 직책 구체화(교사·찬양팀 임원·성가대 임원·방송 책임자)' }, { no: '4조', title: '회원', body: '결혼 시 그 분기까지 회원' }, { no: '6조', title: '자격 정리', body: '회원 자격 정리 1년 기준' }],
     notes: '총회 통과 전 — 판정에는 쓰지 않습니다. 통과되면 "현행으로 지정"을 누르세요.' }];
 const ASSEMBLY_POS = ['회장', '부회장', '총무', '회계', '서기'];
@@ -1104,8 +1104,16 @@ function judge(dd, s, base, R) {
   }
   // 11조 후보 자격
   const by = (years, need, ageMax, bap) => { if (member === 'no' || s.expelled) return 'no'; if (ageMax && age !== null && age > ageMax) return 'no'; if (bap && s.faith && !isBaptized(s)) return 'no'; if (years !== null && years < need) return 'no'; if ((ageMax && age === null) || (bap && !s.faith) || years === null || member === 'check') return 'check'; return 'ok'; };
-  const pres = by(yYears, R.presYears, R.presAgeMax, R.presBaptized), vp = by(yYears, R.vpYears, 0, R.vpBaptized), appt = by(cYears, R.apptYears, 0, R.apptBaptized);
-  return { s, age, rate, cnt, of: yearReps.length, ys, cs, yYears, cYears, member, voter, pres, vp, appt, why, est: !!(ys && ys.est) };
+  let pres = by(yYears, R.presYears, R.presAgeMax, R.presBaptized), vp = by(yYears, R.vpYears, 0, R.vpBaptized); const appt = by(cYears, R.apptYears, 0, R.apptBaptized);
+  // 9조 연임 제한: 임원 이력(과거 자료 + 올해 임원 명단)에서 선거 연도까지 같은 직위를 연속 몇 해 맡았는지 센다
+  const offs = officersOf(dd, s); const baseYear = +base.slice(0, 4);
+  const streak = roles => { let n = 0; for (let y = baseYear; offs.some(o => o.year === y && roles.includes(o.role)); y--) n++; return n; };
+  const pr = streak(['회장']), vr = streak(['부회장']), tr = streak(['회장', '부회장']);
+  if (R.sameRoleMax && pr >= R.sameRoleMax && pres !== 'no') { pres = 'no'; why.push(`회장 ${pr}년 연임(9조)`); }
+  if (R.sameRoleMax && vr >= R.sameRoleMax && vp !== 'no') { vp = 'no'; why.push(`부회장 ${vr}년 연임(9조)`); }
+  if (R.chairTeamMax && tr >= R.chairTeamMax) { if (pres !== 'no') { pres = 'no'; why.push(`회장단 ${tr}년 연속(9조)`); } if (vp !== 'no') { vp = 'no'; why.push(`회장단 ${tr}년 연속(9조)`); } }
+  if (offs.length) why.push('임원 이력: ' + offs.map(o => `${o.year} ${o.role}`).join(' · '));
+  return { s, age, rate, cnt, of: yearReps.length, ys, cs, yYears, cYears, member, voter, pres, vp, appt, why, est: !!(ys && ys.est), offs };
 }
 const JP = { ok: ['ok', '해당'], no: ['mute', '아님'], check: ['warn', '확인'] };
 const jpill = v => `<span class="pill ${JP[v][0]}">${JP[v][1]}</span>`;
@@ -1148,7 +1156,7 @@ VIEWS.bylaws = async () => {
         ${edit ? '<div class="row" style="margin-top:10px"><button class="btn s" id="bl-add">새 개정안 추가</button></div>' : ''}</div>
       <div class="card"><h2>${b.status === 'current' ? '앱이 판정하는 조문' : '현행과 달라지는 점'}</h2><div class="tw"><table><tbody>${(b.summary || []).map(x => Array.isArray(x) ? x : [x.no, x.title, x.body]).map(([n, t, d]) => `<tr><th style="white-space:nowrap">${esc(n)}</th><td><b>${esc(t)}</b> <span class="note">${esc(d)}</span></td></tr>`).join('')}</tbody></table></div></div>
       <div class="card"><h2>판정 기준값 <span class="r">${edit ? '개정되면 여기 숫자만 고치면 됩니다' : ''}</span></h2><div class="fields" style="grid-template-columns:1fr 1fr">
-        ${[['ageMin', '회원 최소 나이'], ['ageMax', '회원 최대 나이'], ['voterMonths', '선거권: 수료 후 개월'], ['voterRate', '선거권: 1년 출석률(%)'], ['presAgeMax', '회장 최대 나이 (0=제한 없음)'], ['presYears', '회장 출석 연수'], ['vpYears', '부회장 출석 연수'], ['apptYears', '임명직 출석 연수'], ['quorumWeeks', '정족수: 직전 몇 주']].map(([k, l]) => `<label class="f"><span>${l}</span><input type="number" data-rp="${k}" value="${R[k] ?? ''}" ${edit ? '' : 'readonly'}></label>`).join('')}
+        ${[['ageMin', '회원 최소 나이'], ['ageMax', '회원 최대 나이'], ['voterMonths', '선거권: 수료 후 개월'], ['voterRate', '선거권: 1년 출석률(%)'], ['presAgeMax', '회장 최대 나이 (0=제한 없음)'], ['presYears', '회장 출석 연수'], ['vpYears', '부회장 출석 연수'], ['apptYears', '임명직 출석 연수'], ['sameRoleMax', '같은 직위 연속 최대 연수 (9조)'], ['chairTeamMax', '회장단 연속 최대 연수 (0=제한 없음)'], ['quorumWeeks', '정족수: 직전 몇 주']].map(([k, l]) => `<label class="f"><span>${l}</span><input type="number" data-rp="${k}" value="${R[k] ?? ''}" ${edit ? '' : 'readonly'}></label>`).join('')}
         <label class="f"><span>정족수 비율</span><div class="row" style="gap:4px"><input type="number" data-rp="quorumNum" value="${R.quorumNum}" style="width:60px" ${edit ? '' : 'readonly'}>/<input type="number" data-rp="quorumDen" value="${R.quorumDen}" style="width:60px" ${edit ? '' : 'readonly'}></div></label>
         ${[['presBaptized', '회장 세례교인'], ['vpBaptized', '부회장 세례교인'], ['apptBaptized', '임명직 세례교인']].map(([k, l]) => `<label class="f"><span>${l}</span><select data-rp="${k}" ${edit ? '' : 'disabled'}><option value="0" ${R[k] ? '' : 'selected'}>요건 아님</option><option value="1" ${R[k] ? 'selected' : ''}>요건</option></select></label>`).join('')}
       </div>${edit ? '<div class="row" style="margin-top:8px"><button class="btn s" id="rp-save">기준값 저장</button></div>' : ''}</div>
@@ -1203,7 +1211,7 @@ VIEWS.assembly = async () => {
     </div>
     <div class="card"><h2>후보 자격자 <span class="r">회칙 11조 · 이름을 누르면 판정 정보를 고칠 수 있습니다</span></h2><div class="grid2" style="grid-template-columns:repeat(3,1fr)">
       ${col('pres', `회장 <span class="note">(${R.presAgeMax ? `만 ${R.presAgeMax}세 이하, ` : ''}${R.presYears}년 이상${R.presBaptized ? ', 세례교인' : ''})</span>`)}${col('vp', `부회장 <span class="note">(${R.vpYears}년 이상${R.vpBaptized ? ', 세례교인' : ''})</span>`)}${col('appt', `임명직 <span class="note">(본 교회 ${R.apptYears}년, 세례교인)</span>`)}</div>
-      <div class="note" style="margin-top:8px">9조(연임)·10조(겸임)는 자동 판정하지 않습니다. 후보로 올리기 전에 직접 확인하세요.</div></div>
+      <div class="note" style="margin-top:8px">9조(연임)는 임원 이력으로 자동 판정합니다(이력이 비어 있으면 못 거릅니다). 10조(겸임)는 자동 판정하지 않으니 후보로 올리기 전에 직접 확인하세요.</div></div>
     <div class="card"><h2>후보자 명단 <span class="r">총회에 올릴 후보 · 회의록의 선거 결과로 이어집니다</span></h2>
       <div class="tw"><table><thead><tr><th>직위</th><th>이름</th><th>자격</th><th>비고</th>${edit ? '<th></th>' : ''}</tr></thead><tbody>${(a.candidates || []).map((c, i) => { const j = J.list.find(x => x.s.id === c.sid); const k = c.pos === '회장' ? 'pres' : c.pos === '부회장' ? 'vp' : 'appt'; return `<tr><td>${esc(c.pos)}</td><td>${esc(c.name)}</td><td>${j ? jpill(j[k]) : ''}</td><td>${esc(c.note || '')}</td>${edit ? `<td><button class="btn s d" data-del-cand="${i}">빼기</button></td>` : ''}</tr>`; }).join('') || `<tr><td colspan="5" class="note">아직 후보가 없습니다.</td></tr>`}</tbody></table></div>
       ${edit ? `<div class="row" style="margin-top:10px"><select id="cd-pos" style="width:auto">${ASSEMBLY_POS.map(p => `<option>${p}</option>`).join('')}</select><select id="cd-sid" style="flex:1">${J.list.filter(j => j.member !== 'no').map(j => `<option value="${j.s.id}">${esc(j.s.name)}</option>`).join('')}</select><input type="text" id="cd-note" placeholder="비고 (추천인 등)" style="flex:1"><button class="btn" id="cd-add">후보 추가</button></div>` : ''}</div>
