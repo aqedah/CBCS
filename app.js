@@ -127,11 +127,15 @@ const phoneLabel = s => s.phone ? `${s.phone} (본인)` : s.guardianPhone ? `${s
 const isUnited = r => !!(r.united || /세대통합/.test(r.type || ''));
 
 /* ───────────── 화면 뼈대 ───────────── */
-const NAV_PC = [['home','메인','⌂'],['weekly','주일 보고서','✎'],['roster','출석부','☰'],['ledger','회계','₩'],['assets','물품대장','▢'],['monthly','월간 보고서','▤'],['plan','연간계획서','▦'],['stats','출석 통계','↗'],['archive','보관함','▣'],['tutorial','사용 안내','?']];
+const NAV_PC = [['home','메인','⌂'],['weekly','보고서','✎'],['roster','출석부','☰'],['ledger','회계','₩'],['assets','물품대장','▢'],['stats','출석 통계','↗'],['archive','보관함','▣'],['tutorial','사용 안내','?']];
 const NAV_MOBILE = [['home','메인'],['attend','출석 체크'],['reports','보고서'],['members','멤버'],['stats','통계'],['tutorial','안내']];
-const NAV_COMMITTEE = [['home','메인','⌂'],['monthly','월간 보고서','▤'],['assets','물품대장 열람','▢'],['plan','연간계획서 열람','▦'],['reports','보고서 열람','✎'],['roster','출석부 열람','☰'],['scholarship','장학','★'],['archive','보관함','▣'],['import','데이터 가져오기','⇪'],['tutorial','사용 안내','?']];
-const NAV_COMMITTEE_MOBILE = [['home','메인'],['reports','보고서'],['monthly','월간'],['scholarship','장학'],['tutorial','안내']];
+const NAV_COMMITTEE = [['home','메인','⌂'],['reports','보고서 열람','✎'],['assets','물품대장 열람','▢'],['roster','출석부 열람','☰'],['scholarship','장학','★'],['archive','보관함','▣'],['import','데이터 가져오기','⇪'],['tutorial','사용 안내','?']];
+const NAV_COMMITTEE_MOBILE = [['home','메인'],['reports','보고서'],['scholarship','장학'],['tutorial','안내']];
 const VIEWS = {}, BIND = {};
+// 보고서 묶음: 주일 · 월간 · 연간계획서를 한 메뉴 안의 탭으로
+const DOC_TABS = () => [[isCommittee() || isMobile() ? 'reports' : 'weekly', '주일 보고서'], ['monthly', '월간 보고서'], ['plan', '연간계획서']];
+const navKeyOf = v => DOC_TABS().some(t => t[0] === v) ? DOC_TABS()[0][0] : v;
+const docTabBar = () => `<div class="doc-tabs no-print">${DOC_TABS().map(([k, l]) => `<button data-doctab="${k}" class="${S.view === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
 const FOOTER = `<footer class="foot"><p>🔒 모든 자료는 교육부 전용 서버(데이터베이스)에만 보관되며, 부서 비밀번호로 로그인한 사람만 볼 수 있습니다. 외부에 공개하거나 제공하지 않습니다.</p><p>제작자: 이삭 목사 · 중앙성서교회</p></footer>`;
 
 async function render() {
@@ -139,25 +143,26 @@ async function render() {
   if (!S.user) { root.innerHTML = loginView(); bindLogin(); return; }
   const mob = isMobile();
   const nav = isCommittee() ? (mob ? NAV_COMMITTEE_MOBILE : NAV_COMMITTEE) : (mob ? NAV_MOBILE : NAV_PC);
-  if (!nav.some(n => n[0] === S.view)) S.view = 'home';
+  if (!nav.some(n => n[0] === navKeyOf(S.view))) S.view = 'home';
   let body = '';
-  try { await loadCommittee(); if (S.dept) await loadDept(S.dept); body = await (VIEWS[S.view] ? VIEWS[S.view]() : ''); } catch (e) { console.error(e); body = `<div class="hint">화면을 그리는 중 문제가 생겼습니다: ${esc(e.message)}</div>`; }
+  try { await loadCommittee(); if (S.dept) await loadDept(S.dept); body = await (VIEWS[S.view] ? VIEWS[S.view]() : ''); if (DOC_TABS().some(t => t[0] === S.view)) body = docTabBar() + body; } catch (e) { console.error(e); body = `<div class="hint">화면을 그리는 중 문제가 생겼습니다: ${esc(e.message)}</div>`; }
   root.innerHTML = `<div class="app ${mob ? 'ro' : ''}">
     <aside class="side">
       <div class="brand">CBCS<small>중앙성서교회 교육부</small></div>
       <div class="dept-chip"><b>${esc(isCommittee() ? '교육위원회' : DEPTS[S.dept])}</b><button class="btn s" data-logout>나가기</button></div>
       <nav class="nav">${nav.filter(n => n[0] === 'home').map(n => `<button data-nav="home" class="home ${S.view === 'home' ? 'on' : ''}"><span class="k">${n[2] || '⌂'}</span>${n[1]}</button>`).join('')}
       <div class="nav-sep"></div>
-      ${nav.filter(n => n[0] !== 'home' && n[0] !== 'import').map(n => `<button data-nav="${n[0]}" class="${S.view === n[0] ? 'on' : ''}"><span class="k">${n[2] || ''}</span>${n[1]}</button>`).join('')}
+      ${nav.filter(n => n[0] !== 'home' && n[0] !== 'import').map(n => `<button data-nav="${n[0]}" class="${navKeyOf(S.view) === n[0] ? 'on' : ''}"><span class="k">${n[2] || ''}</span>${n[1]}</button>`).join('')}
       <div class="nav-bottom"><div class="sec">${MOCK ? '시험 모드 (로컬)' : 'CBCS · ' + YEAR}</div>
       ${nav.filter(n => n[0] === 'import').map(n => `<button data-nav="import" class="${S.view === 'import' ? 'on' : ''}"><span class="k">⇪</span>${n[1]}</button>`).join('')}
       <button data-refresh><span class="k">↻</span>새로고침</button></div></nav>
       ${FOOTER}
     </aside>
     <main class="main" id="main">${body}<div class="main-foot">${FOOTER}</div></main>
-    <nav class="mobile-nav">${nav.map(n => `<button data-nav="${n[0]}" class="${S.view === n[0] ? 'on' : ''}">${n[1]}</button>`).join('')}<button data-logout>나가기</button></nav>
+    <nav class="mobile-nav">${nav.map(n => `<button data-nav="${n[0]}" class="${navKeyOf(S.view) === n[0] ? 'on' : ''}">${n[1]}</button>`).join('')}<button data-logout>나가기</button></nav>
   </div>`;
   root.querySelectorAll('[data-nav]').forEach(b => b.onclick = () => { S.view = b.dataset.nav; S.sub = {}; render(); });
+  root.querySelectorAll('[data-doctab]').forEach(b => b.onclick = () => { const keep = S.sub.dept ? { dept: S.sub.dept } : {}; S.view = b.dataset.doctab; S.sub = keep; render(); });
   root.querySelectorAll('[data-logout]').forEach(b => b.onclick = async () => { await backend.logout(); S.user = null; S.dept = null; S.data = {}; S.committee = null; render(); });
   const rf = root.querySelector('[data-refresh]'); if (rf) rf.onclick = async () => { S.data = {}; S.committee = null; toast('다시 불러오는 중…'); await render(); toast('새로고침 완료'); };
   root.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { S.view = b.dataset.go; S.sub = b.dataset.sub ? JSON.parse(b.dataset.sub) : {}; render(); });
@@ -869,7 +874,7 @@ function planPaper(dd, plan) {
 }
 VIEWS.plan = async () => {
   let dd; if (isCommittee()) dd = await loadDept(S.sub.dept || 'kinder'); else dd = D();
-  const year = S.sub.year || YEAR + (new Date().getMonth() >= 9 && !isCommittee() ? 1 : 0);
+  const year = S.sub.year || YEAR;
   const plan = (await loadPlan(dd, year)) || blankPlan(dd, year);
   if (S.sub.print) return `<div class="topbar no-print"><div><h1>연간계획서 출력</h1></div><div class="row"><button class="btn" id="pl-back">돌아가기</button><button class="btn p" id="pl-print">PDF로 저장 / 인쇄</button></div></div>${planPaper(dd, plan)}`;
   const edit = canEdit() && !isCommittee() && plan.status !== 'confirmed';
@@ -911,7 +916,7 @@ function collectPlan(plan) {
 }
 BIND.plan = () => {
   const dd = isCommittee() ? S.data[S.sub.dept || 'kinder'] : D();
-  const year = S.sub.year || YEAR + (new Date().getMonth() >= 9 && !isCommittee() ? 1 : 0);
+  const year = S.sub.year || YEAR;
   const plan = dd.plans[year] || blankPlan(dd, year); dd.plans[year] = plan;
   document.querySelectorAll('[data-dept]').forEach(b => b.onclick = () => { S.sub = { dept: b.dataset.dept, year: S.sub.year }; render(); });
   $('#pl-year').onchange = e => { collectPlan(plan); S.sub.year = +e.target.value; render(); };
