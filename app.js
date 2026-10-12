@@ -1177,6 +1177,7 @@ function judge(dd, s, base, R) {
   if (s.married) { member = 'no'; why.push('기혼'); }
   if (s.churchRole) { member = 'no'; why.push(`직분자(${s.churchRole})`); }
   if (s.otherCell) { member = 'no'; why.push('타 목장 소속'); }
+  const memberWhy = why.slice();
   // 5조 선거권
   let voter = member;
   const sinceNew = s.newcomerDone || (ys ? ys.date : '');
@@ -1188,24 +1189,31 @@ function judge(dd, s, base, R) {
     if (rate === null) { if (voter === 'ok') voter = 'check'; why.push('출석 기록 없음'); }
     else if (rate < R.voterRate) { voter = 'no'; why.push(`출석률 ${rate}%`); }
   }
-  // 11조 후보 자격
+  const voterWhy = why.slice();
+  // 11조 후보 자격 — 판정과 함께 그 칸의 사유도 모은다
+  const byR = (years, need, ageMax) => { const r = memberWhy.slice(); if (s.expelled) r.push(`제명 이력(${s.expelled})`); if (ageMax && age !== null && age > ageMax) r.push(`만 ${age}세 — ${ageMax}세 초과`); if (!s.faith) r.push('신급 모름'); else if (!isBaptized(s)) r.push(`세례교인 아님(${s.faith})`); if (years === null) r.push('출석 시작일 모름'); else if (years < need) r.push(`출석 ${Math.floor(years * 10) / 10}년 — ${need}년 미만`); return r; };
+  const rsn = { member: memberWhy, voter: voterWhy, pres: byR(yYears, R.presYears, R.presAgeMax), vp: byR(yYears, R.vpYears, 0), appt: byR(cYears, R.apptYears, 0) };
   const by = (years, need, ageMax, bap) => { if (member === 'no' || s.expelled) return 'no'; if (ageMax && age !== null && age > ageMax) return 'no'; if (bap && s.faith && !isBaptized(s)) return 'no'; if (years !== null && years < need) return 'no'; if ((ageMax && age === null) || (bap && !s.faith) || years === null || member === 'check') return 'check'; return 'ok'; };
-  let pres = by(yYears, R.presYears, R.presAgeMax, true), vp = by(yYears, R.vpYears, 0, true); const appt = by(cYears, R.apptYears, 0, true);
+  let pres = by(yYears, R.presYears, R.presAgeMax, true), vp = by(yYears, R.vpYears, 0, true); let appt = by(cYears, R.apptYears, 0, true);
+  // 피선거권은 결의권(선거권)이 있는 회원에게만 (5조 1·4항): 선거권이 '아님'이면 후보도 '아님', '확인'이면 후보도 '확인'
+  const gate = v => voter === 'no' ? 'no' : (voter === 'check' && v === 'ok') ? 'check' : v;
+  if (voter !== 'ok') { const extra = voterWhy.filter(w => !memberWhy.includes(w)); ['pres', 'vp', 'appt'].forEach(k => { extra.forEach(w => { if (!rsn[k].includes(w)) rsn[k].push(w); }); }); }
+  pres = gate(pres); vp = gate(vp); appt = gate(appt);
   // 9조 연임 제한: 임원 이력(과거 자료 + 올해 임원 명단)에서 선거 연도까지 같은 직위를 연속 몇 해 맡았는지 센다
   const offs = officersOf(dd, s); const baseYear = +base.slice(0, 4);
   const streak = roles => { let n = 0; for (let y = baseYear; offs.some(o => o.year === y && roles.includes(o.role)); y--) n++; return n; };
   const pr = streak(['회장']), vr = streak(['부회장']), tr = streak(['회장', '부회장']);
-  if (R.sameRoleMax && pr >= R.sameRoleMax && pres !== 'no') { pres = 'no'; why.push(`회장 ${pr}년 연임(9조)`); }
-  if (R.sameRoleMax && vr >= R.sameRoleMax && vp !== 'no') { vp = 'no'; why.push(`부회장 ${vr}년 연임(9조)`); }
-  if (R.chairTeamMax && tr >= R.chairTeamMax) { if (pres !== 'no') { pres = 'no'; why.push(`회장단 ${tr}년 연속(9조)`); } if (vp !== 'no') { vp = 'no'; why.push(`회장단 ${tr}년 연속(9조)`); } }
+  if (R.sameRoleMax && pr >= R.sameRoleMax && pres !== 'no') { pres = 'no'; why.push(`회장 ${pr}년 연임(9조)`); rsn.pres.push(`회장 ${pr}년 연임(9조)`); }
+  if (R.sameRoleMax && vr >= R.sameRoleMax && vp !== 'no') { vp = 'no'; why.push(`부회장 ${vr}년 연임(9조)`); rsn.vp.push(`부회장 ${vr}년 연임(9조)`); }
+  if (R.chairTeamMax && tr >= R.chairTeamMax) { if (pres !== 'no') { pres = 'no'; why.push(`회장단 ${tr}년 연속(9조)`); rsn.pres.push(`회장단 ${tr}년 연속(9조)`); } if (vp !== 'no') { vp = 'no'; why.push(`회장단 ${tr}년 연속(9조)`); rsn.vp.push(`회장단 ${tr}년 연속(9조)`); } }
   const offO = offs.filter(o => roleKind(o.role) === '임원'), offT = offs.filter(o => ['팀장', '팸장'].includes(roleKind(o.role)));
   if (offO.length) why.push('임원 이력: ' + offO.map(o => `${o.year} ${o.role}`).join(' · '));
   if (offT.length) why.push('팀장·팸장: ' + offT.map(o => `${o.year} ${o.role}`).join(' · '));
-  return { s, age, rate, cnt, of: yearReps.length, ys, cs, yYears, cYears, member, voter, pres, vp, appt, why, est: !!(ys && ys.est), offs };
+  return { s, age, rate, cnt, of: yearReps.length, ys, cs, yYears, cYears, member, voter, pres, vp, appt, why, rsn, est: !!(ys && ys.est), offs };
 }
 const JP = { ok: ['ok', '해당'], no: ['mute', '아님'], check: ['warn', '확인'] };
-const jpill = v => `<span class="pill ${JP[v][0]}">${JP[v][1]}</span>`;
-function applyOverride(a, j) { const o = (a.overrides || {})[j.s.id]; if (o && o.voter) j.voter = o.voter; if (o && o.note) j.why.push('보정: ' + o.note); return j; }
+const jpill = (v, reasons) => `<span class="pill ${JP[v][0]}">${JP[v][1]}</span>${v !== 'ok' && reasons && reasons.length ? `<div class="pwhy">${reasons.map(esc).join('<br>')}</div>` : ''}`;
+function applyOverride(a, j) { const o = (a.overrides || {})[j.s.id]; if (o && o.voter) { j.voter = o.voter; if (j.rsn) j.rsn.voter = ['보정: ' + (o.note || '총회에서 정정')]; } if (o && o.note) j.why.push('보정: ' + o.note); return j; }
 function assemblyJudge(dd, a) { const R = (currentBylaw(dd) || {}).params || RULE_2025; const list = dd.students.filter(s => s.status !== 'left').map(s => applyOverride(a, judge(dd, s, a.date, R))).sort((x, y) => x.s.name.localeCompare(y.s.name, 'ko')); return { R, list, q: quorumOf(dd, a.date, R) }; }
 function lastSundayOfYear(y) { const d = new Date(y, 11, 31); d.setDate(d.getDate() - d.getDay()); return iso(d); }
 function blankAssembly(date) { return { id: date, date, kind: '정기총회', title: `${+date.slice(0, 4)}년 청년부 정기총회`, place: '', overrides: {}, candidates: [], minutes: { opened: '', closed: '', presider: '', secretary: '', attendees: '', order: '개회 기도\n성원 보고\n전 회의록 낭독\n사업·회계 보고\n임원 선거\n기타 안건\n폐회', agenda: [], votes: [], notes: '', status: 'draft' }, unsaved: true }; }
@@ -1312,7 +1320,7 @@ VIEWS.assembly = async () => {
     <div class="card"><h2><span>판정표 <span class="row" style="display:inline-flex;gap:4px;margin-left:8px">${[['ok', '결의권자'], ['check', '확인 필요'], ['no', '해당 아님'], ['all', '전체']].map(([k, l]) => `<button class="btn s ${filter === k ? 'p' : ''}" data-vf="${k}">${l}</button>`).join('')}</span></span><span class="r">직전 1년 = ${esc(yrFrom)} ~ ${esc(a.date)} · 출석 체크된 주일 ${yrReps.length}주 · "(추정)"은 소속 이력·출석 기록으로 짐작한 날짜</span></h2>
       ${edit && unBapt.length ? `<div class="hint" style="margin-bottom:8px">신급이 세례·입교가 아닌 회원 ${unBapt.length}명 (${unBapt.map(x => esc(x.name)).join(', ')}). 신급 자료가 정리될 때까지 <button class="btn s" id="as-bapt-all">전원 "세례"로 임시 표기</button> — 나중에 신급 자료를 올리면 덮어씁니다.</div>` : ''}
       <div class="tw"><table class="judge"><thead><tr><th>이름</th><th>팸</th><th class="n">나이</th><th>청년부 출석 시작</th><th class="n">1년 출석</th><th class="ystrip-h"><div class="ystrip">${stripHead}</div></th><th>선거권</th><th>회장</th><th>부회장</th><th>임명직</th><th>사유</th>${edit ? '<th></th>' : ''}</tr></thead><tbody>
-      ${rows.map(j => `<tr><td>${esc(j.s.name)}</td><td class="note">${esc((classOf(dd, j.s) || {}).name || '')}</td><td class="n">${j.age ?? ''}</td><td>${j.ys ? esc(j.ys.date) + (j.ys.est ? ' <span class="note">(추정)</span>' : '') : ''}</td><td class="n">${j.rate === null ? '' : `${j.cnt}/${j.of} (${j.rate}%)`}</td><td><div class="ystrip">${strip(j)}</div></td><td>${jpill(j.voter)}</td><td>${jpill(j.pres)}</td><td>${jpill(j.vp)}</td><td>${jpill(j.appt)}</td><td class="why">${esc(j.why.join(', '))}</td>${edit ? `<td><button class="btn s" data-mi="${j.s.id}">정보</button></td>` : ''}</tr>`).join('') || '<tr><td colspan="12" class="note">해당자가 없습니다.</td></tr>'}
+      ${rows.map(j => `<tr><td>${esc(j.s.name)}</td><td class="note">${esc((classOf(dd, j.s) || {}).name || '')}</td><td class="n">${j.age ?? ''}</td><td>${j.ys ? esc(j.ys.date) + (j.ys.est ? ' <span class="note">(추정)</span>' : '') : ''}</td><td class="n">${j.rate === null ? '' : `${j.cnt}/${j.of} (${j.rate}%)`}</td><td><div class="ystrip">${strip(j)}</div></td><td>${jpill(j.voter, j.rsn.voter)}</td><td>${jpill(j.pres, j.rsn.pres)}</td><td>${jpill(j.vp, j.rsn.vp)}</td><td>${jpill(j.appt, j.rsn.appt)}</td><td class="why">${esc(j.why.filter(w => /^(임원 이력|팀장·팸장|보정)/.test(w)).join(', '))}</td>${edit ? `<td><button class="btn s" data-mi="${j.s.id}">정보</button></td>` : ''}</tr>`).join('') || '<tr><td colspan="12" class="note">해당자가 없습니다.</td></tr>'}
       </tbody></table></div></div>
   </div>`;
 };

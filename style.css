@@ -353,3 +353,6 @@ table.attlog .al-sum{font-weight:600}
 .ystrip .yw.p{background:var(--ok)}.ystrip .yw.o{background:var(--warn)}.ystrip .yw.x{background:var(--line-soft)}
 .ystrip .yw.ym{border-left:1px solid var(--line);width:8px}
 th.ystrip-h .ystrip .yw{background:none;height:12px}
+
+.pwhy{font-size:11px;color:var(--bad);line-height:1.35;margin-top:3px;max-width:150px;white-space:normal}
+.pill.warn + .pwhy{color:var(--warn)}
