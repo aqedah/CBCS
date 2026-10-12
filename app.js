@@ -564,7 +564,30 @@ function reportList(dd, opts = {}) {
   </div>
   ${olderHTML ? `<div class="stack" style="margin-top:14px">${olderHTML}</div>` : ''}`;
 }
+// 내 반: 나중에 교사별 로그인이 생기면 S.teacher(로그인한 교사 이름)와 반의 담임을 맞춰 정함. 그 전에는 이 기기에서 고른 반
+function myClassIds(dd) {
+  if (S.teacher) return dd.doc.classes.filter(c => String(c.teacher || '').split(/[,·\s]+/).includes(S.teacher)).map(c => c.id);
+  let v = ''; try { v = localStorage.getItem('cbcs-myclass-' + dd.id) || ''; } catch (e) {}
+  return v && dd.doc.classes.some(c => c.id === v) ? [v] : [];
+}
+function attButtons(r, st) { return st.map(x => { const a = r.att[x.id] || ''; return `<div class="s ${a === 'P' ? 'p' : a === 'O' ? 'o' : ''}"><button data-att="${x.id}">${esc(x.name)}</button>${a ? `<span class="m">${a === 'P' ? '출석' : '온라인·본당'}</span>` : ''}</div>`; }).join('') || '<div class="note">학생 없음</div>'; }
+// 휴대폰 출석 체크: 반마다 접어 두고, 내 반만 펼침. 결석 사유도 반 안에서 적음
+function attSectionMobile(dd, r) {
+  const s = reportStats(dd, r); const mine = myClassIds(dd); S.attOpen = S.attOpen || {};
+  const group = (id, name, sub, st) => { const open = S.attOpen[id] ?? mine.includes(id); const abs = st.filter(x => !r.att[x.id]);
+    return `<details class="cls m-cls" data-cls="${esc(id)}" ${open ? 'open' : ''}><summary><h3>${esc(name)}${mine.includes(id) ? ' <span class="pill info">내 반</span>' : ''} <span>${esc(sub)} · ${st.filter(x => r.att[x.id]).length}/${st.length}</span></h3></summary>
+      <div class="att">${attButtons(r, st)}</div>
+      ${abs.length ? `<div class="m-abs"><div class="note">결석 사유</div>${abs.map(x => `<label class="m-abs-row"><span>${esc(x.name)}</span><input type="text" data-abs="${x.id}" value="${esc(r.absent[x.id] || '')}" placeholder="사유"></label>`).join('')}</div>` : ''}</details>`; };
+  const loose = activeStudents(dd).filter(x => !dd.doc.classes.some(c => c.id === x.classId));
+  return `<div class="card"><h2>출석 체크 <span class="r">한 번 누르면 출석, 두 번 온라인·본당, 세 번 결석</span></h2>
+    <div class="tiles" style="margin-bottom:10px"><div class="tile"><div class="v">${s.p}</div><div class="l">출석 / 재적 ${s.total}</div></div><div class="tile"><div class="v">${s.rate}%</div><div class="l">출석률</div></div></div>
+    ${S.teacher ? '' : `<label class="f" style="margin-bottom:10px"><span>내 ${esc(dd.doc.classLabel)} (이 휴대폰에서 펼쳐 둘 ${esc(dd.doc.classLabel)})</span><select id="a-mine"><option value="">고르지 않음 — 모두 접기</option>${dd.doc.classes.map(c => `<option value="${esc(c.id)}" ${mine.includes(c.id) ? 'selected' : ''}>${esc(c.name)}${c.teacher ? ' (' + esc(c.teacher) + ')' : ''}</option>`).join('')}</select></label>`}
+    ${dd.doc.classes.map(c => group(c.id, c.name, c.teacher || '', classStudents(dd, c.id))).join('')}
+    ${loose.length ? group('__none', dd.doc.classLabel + ' 미배정', '', loose) : ''}
+  </div>`;
+}
 function attSection(dd, r, mobileOnly) {
+  if (mobileOnly && isMobile()) return attSectionMobile(dd, r);
   const s = reportStats(dd, r);
   const unmatched = Object.keys(r.attUnmatched || {});
   return `<div class="card"><h2>${mobileOnly ? '출석 체크' : '2. 출석 체크'} <span class="r">한 번 누르면 출석, 두 번 누르면 온라인·본당, 세 번 누르면 결석</span></h2>
@@ -657,6 +680,8 @@ BIND.attend = () => {
   $('#a-date').onchange = e => { S.sub.date = e.target.value; render(); };
   const keep = () => { document.querySelectorAll('[data-abs]').forEach(i => { if (i.value.trim()) r.absent[i.dataset.abs] = i.value.trim(); else delete r.absent[i.dataset.abs]; }); };
   bindAttButtons(dd, r, keep);
+  document.querySelectorAll('details[data-cls]').forEach(d => d.addEventListener('toggle', () => { S.attOpen = S.attOpen || {}; S.attOpen[d.dataset.cls] = d.open; }));
+  const mi = $('#a-mine'); if (mi) mi.onchange = () => { keep(); try { localStorage.setItem('cbcs-myclass-' + dd.id, mi.value); } catch (e) {} S.attOpen = {}; render(); };
   $('#a-save').onclick = async () => { keep(); await saveReport(dd, r); toast('저장했습니다'); };
 };
 /* 열람 전용 보고서 목록 (모바일 부서 / 교육위원회) */

@@ -304,3 +304,16 @@ textarea#cf-counsel,textarea#cf-family,textarea#cn-text{min-height:72px}
 .tour-b{display:flex;gap:6px;align-items:center}
 .tour-hl{outline:3px solid var(--accent);outline-offset:4px;border-radius:6px;transition:outline-color .2s}
 @media (max-width:760px){.tour{left:16px;right:16px;bottom:72px;width:auto}}
+/* 휴대폰 출석 체크: 반별 접기 */
+details.m-cls{border:1px solid var(--line);border-radius:8px;padding:0 12px;margin-bottom:8px;background:var(--panel,#fff)}
+details.m-cls>summary{list-style:none;cursor:pointer;padding:12px 0}
+details.m-cls>summary::-webkit-details-marker{display:none}
+details.m-cls>summary h3{margin:0;display:flex;align-items:center;gap:6px}
+details.m-cls>summary h3::before{content:'▸';color:var(--muted);font-size:11px}
+details.m-cls[open]>summary h3::before{content:'▾'}
+details.m-cls>summary h3 span:last-child{margin-left:auto}
+details.m-cls[open]{padding-bottom:12px}
+.m-abs{margin-top:10px;display:flex;flex-direction:column;gap:6px}
+.m-abs-row{display:flex;gap:8px;align-items:center}
+.m-abs-row span{min-width:64px;font-size:13px}
+.m-abs-row input{flex:1}
