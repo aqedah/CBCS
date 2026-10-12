@@ -35,11 +35,13 @@
 
 ```
 depts/{kinder|elem|youth|young}            부서 문서: name, classLabel, classes[], staff[], ledgers[], budgetPlan[], monthlyPlans{}, monthlyTexts{}, notes{}
-depts/{d}/students/{id}                    학생: name, sex, birth, classId, status(active|newcomer|longabsent|left), faith, phone, guardianPhone, address, history[], scholarship[], flags[]
+depts/{d}/students/{id}                    학생: name, sex, birth, classId, status(active|newcomer|longabsent|left), leftDate·leftKind·leftReason·statusLog[](제적·복적 기록), faith, phone, guardianPhone, address, history[], scholarship[], flags[]
 depts/{d}/reports/{YYYY-MM-DD}             주일 보고서: 예배 정보, counts{}, att{studentId: P|O}, absent{}, newcomers[], offering{}, teachersPresent[], teachersAbsent{}, activity, meeting, special, status, imported
 depts/{d}/expenses/{id} · incomes/{id}     회계: ledgerId, date, category, desc, amount, requester, receipt
 depts/{d}/events/{id} · notices/{id}       연간 행사 · 부서 공지
 depts/{d}/plans/{year}                     연간계획서: status(draft|confirmed), slogan, verse, goals[], methods, ministry, worship, budget[], notes
+depts/young/bylaws/{id}                    청년부 회칙 판: title, revision, date, status(current|draft|old), text(본문), params(판정 기준값), summary[]
+depts/young/assemblies/{date}              총회: kind, title, place, overrides{학생: 선거권 직접 지정}, candidates[], minutes{순서·안건·선거 결과·성원}
 depts/{d}/assets/{id}                      물품대장: no, name, category, spec, qty, unit, price, total, purchaseDate, vendor, location, manager, status, expenseId, source(auto|manual)
 committee/main (+ notices, events)         교육위원회 임원 · 공지 · 공통 일정
 scholarship/{id}                           장학(교육위원회 전용, 계좌 포함)
