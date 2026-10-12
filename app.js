@@ -455,7 +455,7 @@ function promotionPaper(dd, nextYear, plan, incoming) {
 }
 
 /* ───────────── 출석부 ───────────── */
-const LEFT_KINDS = ['제적', '상급 부서 진급', '이사', '타 교회', '기타'];
+const LEFT_KINDS = ['제적', '상급 부서 진급', '결혼', '직분', '이사', '타 교회', '기타']; // 결혼·직분: 회칙 4조로 회원 자격 종료(장년 소속)
 const namedReports = dd => Object.values(dd.reports).filter(r => r.date <= today() && Object.keys(r.att || {}).length && !(r.imported && !Object.keys(r.att).length)).sort((a, b) => a.date < b.date ? -1 : 1);
 function lastAttended(dd, s) { const r = namedReports(dd).filter(r => (r.att || {})[s.id]); return r.length ? r[r.length - 1].date : ''; }
 function absentStreak(dd, s) { const reps = namedReports(dd); let n = 0; for (let i = reps.length - 1; i >= 0; i--) { if ((reps[i].att || {})[s.id]) break; n++; } return { n, of: reps.length }; }
