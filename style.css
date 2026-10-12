@@ -356,3 +356,4 @@ th.ystrip-h .ystrip .yw{background:none;height:12px}
 
 .pwhy{font-size:11px;color:var(--bad);line-height:1.35;margin-top:3px;max-width:150px;white-space:normal}
 .pill.warn + .pwhy{color:var(--warn)}
+.ystrip .yw.t{background:var(--info)}
