@@ -22,6 +22,9 @@ service cloud.firestore {
     match /committee/{docId} { allow read: if signedIn(); allow write: if isCommittee(); }
     match /committee/{docId}/{sub}/{subId} { allow read: if signedIn(); allow write: if isCommittee(); }
 
+    // 진급 예정자 공유 목록: 로그인한 부서 모두 읽고 씀 (보내는 부서가 적고, 받는 부서가 명단에 받음)
+    match /promotions/{docId} { allow read, write: if signedIn(); }
+
     // 장학: 교육위원회 전용
     match /scholarship/{docId} { allow read, write: if isCommittee(); }
 
