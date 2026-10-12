@@ -23,7 +23,7 @@
 ## 처음 설정 (한 번만)
 
 1. Firebase 콘솔 → Authentication → 이메일/비밀번호 사용 설정 → 사용자 5명 추가:
-   `kid@cbcs.app`(영유치부) `youth@cbcs.app`(초등부) `teen@cbcs.app`(중고등부) `flame@cbcs.app`(청년부) `admin@cbcs.app`(교육위원회). 비밀번호가 곧 "부서 비밀번호".
+   `kid@cbcs.app`(영유치부) `youth@cbcs.app`(초등부) `teen@cbcs.app`(중고등부) `flame@cbcs.app`(청년부) `minist@cbcs.app`(교육위원회). 비밀번호가 곧 "부서 비밀번호".
    계정 이름을 바꾸면 `config.js`의 `CBCS_ACCOUNTS`와 `firestore.rules`의 `deptEmail()`도 같이 바꿉니다.
 2. Authentication → 설정 → 승인된 도메인에 `aqedah.github.io` 추가.
 3. Firestore → 규칙 탭에 `firestore.rules` 내용을 붙여넣고 게시.
