@@ -151,7 +151,7 @@ const VIEWS = {}, BIND = {};
 // 메뉴 묶음: 사이드 메뉴에서 누르면 아래로 펼쳐지는 하위 메뉴 (휴대폰은 화면 위 탭)
 const DOC_TABS = () => [[isCommittee() || isMobile() ? 'reports' : 'weekly', '주일 보고서'], ['monthly', '월간 보고서'], ['plan', '연간계획서']];
 const YOUNG_TABS = () => [['bylaws', '회칙'], ['assembly', '총회 자료'], ['minutes', '총회 회의록']];
-const ROSTER_TABS = () => [['roster', isCommittee() ? '출석부 열람' : '출석부'], ...(S.dept === 'young' || (isCommittee() && S.sub.dept === 'young') ? [['rafiq', '라피끄']] : []), ['attlog', '출석 기록'], ...(isCommittee() ? [] : [['stats', '출석 통계']]), ['dropouts', '제적 관리'], ...(isCommittee() ? [] : [['care', isCare() ? '♥ 심방 카드' : '🔒 심방 카드']])];
+const ROSTER_TABS = () => [['roster', isCommittee() ? '출석부 열람' : '출석부'], ['attlog', '출석 기록'], ...(isCommittee() ? [] : [['stats', '출석 통계']]), ['dropouts', '제적 관리'], ...(isCommittee() ? [] : [['care', isCare() ? '♥ 심방 카드' : '🔒 심방 카드']])];
 const NAV_GROUPS = () => isMobile() ? [{ id: 'docs', items: DOC_TABS() }] : [{ id: 'docs', items: DOC_TABS() }, { id: 'roster', items: ROSTER_TABS() }, { id: 'young', items: YOUNG_TABS() }];
 const groupOfView = v => NAV_GROUPS().find(g => g.items.some(t => t[0] === v));
 const navKeyOf = v => { const g = groupOfView(v); return g ? g.items[0][0] : v; };
@@ -415,7 +415,7 @@ VIEWS.roster = async () => {
   const young = dd.id === 'young'; const grp = young ? (S.sub.group || '청년') : ''; const yr = S.sub.year || YEAR;
   const inGroup = s => !young ? true : grp === '라피끄' ? s.group === '라피끄' : s.group !== '라피끄';
   const years = [...new Set([...dd.students.flatMap(s => (s.history || []).map(h => +h.year)), ...Object.keys(dd.reports).map(d => +d.slice(0, 4)), YEAR])].filter(y => y >= 2015).sort((a, b) => b - a);
-  const yearBar = young || years.length > 1 ? `<div class="row" style="margin-bottom:10px;flex-wrap:wrap"><span class="note">연도</span>${years.map(y => `<button class="btn s ${yr === y ? 'p' : ''}" data-year="${y}">${y}</button>`).join('')}${young && grp !== '라피끄' && canEdit() && !isCommittee() ? `<button class="btn s" id="ya-import" style="margin-left:auto">과거 출석부 가져오기</button>` : ''}</div>` : '';
+  const yearBar = young || years.length > 1 ? `<div class="row" style="margin-bottom:10px;flex-wrap:wrap"><span class="note">연도</span>${years.map(y => `<button class="btn s ${yr === y ? 'p' : ''}" data-year="${y}">${y}</button>`).join('')}${young ? `<span class="note" style="margin-left:10px">구분</span>${[['청년', '청년'], ['라피끄', '라피끄']].map(([k, l]) => `<button class="btn s ${grp === k ? 'p' : ''}" data-group="${k}">${l}</button>`).join('')}` : ''}${young && canEdit() && !isCommittee() ? `<button class="btn s" id="ya-import" style="margin-left:auto">과거 출석부 가져오기</button>` : ''}</div>` : '';
   if (yr !== YEAR) return yearRoster(dd, yr, grp, yearBar);
   const list = dd.students.filter(s => inGroup(s) && (show === 'all' ? true : show === 'active' ? (s.status === 'active' || s.status === 'longabsent') : s.status === show));
   const sort = S.sub.sort || 'name';
@@ -547,6 +547,7 @@ BIND.roster = () => {
   document.querySelectorAll('[data-dept]').forEach(b => b.onclick = () => { S.sub.dept = b.dataset.dept; render(); });
   document.querySelectorAll('[data-show]').forEach(b => b.onclick = () => { S.sub.show = b.dataset.show; S.view = S.sub.show === 'left' ? 'dropouts' : 'roster'; render(); });
   document.querySelectorAll('[data-year]').forEach(b => b.onclick = () => { S.sub.year = +b.dataset.year; render(); });
+  document.querySelectorAll('[data-group]').forEach(b => b.onclick = () => { S.sub.group = b.dataset.group; render(); });
   const ya = $('#ya-import'); if (ya) ya.onclick = () => importYoungAttendance(dd);
   const lp = $('#lf-print'); if (lp) lp.onclick = () => { S.sub.leftPrint = true; render(); };
   const lb = $('#lf-back'); if (lb) { lb.onclick = () => { delete S.sub.leftPrint; render(); }; $('#lf-pr').onclick = () => window.print(); return; }
@@ -2249,8 +2250,6 @@ function yearRoster(dd, yr, grp, yearBar) {
     ${reps.length ? `<div class="card"><h2>${yr}년 주별 출석 <span class="r">출석부·주일보고서 엑셀 기준</span></h2>${svgTrend(reps.map(r => ({ date: r.date, s: reportStats(dd, r) })))}</div>` : ''}
   </div>`;
 }
-VIEWS.rafiq = async () => { S.sub.group = '라피끄'; return VIEWS.roster(); };
-BIND.rafiq = () => BIND.roster();
 
 // 과거 출석부 엑셀 변환 파일(young_attendance.json) 가져오기 — 기존 학생과 이름·생일로 합치고, 주일 보고서에 출석을 채운다
 function importYoungAttendance(dd) {
