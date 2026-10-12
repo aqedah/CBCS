@@ -2307,7 +2307,7 @@ function importYoungAttendance(dd) {
         if (!s) { s = { id: `young_${x.name}_${x.birth || uid()}`, name: x.name, nameRaw: x.name, sex: x.sex || '', birth: x.birth || '', dept: 'young', classId: '', status: 'left', group: lastG === '라피끄' ? '라피끄' : '', faith: '', faithYear: '', faithHalf: '', phone: x.phone || '', school: '', father: '', mother: '', siblings: [], address: '', evangelist: '', guardianPhone: '', guardianRel: '', scholarship: [], note: '', history: [], statusLog: [], flags: [`과거 출석부(${yrs.join('·')})에서 추가 — ${YEAR}년 출석부에 없음`], source: x.source || [] }; dd.students.push(s); newS++; }
         else { mergedS++; if (s.birth && x.birth && md(s.birth) !== md(x.birth)) { s.flags = [...(s.flags || []), `생일이 다름: 앱 ${s.birth} / 과거 출석부 ${x.birth}`]; } if (!s.birth && x.birth) s.birth = x.birth; if (!s.phone && x.phone) s.phone = x.phone; if (!s.sex && x.sex) s.sex = x.sex; if (!s.group && lastG === '라피끄' && lastY >= YEAR - 2) s.group = '라피끄'; }
         s.history = s.history || [];
-        for (const y of yrs) { const v = x.years[y]; let h = s.history.find(h => +h.year === y); if (!h) { h = { year: y, dept: 'young', origDept: '청년부', classId: v.fam || '', note: v.note || '', group: v.group || '청년' }; s.history.push(h); } else { if (!h.classId && v.fam) h.classId = v.fam; if (!h.note && v.note) h.note = v.note; if (!h.group) h.group = v.group || '청년'; } if (v.newcomer && !s.joinDate && !s.newcomerDone) s.joinDate = s.joinDate || `${y}-01-01`; }
+        for (const y of yrs) { const v = x.years[y]; if (v.otherRole && y >= YEAR - 1 && !s.otherRole) s.otherRole = v.otherRole; let h = s.history.find(h => +h.year === y); if (!h) { h = { year: y, dept: 'young', origDept: '청년부', classId: v.fam || '', note: v.note || '', group: v.group || '청년' }; s.history.push(h); } else { if (!h.classId && v.fam) h.classId = v.fam; if (!h.note && v.note) h.note = v.note; if (!h.group) h.group = v.group || '청년'; } if (v.newcomer && !s.joinDate && !s.newcomerDone) s.joinDate = s.joinDate || `${y}-01-01`; }
         s.history.sort((a, b) => a.year - b.year);
         s.statusLog = s.statusLog || [];
         if (x.rejoin && !s.statusLog.some(q => q.from === 'left' && q.date === x.rejoin)) { s.statusLog.push({ date: x.rejoin, from: 'left', to: 'active', reason: '복적', source: '과거 출석부 변환(사용자 확인)' }); }
@@ -2330,7 +2330,8 @@ function importYoungAttendance(dd) {
         if (r.teachersUnsure) doc.teachersUnsure = r.teachersUnsure.slice(); if (r.teacherCount) doc.teacherCount = r.teacherCount;
         items.push({ path: `depts/young/reports/${r.date}`, data: doc });
       }
-      log(`학생: 기존과 합침 ${mergedS}명 · 새로 추가 ${newS}명 (제적·졸업 상태) · 보고서: 새로 ${newR}장 · 출석만 채움 ${mergedR}장 → 문서 ${items.length}개 올립니다…`);
+      (d.officers || []).forEach(o => { items.push({ path: `depts/young/officers/${o.id}`, data: o }); if (!(dd.officers || []).some(q => q.id === o.id || q._id === o.id)) (dd.officers = dd.officers || []).push({ _id: o.id, ...o }); });
+      log(`학생: 기존과 합침 ${mergedS}명 · 새로 추가 ${newS}명 (제적·졸업 상태) · 보고서: 새로 ${newR}장 · 출석만 채움 ${mergedR}장 · 임원 이력 ${(d.officers || []).length}건 → 문서 ${items.length}개 올립니다…`);
       await backend.batchSet(items, (a, b) => { $('#ya-log').textContent = $('#ya-log').textContent.replace(/\n진행.*$/, '') + `\n진행 ${a}/${b}`; });
       log('완료. 출석부의 연도 버튼(2021~2024)과 총회 자료의 직전 1년 띠에 반영됩니다.'); (d._review || []).forEach(x => log('※ ' + x)); S.data = {};
     } catch (err) { console.error(err); log('실패: ' + (err.code || err.message)); }
