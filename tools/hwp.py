@@ -26,5 +26,6 @@ def text(path):
                     out.append(s_)
                 i+=size
     return '\n'.join(out)
-for p in sys.argv[1:]:
+if __name__ == '__main__':
+  for p in sys.argv[1:]:
     print('=====', p); print(text(p).encode('utf-8','replace').decode('utf-8'))
