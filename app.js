@@ -942,21 +942,26 @@ function planBanner(dd, plan, compact) {
 
 /* ───────────── 통계 ───────────── */
 VIEWS.stats = async () => {
-  const dd = D(); const reps = Object.values(dd.reports).filter(r => r.date.startsWith(String(YEAR))).sort((a, b) => a.date < b.date ? -1 : 1);
-  const last4 = reps.slice(-4);
+  const dd = D(); const now = today(); const range = S.sub.range || '1m';
+  const RANGES = [['all', '전체'], ['6m', '6개월'], ['3m', '3개월'], ['1m', '1달']];
+  const from = (() => { if (range === 'all') return YEAR + '-01-01'; const k = +range[0]; const d = new Date(now); d.setMonth(d.getMonth() - k); return d.toISOString().slice(0, 10); })();
+  const reps = Object.values(dd.reports).filter(r => r.date.startsWith(String(YEAR)) && r.date >= from && r.date <= now).sort((a, b) => a.date < b.date ? -1 : 1);
+  const last4 = Object.values(dd.reports).filter(r => r.date.startsWith(String(YEAR)) && r.date <= now).sort((a, b) => a.date < b.date ? -1 : 1).slice(-4);
   const rows = activeStudents(dd).map(s => { const cnt = reps.filter(r => (r.att || {})[s.id]).length; const streak = last4.length >= 4 && last4.every(r => !(r.att || {})[s.id]); return { s, cnt, rate: reps.length ? Math.round(cnt / reps.length * 100) : 0, streak }; }).sort((a, b) => a.rate - b.rate);
   const trend = reps.map(r => ({ date: r.date, s: reportStats(dd, r) }));
-  return `<div class="topbar"><div><h1>출석 통계</h1><div class="sub">${YEAR}년 주일 보고서 ${reps.length}장 기준</div></div></div>
+  return `<div class="topbar"><div><h1>출석 통계</h1><div class="sub">${YEAR}년 1주부터 오늘까지 중 ${RANGES.find(x => x[0] === range)[1] === '전체' ? '전체' : '최근 ' + RANGES.find(x => x[0] === range)[1]} · 주일 보고서 ${reps.length}장 기준${reps.length ? ` (${reps[0].date} ~ ${reps[reps.length - 1].date})` : ''}</div></div>
+    <div class="doc-tabs no-print" style="margin:0">${RANGES.map(([k, l]) => `<button data-range="${k}" class="${range === k ? 'on' : ''}">${l}</button>`).join('')}</div></div>
   <div class="stack">
     <div class="card"><h2>주별 출석 추이</h2>${trend.length ? svgTrend(trend) : '<div class="note">보고서가 쌓이면 그래프가 그려집니다.</div>'}</div>
     <div class="grid2">
-      <div class="card"><h2>장기 결석 (최근 4주 연속)</h2><div class="list">${rows.filter(r => r.streak).map(r => `<div class="item"><div class="t">${esc(r.s.name)} <span class="note">${esc((classOf(dd, r.s) || {}).name || '')}</span></div><span class="pill bad">4주 결석</span></div>`).join('') || `<div class="note">${reps.length < 4 ? '보고서가 4장 이상 쌓이면 자동으로 찾습니다.' : '해당자가 없습니다.'}</div>`}</div><div class="note" style="margin-top:8px">연말 제적 정리 후보도 여기서 뽑습니다.</div></div>
+      <div class="card"><h2>장기 결석 (최근 4주 연속)</h2><div class="list">${rows.filter(r => r.streak).map(r => `<div class="item"><div class="t">${esc(r.s.name)} <span class="note">${esc((classOf(dd, r.s) || {}).name || '')}</span></div><span class="pill bad">4주 결석</span></div>`).join('') || `<div class="note">${last4.length < 4 ? '보고서가 4장 이상 쌓이면 자동으로 찾습니다.' : '해당자가 없습니다.'}</div>`}</div><div class="note" style="margin-top:8px">연말 제적 정리 후보도 여기서 뽑습니다.</div></div>
       <div class="card"><h2>학생별 출석률 <span class="r">낮은 순</span></h2><div class="tw" style="max-height:480px;overflow:auto"><table><thead><tr><th>이름</th><th>${esc(dd.doc.classLabel)}</th><th class="n">출석</th><th class="n">출석률</th></tr></thead><tbody>${rows.map(r => `<tr><td>${esc(r.s.name)}</td><td class="note">${esc((classOf(dd, r.s) || {}).name || '')}</td><td class="n">${r.cnt}/${reps.length}</td><td class="n">${r.rate}%</td></tr>`).join('')}</tbody></table></div></div>
     </div>
   </div>`;
 };
+BIND.stats = () => { document.querySelectorAll('[data-range]').forEach(b => b.onclick = () => { S.sub.range = b.dataset.range; render(); }); };
 function svgTrend(t) {
-  const W = 640, H = 170, pl = 36, pr = 12, pt = 16, pb = 30; const max = Math.max(...t.map(x => x.s.total), 1);
+  const W = 640, H = 170, pl = 36, pr = 22, pt = 16, pb = 30; const max = Math.max(...t.map(x => x.s.total), 1);
   const X = i => pl + (t.length === 1 ? 0 : (W - pl - pr) * i / (t.length - 1)), Y = v => pt + (H - pt - pb) * (1 - v / max);
   const path = t.map((x, i) => `${i ? 'L' : 'M'}${X(i).toFixed(1)} ${Y(x.s.p).toFixed(1)}`).join(' ');
   const total = t.map((x, i) => `${i ? 'L' : 'M'}${X(i).toFixed(1)} ${Y(x.s.total).toFixed(1)}`).join(' ');
