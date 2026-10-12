@@ -2300,16 +2300,17 @@ function importYoungAttendance(dd) {
     try {
       const d = JSON.parse(await f.text()); const items = []; let newS = 0, mergedS = 0, newR = 0, mergedR = 0;
       const md = b => (b || '').slice(5); const byKey = {};
-      const matchStudent = x => dd.students.find(s => normName(s.name) === normName(x.name) && (!x.birth || !s.birth || md(s.birth) === md(x.birth)));
+      const matchStudent = x => { const same = dd.students.filter(s => normName(s.name) === normName(x.name)); return same.find(s => !x.birth || !s.birth || md(s.birth) === md(x.birth)) || (same.length === 1 ? same[0] : undefined); }; // 이름이 하나뿐이면 생일이 달라도 같은 사람으로 보고 표시
       for (const x of d.students || []) {
         let s = matchStudent(x);
         const yrs = Object.keys(x.years || {}).map(Number).sort(); const lastY = yrs[yrs.length - 1]; const lastG = lastY ? (x.years[lastY].group || '청년') : '청년';
         if (!s) { s = { id: `young_${x.name}_${x.birth || uid()}`, name: x.name, nameRaw: x.name, sex: x.sex || '', birth: x.birth || '', dept: 'young', classId: '', status: 'left', group: lastG === '라피끄' ? '라피끄' : '', faith: '', faithYear: '', faithHalf: '', phone: x.phone || '', school: '', father: '', mother: '', siblings: [], address: '', evangelist: '', guardianPhone: '', guardianRel: '', scholarship: [], note: '', history: [], statusLog: [], flags: [`과거 출석부(${yrs.join('·')})에서 추가 — ${YEAR}년 출석부에 없음`], source: x.source || [] }; dd.students.push(s); newS++; }
-        else { mergedS++; if (!s.birth && x.birth) s.birth = x.birth; if (!s.phone && x.phone) s.phone = x.phone; if (!s.sex && x.sex) s.sex = x.sex; if (!s.group && lastG === '라피끄' && lastY >= YEAR - 2) s.group = '라피끄'; }
+        else { mergedS++; if (s.birth && x.birth && md(s.birth) !== md(x.birth)) { s.flags = [...(s.flags || []), `생일이 다름: 앱 ${s.birth} / 과거 출석부 ${x.birth}`]; } if (!s.birth && x.birth) s.birth = x.birth; if (!s.phone && x.phone) s.phone = x.phone; if (!s.sex && x.sex) s.sex = x.sex; if (!s.group && lastG === '라피끄' && lastY >= YEAR - 2) s.group = '라피끄'; }
         s.history = s.history || [];
         for (const y of yrs) { const v = x.years[y]; let h = s.history.find(h => +h.year === y); if (!h) { h = { year: y, dept: 'young', origDept: '청년부', classId: v.fam || '', note: v.note || '', group: v.group || '청년' }; s.history.push(h); } else { if (!h.classId && v.fam) h.classId = v.fam; if (!h.note && v.note) h.note = v.note; if (!h.group) h.group = v.group || '청년'; } if (v.newcomer && !s.joinDate && !s.newcomerDone) s.joinDate = s.joinDate || `${y}-01-01`; }
         s.history.sort((a, b) => a.year - b.year);
         s.statusLog = s.statusLog || [];
+        if (x.rejoin && !s.statusLog.some(q => q.from === 'left' && q.date === x.rejoin)) { s.statusLog.push({ date: x.rejoin, from: 'left', to: 'active', reason: '복적', source: '과거 출석부 변환(사용자 확인)' }); }
         for (const l of x.left || []) { if (!s.statusLog.some(q => q.to === 'left' && String(q.date || '').startsWith(String(l.year)))) s.statusLog.push({ date: `${l.year}-12-31`, from: 'active', to: 'left', kind: '제적', reason: l.reason || '', source: l.source }); if (s.status === 'left' && !s.leftDate && l.year === Math.max(...(x.left || []).map(q => q.year))) { s.leftDate = `${l.year}-12-31`; s.leftKind = s.leftKind || '제적'; s.leftReason = s.leftReason || l.reason || ''; } }
         byKey[x.name + '|' + md(x.birth)] = s;
         items.push({ path: `depts/young/students/${s.id}`, data: s });
