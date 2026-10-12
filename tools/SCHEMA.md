@@ -88,3 +88,17 @@
 
 ### data/_review_*.md — 각 에이전트가 남기는 검토 메모
 - 못 푼 문제, 추정한 것, 사용자에게 물어볼 것을 한국어로 목록화한다.
+
+### data/young_history.json — 청년부 과거 자료 (tools/young_history.py가 생성)
+```json
+{"officers":[{"id":"off_2025_회장_홍길동","year":2025,"role":"회장","name":"홍길동","source":"...","flags":[]}],
+ "timeline":[{"id":"tl_제적_홍길동_2021_0","name":"홍길동","birthYear":"1993","date":"2021","kind":"제적","title":"제적명단에 오름 (2021 출석부)","note":"이사","source":"...","auto":true}],
+ "retreats":[{"id":"rt_2024s","year":2024,"season":"하계","title":"...","start":"2024-08-15","end":"2024-08-17","place":"...","participants":[],"partial":[],"staff":[],"incomes":[{"item":"","amount":0,"note":""}],"expenses":[],"source":"..."}],
+ "newcomerClass":[{"id":"nc_2023_홍길동","year":2023,"name":"홍길동","phone":"","birth":"2004-03-04","dates":["2023-01-08"],"graduated":true,"source":"..."}],
+ "care":[{"name":"홍길동","sex":"남","birth":"1995-01-01","phone":"","hobby":"","job":"","faith":"","address":"","counsel":"","family":[{"name":"","rel":"부","birth":"1960년생","church":"본교회(집사)","note":""}],"source":"..."}],
+ "_review":["사람이 확인할 것"]}
+```
+- `timeline.kind`: 등록 · 새가족교육 · 신급 · 임원 · 팸 · 수련회 · 장학 · 제적 · 복귀 · 결혼 · 군복무 · 유학 · 이사 · 심방 · 기타. 날짜는 `YYYY-MM-DD` 또는 연도만 `YYYY`.
+- 학생과의 연결은 앱에서 이름(공백·직함 제거)과 생년(둘 다 있을 때)으로 맞춘다. `studentId`가 있으면 그것을 우선.
+- `care`는 `depts/{d}/care/{studentId}`로 들어가되, 앱의 부서 관리자 모드("과거 자료 가져오기")에서만 넣는다 — 관리자 비밀번호로 암호화해야 하기 때문. 저장 형태: `{enc:'aes-gcm-v1', iv, data, name, studentId, updated}`; `_verify` 문서는 `{salt, iv, data, set}`.
+- 학생(students) 청년부 회칙용 필드는 총회 자료 화면의 "정보"에서 저장: `joinDate` `churchJoin` `newcomerDone` `married` `churchRole` `otherRole` `otherCell` `expelled`.

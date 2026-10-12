@@ -39,6 +39,8 @@ depts/{d}/students/{id}                    학생: name, sex, birth, classId, st
 depts/{d}/reports/{YYYY-MM-DD}             주일 보고서: 예배 정보, counts{}, att{studentId: P|O}, absent{}, newcomers[], offering{}, teachersPresent[], teachersAbsent{}, activity, meeting, special, status, imported
 depts/{d}/expenses/{id} · incomes/{id}     회계: ledgerId, date, category, desc, amount, requester, receipt
 depts/{d}/events/{id} · notices/{id}       연간 행사 · 부서 공지
+depts/{d}/timeline/{id}                    삶의 궤적(제적·팸·수련회·교육·직접 적은 기록) · depts/young/officers · depts/young/retreats
+depts/{d}/care/{studentId}                 심방 카드 — 부서 관리자 비밀번호로 암호화(AES-GCM) 저장, `_verify`는 비밀번호 확인용
 depts/{d}/plans/{year}                     연간계획서: status(draft|confirmed), slogan, verse, goals[], methods, ministry, worship, budget[], notes
 depts/young/bylaws/{id}                    청년부 회칙 판: title, revision, date, status(current|draft|old), text(본문), params(판정 기준값), summary[]
 depts/young/assemblies/{date}              총회: kind, title, place, overrides{학생: 선거권 직접 지정}, candidates[], minutes{순서·안건·선거 결과·성원}
@@ -49,6 +51,19 @@ archive/{id}                               2025년 이전 파일 색인(파일�
 promotions/{year_studentId}                다음 해 진급 예정자(보내는 부서가 자동 기록, 받는 부서가 "출석부에 받기")
 meta/import                                가져오기 기록
 ```
+
+## 삶의 궤적 · 심방 카드 · 관리자 모드
+
+- **삶의 궤적**(모든 부서): 학생 카드 아래에 과거 자료에서 모은 제적 사유·팸 소속·임원 이력·수련회 참가·새가족교육·장학과 올해 출석 요약이 시간순으로 보입니다. 군 입대·복학 같은 일은 직접 적습니다(청년부 계정 모두 봄).
+
+## 모든 부서: 심방 카드와 관리자 모드
+
+- 부서 화면 왼쪽 **🔒 관리자 모드** → 부서 관리자 비밀번호(처음 여는 교역자·부장이 정함, 부서 비밀번호와 별개) → **심방 카드**가 열립니다. 학생마다 직장·취미·가족·상담내용과 날짜별 심방 기록을 적고, 삶의 궤적과 함께 출력합니다.
+- 심방 기록은 브라우저에서 그 비밀번호로 **암호화되어(PBKDF2 → AES-GCM)** 저장되므로 부서 비밀번호만으로는 읽을 수 없고, 다른 부서·교육위원회는 Firestore 규칙으로 접근 자체가 막힙니다. 계정은 더 만들지 않습니다.
+- 비밀번호를 잊으면 복구할 수 없습니다. 담당자가 바뀔 때는 심방 카드 화면의 "관리자 비밀번호 바꾸기"로 넘겨 주세요(모든 카드를 새 비밀번호로 다시 암호화).
+- 삶의 궤적(학생 카드 아래)은 모든 부서에서 보이고, 부서 계정 누구나 적을 수 있는 일반 기록입니다. 민감한 내용은 심방 카드에만 적습니다.
+- 청년부 임원 이력(`depts/young/officers`)·수련회(`depts/young/retreats`)도 같은 변환기로 들어갑니다.
+- 과거 자료 넣기: `python3 -I tools/young_history.py <청년부 원본 폴더> <GPT 텍스트 폴더> > data/young_history.json` → 청년부 관리자 모드의 심방 카드 화면 "과거 자료 가져오기" (명부는 암호화되어 들어가므로 관리자 모드에서만).
 
 ## 운영
 

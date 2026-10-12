@@ -256,3 +256,28 @@ textarea[readonly],input[readonly]{background:var(--line-soft)}
 .quorum .big{font-size:34px;font-weight:700;color:var(--accent);font-family:var(--display)}
 .cand-col h3{font-size:14px;margin:0 0 6px}
 .paper .sign{height:22px;min-width:70px}
+
+/* 청년부: 삶의 궤적 · 심방 카드 · 회칙 판정 */
+.tl{display:flex;flex-direction:column;gap:0;margin-top:6px}
+.tl-row{display:grid;grid-template-columns:84px 14px 1fr auto;gap:0 8px;align-items:start;padding:5px 0;border-bottom:1px solid var(--line-soft);font-size:13px}
+.tl.compact .tl-row{padding:3px 0;font-size:12px}
+.tl-date{color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap;padding-top:2px}
+.tl-dot{width:10px;height:10px;border-radius:50%;margin-top:5px;background:var(--line);justify-self:center}
+.tl-dot.ok{background:var(--ok)}.tl-dot.warn{background:var(--warn)}.tl-dot.bad{background:var(--bad)}.tl-dot.info{background:var(--info)}.tl-dot.mute{background:var(--line)}
+.tl-body{min-width:0;overflow-wrap:anywhere}
+.tl-body .pill{margin-right:4px}
+.c-ok{color:var(--ok)}.c-no{color:var(--bad)}.c-unk{color:var(--warn)}
+.c-ok small,.c-no small,.c-unk small{color:var(--muted);font-size:11px}
+.care-card .care-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;padding-bottom:8px;border-bottom:1px solid var(--line);margin-bottom:10px}
+.care-card .care-name{font-family:var(--display);font-size:18px}
+.care-card h3{font-size:13px;margin:12px 0 4px}
+.care-card .care-text{white-space:pre-wrap;font-size:13px;line-height:1.6;margin:0}
+.care-card table{font-size:12.5px}
+.paper .care-card .care-head{border-bottom-color:#b9b5ab}
+.paper .care-card h3{color:#1d1c19}
+.paper .care-card .kvl dt{color:#5c584f}
+.paper .care-card .pill{border:1px solid #b9b5ab;background:#fff;color:#1d1c19}
+.paper .care-card .tl-dot{background:#8a1f2b}
+.paper .names{font-size:13px;line-height:1.8;margin:0}
+.paper tfoot td{font-weight:600;background:#f4f3ef}
+textarea#cf-counsel,textarea#cf-family,textarea#cn-text{min-height:72px}

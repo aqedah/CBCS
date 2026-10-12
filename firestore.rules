@@ -16,7 +16,9 @@ service cloud.firestore {
 
     // 부서 자료: 그 부서 계정과 교육위원회(minist)만 읽고 씀
     match /depts/{d} { allow read, write: if isDept(d) || isCommittee(); }
-    match /depts/{d}/{sub}/{docId} { allow read, write: if isDept(d) || isCommittee(); }
+    // 심방 카드(care)는 부서 관리자 비밀번호로 암호화되어 저장됨 — 그 부서 계정만 접근 (교육위원회도 읽지 못함)
+    match /depts/{d}/care/{docId} { allow read, write: if isDept(d); }
+    match /depts/{d}/{sub}/{docId} { allow read, write: if sub != 'care' && (isDept(d) || isCommittee()); }
 
     // 교육위원회 공지·공통 일정: 로그인한 모두 읽기, 교육위원회만 쓰기
     match /committee/{docId} { allow read: if signedIn(); allow write: if isCommittee(); }

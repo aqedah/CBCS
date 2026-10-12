@@ -74,14 +74,19 @@ function mockBackend() { // 로컬 시험용: data/import_data.json을 읽어 �
 /* 세션·캐시 */
 const S = { user: null, dept: null, data: {}, committee: null, view: 'home', sub: {}, loaded: false }; window.CBCS = S;
 const isCommittee = () => S.user === 'committee';
+const isCare = () => !!(S.careKey && S.careDept === S.dept); // 부서 관리자 모드(심방 카드 열림) — 비밀번호로 만든 열쇠가 메모리에만 있음
 const canEdit = () => !isMobile();
 async function loadDept(d, force) {
   if (S.data[d] && !force) return S.data[d];
-  const [docu, students, reports, expenses, incomes, events, notices, assets] = await Promise.all([
+  const young = d === 'young';
+  const [docu, students, reports, expenses, incomes, events, notices, assets, officers, timeline, retreats, care] = await Promise.all([
     backend.get(`depts/${d}`), backend.list(`depts/${d}/students`), backend.list(`depts/${d}/reports`),
-    backend.list(`depts/${d}/expenses`), backend.list(`depts/${d}/incomes`), backend.list(`depts/${d}/events`), backend.list(`depts/${d}/notices`), backend.list(`depts/${d}/assets`)]);
+    backend.list(`depts/${d}/expenses`), backend.list(`depts/${d}/incomes`), backend.list(`depts/${d}/events`), backend.list(`depts/${d}/notices`), backend.list(`depts/${d}/assets`),
+    young ? backend.list(`depts/${d}/officers`) : [], backend.list(`depts/${d}/timeline`), young ? backend.list(`depts/${d}/retreats`) : [],
+    isCommittee() ? [] : backend.list(`depts/${d}/care`).catch(() => [])]);
   const dd = { id: d, doc: docu || { name: DEPTS[d], classLabel: '반', year: YEAR, classes: [], staff: [], ledgers: [], budgetPlan: [], monthlyPlans: {}, monthlyTexts: {}, notes: {} },
-    students, reports: Object.fromEntries(reports.map(r => [r.date, r])), expenses, incomes, events, notices, assets: assets.map(a => ({ ...a, id: a.id || a._id })) };
+    students, reports: Object.fromEntries(reports.map(r => [r.date, r])), expenses, incomes, events, notices, assets: assets.map(a => ({ ...a, id: a.id || a._id })), officers, timeline, retreats, careRaw: care, care: [] };
+  if (S.careKey && S.careDept === d) await decryptCare(dd);
   dd.doc.ledgers = dd.doc.ledgers || []; dd.doc.classes = dd.doc.classes || []; dd.doc.staff = dd.doc.staff || []; dd.doc.budgetPlan = dd.doc.budgetPlan || []; dd.doc.monthlyPlans = dd.doc.monthlyPlans || {}; dd.doc.monthlyTexts = dd.doc.monthlyTexts || {}; dd.doc.notes = dd.doc.notes || {};
   S.data[d] = dd; return dd;
 }
@@ -135,7 +140,7 @@ const VIEWS = {}, BIND = {};
 // 메뉴 묶음: 사이드 메뉴에서 누르면 아래로 펼쳐지는 하위 메뉴 (휴대폰은 화면 위 탭)
 const DOC_TABS = () => [[isCommittee() || isMobile() ? 'reports' : 'weekly', '주일 보고서'], ['monthly', '월간 보고서'], ['plan', '연간계획서']];
 const YOUNG_TABS = () => [['bylaws', '회칙'], ['assembly', '총회 자료'], ['minutes', '총회 회의록']];
-const ROSTER_TABS = () => [['roster', isCommittee() ? '출석부 열람' : '출석부'], ...(isCommittee() ? [] : [['stats', '출석 통계']]), ['dropouts', '제적 관리']];
+const ROSTER_TABS = () => [['roster', isCommittee() ? '출석부 열람' : '출석부'], ...(isCommittee() ? [] : [['stats', '출석 통계']]), ['dropouts', '제적 관리'], ...(isCommittee() ? [] : [['care', isCare() ? '♥ 심방 카드' : '🔒 심방 카드']])];
 const NAV_GROUPS = () => isMobile() ? [{ id: 'docs', items: DOC_TABS() }] : [{ id: 'docs', items: DOC_TABS() }, { id: 'roster', items: ROSTER_TABS() }, { id: 'young', items: YOUNG_TABS() }];
 const groupOfView = v => NAV_GROUPS().find(g => g.items.some(t => t[0] === v));
 const navKeyOf = v => { const g = groupOfView(v); return g ? g.items[0][0] : v; };
@@ -161,7 +166,8 @@ async function render() {
   root.innerHTML = `<div class="app ${mob ? 'ro' : ''}">
     <aside class="side">
       <div class="brand">CBCS<small>중앙성서교회 교육부</small></div>
-      <div class="dept-chip"><b>${esc(isCommittee() ? '교육위원회' : DEPTS[S.dept])}</b><button class="btn s" data-logout>나가기</button></div>
+      <div class="dept-chip"><b>${esc(isCommittee() ? '교육위원회' : DEPTS[S.dept])}${isCare() ? ' <span class="pill info">관리자 모드</span>' : ''}</b><button class="btn s" data-logout>나가기</button></div>
+      ${!isCommittee() && !mob ? (isCare() ? `<button class="btn s" id="admin-off" style="margin:0 0 8px">관리자 모드 끝내기</button>` : `<button class="btn s" id="admin-mode" style="margin:0 0 8px">🔒 관리자 모드</button>`) : ''}
       <nav class="nav">${nav.filter(n => n[0] === 'home').map(n => `<button data-nav="home" class="home ${S.view === 'home' ? 'on' : ''}"><span class="k">${n[2] || '⌂'}</span>${n[1]}</button>`).join('')}
       <div class="nav-sep"></div>
       ${nav.filter(n => n[0] !== 'home' && n[0] !== 'import').map(navButton).join('')}
@@ -177,7 +183,9 @@ async function render() {
   root.querySelectorAll('[data-nav]').forEach(b => b.onclick = () => go(b.dataset.nav));
   root.querySelectorAll('[data-navgroup]').forEach(b => b.onclick = () => { const g = NAV_GROUPS().find(x => x.id === b.dataset.navgroup); const inside = g.items.some(t => t[0] === S.view); const open = S.navOpen[g.id] ?? inside; if (!open && !inside) go(g.items[0][0]); else { S.navOpen = { [g.id]: !open }; render(); } });
   root.querySelectorAll('[data-doctab]').forEach(b => b.onclick = () => go(b.dataset.doctab));
-  root.querySelectorAll('[data-logout]').forEach(b => b.onclick = async () => { await backend.logout(); S.user = null; S.dept = null; S.data = {}; S.committee = null; render(); });
+  root.querySelectorAll('[data-logout]').forEach(b => b.onclick = async () => { await backend.logout(); S.user = null; S.dept = null; S.careKey = null; S.careDept = null; S.data = {}; S.committee = null; render(); });
+  const am = $('#admin-mode'); if (am) am.onclick = () => adminModeDialog(D());
+  const ao = $('#admin-off'); if (ao) ao.onclick = () => { S.careKey = null; S.careDept = null; if (D()) D().care = []; if (S.view === 'care') S.view = 'roster'; render(); toast('관리자 모드를 끝냈습니다'); };
   const rf = root.querySelector('[data-refresh]'); if (rf) rf.onclick = async () => { S.data = {}; S.committee = null; toast('다시 불러오는 중…'); await render(); toast('새로고침 완료'); };
   root.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { S.view = b.dataset.go; S.sub = b.dataset.sub ? JSON.parse(b.dataset.sub) : {}; render(); });
   if (BIND[S.view]) { try { BIND[S.view](); } catch (e) { console.error(e); } }
@@ -454,7 +462,8 @@ function studentCard(dd, s) {
       <label class="f"><span>제적·졸업 처리일</span><input type="date" id="sc-ldate" value="${f('leftDate')}"></label>
       <label class="f"><span>구분</span><select id="sc-lkind"><option value="">—</option>${LEFT_KINDS.map(k => `<option ${s.leftKind === k ? 'selected' : ''}>${k}</option>`).join('')}</select></label>
       <label class="f" style="grid-column:span 2"><span>제적 사유</span><input type="text" id="sc-lreason" value="${f('leftReason')}" placeholder="상태가 제적·졸업일 때만 씁니다"></label>
-    </div><div class="row" style="margin-top:10px"><button class="btn p" id="sc-save">저장</button><button class="btn" id="sc-clear-flags" ${s.flags && s.flags.length ? '' : 'disabled'}>확인 표시 지우기</button><button class="btn d" id="sc-del">삭제</button></div>` : ''}`;
+    </div><div class="row" style="margin-top:10px"><button class="btn p" id="sc-save">저장</button><button class="btn" id="sc-clear-flags" ${s.flags && s.flags.length ? '' : 'disabled'}>확인 표시 지우기</button><button class="btn d" id="sc-del">삭제</button></div>` : ''}
+    ${timelineHTML(dd, s, edit)}`;
 }
 BIND.dropouts = () => BIND.roster();
 BIND.roster = () => {
@@ -480,8 +489,9 @@ BIND.roster = () => {
     openModal(`<h2>${ids.length}명 제적 처리<button class="btn s" id="modal-close">닫기</button></h2><p>${ids.map(id => esc(sName(dd, id))).join(', ')}</p><div class="fields"><label class="f"><span>처리일</span><input type="date" id="lm-date" value="${today()}"></label><label class="f"><span>구분</span><select id="lm-kind">${LEFT_KINDS.map(k => `<option>${k}</option>`).join('')}</select></label><label class="f" style="grid-column:span 2"><span>사유</span><input type="text" id="lm-reason" value="${esc(leftRule(dd).label.replace(/ \(.*\)/, ''))}"></label></div><div class="row" style="margin-top:10px"><button class="btn p" id="lm-yes">제적 처리</button><button class="btn" id="lm-no">취소</button></div>`);
     $('#lm-no').onclick = closeModal; $('#lm-yes').onclick = async () => { for (const id of ids) { const s = dd.students.find(x => x.id === id); setLeft(s, $('#lm-date').value || today(), $('#lm-kind').value, $('#lm-reason').value.trim()); await backend.set(`depts/${dd.id}/students/${s.id}`, s); } closeModal(); render(); toast(ids.length + '명 제적 처리'); }; };
   document.querySelectorAll('[data-sort]').forEach(b => b.onclick = () => { S.sub.sort = b.dataset.sort; render(); });
+  if (S.sub.open) { const id = S.sub.open; delete S.sub.open; setTimeout(() => { const tr = document.querySelector(`[data-student="${CSS.escape(id)}"]`); if (tr) tr.click(); }, 0); }
   document.querySelectorAll('[data-student]').forEach(tr => tr.onclick = () => {
-    const s = dd.students.find(x => x.id === tr.dataset.student); openModal(studentCard(dd, s));
+    const s = dd.students.find(x => x.id === tr.dataset.student); openModal(studentCard(dd, s)); bindTimeline(dd, s);
     const sv = $('#sc-save'); if (sv) sv.onclick = async () => {
       const ns = $('#sc-status').value, was = s.status, ld = $('#sc-ldate').value, lk = $('#sc-lkind').value, lr = $('#sc-lreason').value.trim();
       if (ns === 'left' && was !== 'left') setLeft(s, ld || today(), lk || '제적', lr);
@@ -1385,6 +1395,7 @@ function payloadToItems(payload, on) {
     if (on.reports) (dep.reports || []).forEach(r => items.push({ path: `depts/${d}/reports/${r.date}`, data: r }));
     if (on.money) { (dep.expenses || []).forEach(x => items.push({ path: `depts/${d}/expenses/${x.id}`, data: x })); (dep.incomes || []).forEach(x => items.push({ path: `depts/${d}/incomes/${x.id}`, data: x })); }
     if (on.plan) { (dep.plans || []).forEach(x => items.push({ path: `depts/${d}/plans/${x.year}`, data: x })); (dep.events || []).forEach(x => items.push({ path: `depts/${d}/events/${x.id}`, data: x })); (dep.notices || []).forEach(x => items.push({ path: `depts/${d}/notices/${x.id}`, data: x })); }
+    if (on.students) { (dep.officers || []).forEach(o => items.push({ path: `depts/${d}/officers/${o.id}`, data: o })); (dep.timeline || []).forEach(t => items.push({ path: `depts/${d}/timeline/${t.id}`, data: t })); (dep.retreats || []).forEach(r => items.push({ path: `depts/${d}/retreats/${r.id}`, data: r })); } // care(심방 명부)는 암호화가 필요해 부서 관리자 모드의 "과거 자료 가져오기"로만 넣음
   }
   const c = payload.committee || {}; items.push({ path: 'committee/main', data: { staff: c.staff || [] } });
   (c.events || []).forEach(x => items.push({ path: `committee/main/events/${x.id}`, data: x })); (c.notices || []).forEach(x => items.push({ path: `committee/main/notices/${x.id}`, data: x }));
@@ -1412,11 +1423,163 @@ VIEWS.tutorial = async () => {
     <div class="step"><div><h3>작성 완료 → PDF → 종이로 보고</h3><p>"작성 완료"를 누르면 보고서 모양 그대로 미리보기가 뜹니다. "PDF로 저장 / 인쇄"를 누르고 브라우저 인쇄 창에서 "PDF로 저장"을 고르면 됩니다. 지금처럼 부장에게 종이로 보고합니다.</p><div class="who">총무 → 부장 서명 · PC</div></div></div>
     <div class="step"><div><h3>지출이 생길 때마다: 회계</h3><p><b>회계</b>에서 "지출결의서 작성"으로 (기자재·교재·비품은 <b>물품대장</b>에 자동 등록) 날짜·항목·내역·금액을 넣고 결의서를 인쇄해 결재를 받습니다(영수증은 뒷면에). 월 합계, 누계, 예산 잔액, 집행률이 바로 계산됩니다. 찬조금·수련회처럼 잔액을 따로 보는 돈은 장부를 하나 더 만듭니다.</p><div class="who">회계 — 지출 당일 · PC</div>${mob ? '' : '<button class="btn s" data-go="ledger">회계 열기</button>'}</div></div>
     <div class="step"><div><h3>월말: 월간 보고서는 이미 만들어져 있습니다</h3><p><b>보고서 → 월간 보고서</b>를 열면 그 달 주일 보고서 4~5장과 회계가 모여 있습니다. 부장은 "다음 달 계획" 칸만 적고, 부장·총무·회계가 확인한 뒤 PDF로 출력해 교육위원회 월례회에 냅니다.</p><div class="who">부장 · 총무 · 회계 — 매월 마지막 주 · PC</div>${mob ? '' : '<button class="btn s" data-go="monthly">월간 보고서 열기</button>'}</div></div>
+    <div class="step"><div><h3>심방 카드 (관리자 모드)</h3><p>왼쪽 <b>🔒 관리자 모드</b>를 누르고 부서 관리자 비밀번호(처음엔 교역자·부장이 정함)를 넣으면 <b>출석부 → 심방 카드</b>가 열립니다. 학생마다 가족·직장·상담 내용과 날짜별 심방 기록을 적고, 학생 카드의 <b>삶의 궤적</b>과 함께 한 장으로 출력합니다. 기록은 그 비밀번호로 암호화되어 저장되므로 부서 비밀번호만으로는 볼 수 없고, 다른 부서나 교육위원회도 볼 수 없습니다. 비밀번호를 잊으면 복구할 수 없으니 담당자가 바뀔 때 "관리자 비밀번호 바꾸기"로 넘겨 주세요.</p><div class="who">교역자 · 부장 — 심방 후 · PC</div>${mob ? '' : '<button class="btn s" data-go="care">심방 카드 열기</button>'}</div></div>
     <div class="step"><div><h3>가끔: 통계와 공지</h3><p><b>출석부 → 출석 통계</b>에서 기간(전체·6개월·3개월·1달)별 추이와 4주 연속 결석자를 보고, <b>출석부 → 제적 관리</b>에서 오래 결석한 학생을 제적하거나 복적합니다. 청년부는 <b>회칙·총회</b>에서 회칙, 총회 정족수·결의권자·후보자, 회의록을 관리합니다. <b>메인</b>의 공지는 부서 교사들에게, 교육위원회 공지는 모든 부서에 보입니다.</p><div class="who">부장 · 교역자</div><button class="btn s" data-go="stats">출석 통계 열기</button></div></div>
     `}
   </div>
   <div class="card" style="margin-top:14px"><h2>변환 자료의 "!" 표시</h2><div class="note">HWP·엑셀에서 옮기면서 숫자가 안 맞거나 확인이 필요한 항목에는 <span class="tag flag">!</span>가 붙어 있습니다. 마우스를 올리면 내용이 보이고, 열어서 "확인했음"을 누르면 표시가 사라집니다.</div></div>`;
 };
+
+/* ───────────── 청년부: 삶의 궤적(타임라인) ───────────── */
+const TL_KINDS = { 등록: 'info', 새가족교육: 'info', 신급: 'ok', 임원: 'ok', 팸: 'mute', 수련회: 'mute', 장학: 'ok', 제적: 'bad', 복귀: 'ok', 결혼: 'info', 군복무: 'warn', 유학: 'warn', 이사: 'warn', 심방: 'info', 기타: 'mute' };
+const normName = n => String(n || '').replace(/\s/g, '').replace(/(권사|집사|목사|장로|전도사)$/, '');
+function nameMatches(dd, s, ev) { // 이름이 같고, 둘 다 생년이 있으면 생년도 같아야 함
+  if (normName(ev.name) !== normName(s.name)) return false;
+  if (ev.birthYear && s.birth && String(ev.birthYear).length === 4 && ev.birthYear !== s.birth.slice(0, 4)) return false;
+  if (ev.studentId && ev.studentId !== s.id) return false;
+  return true;
+}
+function officersOf(dd, s) { // 연도별 임원 이력 (과거 자료 + 올해 교사·임원 명단)
+  const rows = (dd.officers || []).filter(o => nameMatches(dd, s, o)).map(o => ({ year: o.year, role: o.role, source: o.source, flags: o.flags || [] }));
+  dd.doc.staff.filter(t => t.status !== 'left' && normName(t.name) === normName(s.name)).forEach(t => { if (!rows.some(r => r.year === YEAR && r.role === t.role)) rows.push({ year: YEAR, role: t.role, source: `${YEAR}년 교사·임원 명단`, flags: [] }); });
+  return rows.sort((a, b) => a.year - b.year);
+}
+function studentTimeline(dd, s) {
+  const ev = (dd.timeline || []).filter(e => nameMatches(dd, s, e)).map(e => ({ ...e }));
+  // 자동 생성: 올해 소속·상태, 연도별 출석 요약, 신급, 등록일
+  if (s.joinDate) ev.push({ date: s.joinDate, kind: '등록', title: '청년부 첫 출석(등록)', note: '', auto: true, derived: true });
+  if (s.newcomerDone) ev.push({ date: s.newcomerDone, kind: '새가족교육', title: '새가족반 수료', note: '', auto: true, derived: true });
+  if (s.faith && s.faithYear) ev.push({ date: String(s.faithYear), kind: '신급', title: s.faith, note: s.faithHalf ? s.faithHalf + '반기' : '', auto: true, derived: true });
+  if (s.married) ev.push({ date: '', kind: '결혼', title: '결혼', note: '회원 자격 종료 대상', auto: true, derived: true });
+  (s.statusLog || []).forEach(l => ev.push({ date: l.date || '', kind: l.to === 'left' ? '제적' : '복귀', title: l.to === 'left' ? `${l.kind || '제적'} 처리` : '복적', note: l.reason || '', auto: true, derived: true }));
+  (s.history || []).forEach(h => ev.push({ date: String(h.year), kind: '팸', title: `${DEPTS[h.dept] || h.dept} ${h.classId || ''}`.trim(), note: h.note || '', auto: true, derived: true }));
+  (s.scholarship || []).forEach(y => ev.push({ date: String(y), kind: '장학', title: `${y}년 장학생`, note: '', auto: true, derived: true }));
+  const byYear = {}; Object.values(dd.reports).forEach(r => { const y = r.date.slice(0, 4); byYear[y] = byYear[y] || { n: 0, p: 0 }; byYear[y].n++; if ((r.att || {})[s.id]) byYear[y].p++; });
+  Object.entries(byYear).forEach(([y, v]) => ev.push({ date: y + '-12-31', kind: '기타', title: `${y}년 출석 ${v.p}/${v.n}회 (${v.n ? Math.round(v.p / v.n * 100) : 0}%)`, note: '', auto: true, derived: true, att: true }));
+  if (s.status === 'left' && !(s.statusLog || []).length) ev.push({ date: s.leftDate || '', kind: '제적', title: `현재 상태: ${s.leftKind || '제적·졸업'}`, note: s.leftReason || s.note || '', auto: true, derived: true });
+  if (s.status === 'longabsent') ev.push({ date: '', kind: '기타', title: '현재 상태: 장기결석', note: '', auto: true, derived: true });
+  return ev.sort((a, b) => (a.date || '9999') < (b.date || '9999') ? -1 : 1);
+}
+function timelineHTML(dd, s, edit) {
+  const ev = studentTimeline(dd, s);
+  return `<div class="card" style="margin-top:12px"><h2>삶의 궤적 <span class="r">과거 자료와 올해 기록에서 자동으로 모은 것 + 직접 적은 것</span></h2>
+    <div class="tl">${ev.map(e => `<div class="tl-row"><div class="tl-date">${esc((e.date || '').length === 4 ? e.date + '년' : fmtShort(e.date))}</div><div class="tl-dot ${TL_KINDS[e.kind] || 'mute'}"></div><div class="tl-body"><span class="pill ${TL_KINDS[e.kind] || 'mute'}">${esc(e.kind)}</span> ${esc(e.title)}${e.note ? `<div class="note">${esc(e.note)}</div>` : ''}${e.source && !e.derived ? `<div class="note" style="opacity:.7">출처: ${esc(e.source)}</div>` : ''}</div>${edit && !e.derived ? `<button class="btn s d" data-tl-del="${esc(e._id || e.id)}">삭제</button>` : ''}</div>`).join('') || '<div class="note">기록이 없습니다.</div>'}</div>
+    ${edit ? `<div class="row" style="margin-top:10px;flex-wrap:wrap"><input type="date" id="tl-date" style="width:auto"><select id="tl-kind" style="width:auto">${Object.keys(TL_KINDS).map(k => `<option>${k}</option>`).join('')}</select><input type="text" id="tl-title" placeholder="무슨 일 (예: 군 입대, 복학, 팸 이동)" style="flex:2"><input type="text" id="tl-note" placeholder="메모" style="flex:2"><button class="btn" id="tl-add">기록 추가</button></div><div class="note" style="margin-top:4px">여기 적는 기록은 청년부 계정 모두가 봅니다. 상담 내용처럼 민감한 것은 관리자 모드의 <b>심방 카드</b>에 적으세요.</div>` : ''}</div>`;
+}
+const fmtShort = d => d ? d.replace(/^(\d{4})-(\d{2})-(\d{2})$/, (m, y, mm, dd) => `${y}.${+mm}.${+dd}`) : '날짜 미상';
+function bindTimeline(dd, s) {
+  const a = $('#tl-add'); if (a) a.onclick = async () => { const t = $('#tl-title').value.trim(); if (!t) return; const e = { id: 'tl_' + uid(), name: s.name, studentId: s.id, birthYear: (s.birth || '').slice(0, 4), date: $('#tl-date').value, kind: $('#tl-kind').value, title: t, note: $('#tl-note').value.trim(), source: '앱 입력 ' + today(), auto: false }; await backend.set(`depts/${dd.id}/timeline/${e.id}`, e); dd.timeline.push({ _id: e.id, ...e }); S.sub.open = s.id; render(); toast('기록을 추가했습니다'); };
+  document.querySelectorAll('[data-tl-del]').forEach(b => b.onclick = async () => { const id = b.dataset.tlDel; await backend.del(`depts/${dd.id}/timeline/${id}`); dd.timeline = dd.timeline.filter(e => (e._id || e.id) !== id); S.sub.open = s.id; render(); });
+}
+
+/* ───────────── 청년부: 심방 카드 (교역자·부장 전용) ───────────── */
+function careOf(dd, s) { return (dd.care || []).find(c => c._id === s.id) || (dd.care || []).find(c => normName(c.name) === normName(s.name) && (!c.birth || !s.birth || c.birth === s.birth)) || null; }
+function careCardHTML(dd, s, c, forPrint) {
+  const tl = studentTimeline(dd, s); const off = officersOf(dd, s);
+  const fam = (c && c.family || []);
+  const notes = (c && c.notes || []).slice().sort((a, b) => a.date < b.date ? 1 : -1);
+  return `<div class="care-card">
+    <div class="care-head"><div><div class="care-name">${esc(s.name)} <span class="note">${esc(s.sex)} · ${s.birth ? fmtShort(s.birth) + ' (만 ' + ageAt(s.birth, today()) + '세)' : '생년월일 미입력'} · ${esc((classOf(dd, s) || {}).name || s.classId || '')}</span></div><div class="note">${esc(faithLabel(s))}${c && c.faith && c.faith !== s.faith ? ' · 명부 신급: ' + esc(c.faith) : ''} · ${esc(phoneLabel(s))}</div></div><div class="note">${{ active: '재적', newcomer: '새친구', longabsent: '장기결석', left: '제적·졸업' }[s.status] || ''}</div></div>
+    <dl class="kvl"><dt>직장·학교</dt><dd>${esc(c && c.job || s.school || '')}</dd><dt>취미</dt><dd>${esc(c && c.hobby || '')}</dd><dt>주소</dt><dd>${esc(s.address || c && c.address || '')}</dd><dt>청년부 첫 출석</dt><dd>${esc(s.joinDate || '')}</dd><dt>임원·팸장</dt><dd>${off.map(o => `${o.year} ${esc(o.role)}`).join(', ')}</dd></dl>
+    <h3>가족</h3><table><thead><tr><th>이름</th><th>관계</th><th>생년</th><th>교회(직분)</th><th>기타</th></tr></thead><tbody>${fam.map(f => `<tr><td>${esc(f.name)}</td><td>${esc(f.rel)}</td><td>${esc(f.birth)}</td><td>${esc(f.church)}</td><td class="wrap">${esc(f.note)}</td></tr>`).join('') || `<tr><td colspan="5" class="note">${[s.father ? '부 ' + esc(s.father) : '', s.mother ? '모 ' + esc(s.mother) : '', (s.siblings || []).length ? '형제자매 ' + esc(s.siblings.join(', ')) : ''].filter(Boolean).join(' · ') || '기록 없음'}</td></tr>`}</tbody></table>
+    <h3>상담·참고 (명부)</h3><p class="care-text">${esc(c && c.counsel || '—')}</p>
+    <h3>심방 기록 <span class="note">${notes.length}건</span></h3>
+    <div class="list">${notes.map(n => `<div class="item"><div><div class="t">${fmtShort(n.date)} <span class="note">${esc(n.by || '')}${n.place ? ' · ' + esc(n.place) : ''}</span></div><div class="d care-text">${esc(n.text)}</div></div>${forPrint ? '' : `<button class="btn s d" data-note-del="${esc(n.id)}">삭제</button>`}</div>`).join('') || '<div class="note">아직 심방 기록이 없습니다.</div>'}</div>
+    <h3>삶의 궤적</h3><div class="tl compact">${tl.filter(e => !e.att).map(e => `<div class="tl-row"><div class="tl-date">${esc((e.date || '').length === 4 ? e.date + '년' : fmtShort(e.date))}</div><div class="tl-dot ${TL_KINDS[e.kind] || 'mute'}"></div><div class="tl-body"><span class="pill ${TL_KINDS[e.kind] || 'mute'}">${esc(e.kind)}</span> ${esc(e.title)}${e.note ? ` <span class="note">${esc(e.note)}</span>` : ''}</div></div>`).join('') || '<div class="note">기록 없음</div>'}</div>
+    <div class="note" style="margin-top:6px">연도별 출석: ${tl.filter(e => e.att).map(e => esc(e.title.replace('년 출석 ', '년 '))).join(' · ') || '—'}</div>
+  </div>`;
+}
+VIEWS.care = async () => {
+  const dd = D();
+  if (!isCare()) return `<div class="topbar"><div><h1>심방 카드 🔒</h1><div class="sub">${esc(dd.doc.name)} 관리자 모드에서만 보입니다</div></div></div><div class="card"><p>심방 카드(가족·직장·상담 내용·심방 기록)는 <b>${esc(dd.doc.name)} 관리자 비밀번호</b>로 암호화되어 저장됩니다. 부서 비밀번호만으로는 열 수 없고, 다른 부서나 교육위원회도 볼 수 없습니다.</p><div class="row" style="margin-top:10px"><button class="btn p" id="care-unlock">🔒 관리자 모드로 열기</button></div>${(dd.careRaw || []).some(c => c._id === '_verify') ? '' : '<div class="note" style="margin-top:8px">아직 관리자 비밀번호가 없습니다. 처음 여는 사람(교역자·부장)이 비밀번호를 정합니다.</div>'}</div>`;
+  const show = S.sub.show || 'active';
+  const list = dd.students.filter(s => show === 'all' ? true : show === 'active' ? (s.status === 'active' || s.status === 'longabsent' || s.status === 'newcomer') : s.status === show).sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+  if (S.sub.print) { const s = dd.students.find(x => x.id === S.sub.print); return `<div class="topbar no-print"><div><h1>심방 카드 출력</h1><div class="sub">${esc(s.name)} · ${esc(dd.doc.name)} 관리자 모드 — 출력물 보관에 주의</div></div><div class="row"><button class="btn" id="cr-back">돌아가기</button><button class="btn p" id="cr-print">PDF로 저장 / 인쇄</button></div></div><section class="paper">${careCardHTML(dd, s, careOf(dd, s), true)}<div class="ft"><b>중앙성서교회 ${esc(dd.doc.name)} 심방 카드</b><span>관리자 모드 전용 · ${fmtK(today())}</span></div></section>`; }
+  const lastNote = s => { const c = careOf(dd, s); const n = (c && c.notes || []).slice().sort((a, b) => a.date < b.date ? 1 : -1)[0]; return n ? n.date : ''; };
+  const sorted = S.sub.sort === 'visit' ? list.slice().sort((a, b) => (lastNote(a) || '0') < (lastNote(b) || '0') ? -1 : 1) : list;
+  return `<div class="topbar"><div><h1>심방 카드 <span class="pill info">${esc(dd.doc.name)} 관리자 모드</span></h1><div class="sub">학생 한 명의 삶의 궤적·가족·상담 내용과 심방 기록. 이 부서 관리자 비밀번호로 암호화되어 저장됩니다.</div></div>
+    <div class="row">${['active', 'left', 'all'].map(k => `<button class="btn s ${show === k ? 'p' : ''}" data-show="${k}">${{ active: '재적·새친구', left: '제적·졸업', all: '전체' }[k]}</button>`).join('')}<button class="btn s ${S.sub.sort === 'visit' ? 'p' : ''}" id="cr-sort">심방 오래된 순</button>${canEdit() ? `<button class="btn s" id="cr-import">과거 자료 가져오기</button><button class="btn s" id="cr-pw">관리자 비밀번호 바꾸기</button>` : ''}</div></div>
+  <div class="stack">
+    <div class="card"><div class="tw"><table class="rtab"><thead><tr><th>이름</th><th>나이</th><th>팸</th><th>직장·학교</th><th>최근 심방</th><th>최근 기록</th><th>명부</th><th></th></tr></thead><tbody>
+    ${sorted.map(s => { const c = careOf(dd, s); const n = (c && c.notes || []).slice().sort((a, b) => a.date < b.date ? 1 : -1)[0]; const yr = Object.values(dd.reports).filter(r => r.date.startsWith(String(YEAR))); const p = yr.filter(r => (r.att || {})[s.id]).length;
+      return `<tr class="click" data-care="${s.id}"><td>${esc(s.name)}</td><td>${s.birth ? '만 ' + ageAt(s.birth, today()) : '—'}</td><td class="note">${esc((classOf(dd, s) || {}).name || s.classId || '')}</td><td class="wrap note">${esc(c && c.job || s.school || '')}</td><td>${n ? fmtShort(n.date) : '<span class="pill warn">없음</span>'}</td><td class="wrap note">${esc(n ? n.text.slice(0, 50) : '')}</td><td>${c ? '<span class="pill ok">있음</span>' : '<span class="pill mute">없음</span>'}</td><td class="note">${YEAR} 출석 ${p}/${yr.length}</td></tr>`; }).join('')}
+    </tbody></table></div></div>
+    <div class="card"><h2>심방 자료 다루기</h2><div class="note">· 명부(직장·취미·가족·상담내용)는 ${dd.id === 'young' ? '2025년 팸원 명부에서 옮겨 왔고, 없는 사람은' : ''} 카드에서 직접 채웁니다.<br>· 심방 기록은 날짜·심방자·내용으로 쌓입니다. 기록은 관리자 비밀번호로 암호화되어 저장되므로 <b>비밀번호를 잊으면 아무도 복구할 수 없습니다</b>. 담당자가 바뀔 때 "관리자 비밀번호 바꾸기"로 넘겨 주세요.<br>· 출력물은 교역자·부장만 보관하고, 총회·보고서에는 쓰지 않습니다.</div></div>
+  </div>`;
+};
+function careForm(dd, s, c) {
+  c = c || { name: s.name, birth: s.birth || '', job: '', hobby: '', address: '', faith: '', counsel: '', family: [], notes: [], source: '앱 입력' };
+  return `<h2>${esc(s.name)} 심방 카드<span class="row" style="float:right;gap:6px"><button class="btn s" id="cr-paper">출력</button><button class="btn s" id="modal-close">닫기</button></span></h2>
+    ${careCardHTML(dd, s, c, false)}
+    <div class="fields" style="margin-top:12px"><label class="f"><span>직장·학교</span><input type="text" id="cf-job" value="${esc(c.job || '')}"></label><label class="f"><span>취미</span><input type="text" id="cf-hobby" value="${esc(c.hobby || '')}"></label>
+      <label class="f" style="grid-column:span 2"><span>상담·참고 (명부)</span><textarea id="cf-counsel">${esc(c.counsel || '')}</textarea></label>
+      <label class="f" style="grid-column:span 2"><span>가족 (한 줄에 한 명: 이름 / 관계 / 생년 / 교회(직분) / 기타)</span><textarea id="cf-family" placeholder="홍길동 / 부 / 1970년생 / 본교회(집사) / 비고">${esc((c.family || []).map(f => [f.name, f.rel, f.birth, f.church, f.note].join(' / ')).join('\n'))}</textarea></label></div>
+    <div class="row" style="margin-top:8px"><button class="btn p" id="cf-save">카드 저장</button></div>
+    <h3 style="font-size:13px;margin:14px 0 6px">심방 기록 추가</h3><div class="row" style="flex-wrap:wrap"><input type="date" id="cn-date" value="${today()}" style="width:auto"><input type="text" id="cn-by" placeholder="심방자" style="width:120px"><input type="text" id="cn-place" placeholder="장소·방법 (식사, 전화…)" style="width:160px"></div><textarea id="cn-text" placeholder="만나서 나눈 내용, 기도 제목, 다음에 챙길 것" style="margin-top:6px"></textarea><div class="row" style="margin-top:6px"><button class="btn p" id="cn-add">기록 저장</button></div>`;
+}
+BIND.care = () => {
+  const dd = D(); const ul = $('#care-unlock'); if (ul) { ul.onclick = () => adminModeDialog(dd); return; }
+  if (!isCare()) return;
+  const pw = $('#cr-pw'); if (pw) pw.onclick = () => changeCarePassword(dd);
+  const bk = $('#cr-back'); if (bk) { bk.onclick = () => { delete S.sub.print; render(); }; $('#cr-print').onclick = () => window.print(); return; }
+  document.querySelectorAll('[data-show]').forEach(b => b.onclick = () => { S.sub.show = b.dataset.show; render(); });
+  $('#cr-sort').onclick = () => { S.sub.sort = S.sub.sort === 'visit' ? '' : 'visit'; render(); };
+  const im = $('#cr-import'); if (im) im.onclick = () => importYoungHistory(dd);
+  const open = s => {
+    let c = careOf(dd, s); openModal(careForm(dd, s, c));
+    const saveCare = async (patch) => { if (!c) { c = { _id: s.id, name: s.name, birth: s.birth || '', job: '', hobby: '', address: '', faith: '', counsel: '', family: [], notes: [], source: '앱 입력' }; dd.care.push(c); } else if (c._id !== s.id) { dd.care = dd.care.filter(x => x !== c); c = { ...c, _id: s.id }; dd.care.push(c); } Object.assign(c, patch); await saveCareDoc(dd, s.id, c); };
+    $('#cr-paper').onclick = () => { closeModal(); S.sub.print = s.id; render(); };
+    $('#cf-save').onclick = async () => { const fam = $('#cf-family').value.split('\n').map(l => l.trim()).filter(Boolean).map(l => { const [name = '', rel = '', birth = '', church = '', note = ''] = l.split('/').map(x => x.trim()); return { name, rel, birth, church, note }; }); await saveCare({ job: $('#cf-job').value.trim(), hobby: $('#cf-hobby').value.trim(), counsel: $('#cf-counsel').value.trim(), family: fam }); toast('저장했습니다'); open(s); };
+    $('#cn-add').onclick = async () => { const t = $('#cn-text').value.trim(); if (!t) return; const notes = (c && c.notes || []).slice(); notes.push({ id: 'n_' + uid(), date: $('#cn-date').value || today(), by: $('#cn-by').value.trim(), place: $('#cn-place').value.trim(), text: t }); await saveCare({ notes }); toast('심방 기록을 저장했습니다'); open(s); };
+    document.querySelectorAll('[data-note-del]').forEach(b => b.onclick = async () => { await saveCare({ notes: (c.notes || []).filter(n => n.id !== b.dataset.noteDel) }); open(s); });
+  };
+  document.querySelectorAll('[data-care]').forEach(tr => tr.onclick = () => open(dd.students.find(x => x.id === tr.dataset.care)));
+};
+// 과거 자료(young_history.json) 가져오기 — 궤적·임원 이력·수련회는 청년부 자료로, 명부(care)는 심방 카드로
+function importYoungHistory(dd) {
+  openModal(`<h2>청년부 과거 자료 가져오기<button class="btn s" id="modal-close">닫기</button></h2><p class="note">tools/young_history.py로 만든 <b>young_history.json</b>을 올립니다. 임원 이력·궤적·수련회는 청년부 자료에, 명부(직장·가족·상담내용)는 심방 카드에 들어갑니다. 같은 id는 덮어씁니다.</p><input type="file" id="yh-file" accept=".json,application/json"><pre class="progress" id="yh-log" style="margin-top:10px"></pre>`);
+  $('#yh-file').onchange = async e => {
+    const f = e.target.files[0]; if (!f) return; const log = m => { $('#yh-log').textContent += m + '\n'; };
+    try { const d = JSON.parse(await f.text()); const items = await youngHistoryItems(d, dd, true); log(`임원 ${(d.officers || []).length} · 궤적 ${(d.timeline || []).length} · 수련회 ${(d.retreats || []).length} · 명부 ${(d.care || []).length} → 문서 ${items.length}개`);
+      await backend.batchSet(items, (a, b) => { $('#yh-log').textContent = $('#yh-log').textContent.replace(/\n진행.*$/, '') + `\n진행 ${a}/${b}`; }); log('완료. 새로고침하면 반영됩니다.'); (d._review || []).forEach(r => log('※ ' + r)); S.data = {}; }
+    catch (err) { log('실패: ' + (err.code || err.message)); }
+  };
+}
+async function youngHistoryItems(d, dd, withCare) {
+  const items = []; const dept = (dd && dd.id) || 'young';
+  (d.officers || []).forEach(o => items.push({ path: `depts/${dept}/officers/${o.id}`, data: o }));
+  (d.timeline || []).forEach(t => items.push({ path: `depts/${dept}/timeline/${t.id}`, data: t }));
+  (d.retreats || []).forEach(r => items.push({ path: `depts/${dept}/retreats/${r.id}`, data: r }));
+  if (withCare && S.careKey && S.careDept === dept) for (const c of (d.care || [])) { const s = dd.students.find(x => normName(x.name) === normName(c.name) && (!c.birth || !x.birth || x.birth === c.birth)); const id = s ? s.id : `${dept}_${c.name}_${c.birth || 'x'}`; const obj = { ...c, notes: c.notes || [], studentId: s ? s.id : '' }; items.push({ path: `depts/${dept}/care/${id}`, data: await encryptCare(obj) }); const i = dd.care.findIndex(x => x._id === id); const rec = { _id: id, ...obj }; if (i >= 0) dd.care[i] = rec; else dd.care.push(rec); }
+  return items;
+}
+
+/* ───────────── 부서 관리자 모드: 심방 카드 암호화 (WebCrypto, 비밀번호 → PBKDF2 → AES-GCM) ───────────── */
+const b64e = u8 => btoa(String.fromCharCode(...u8)); const b64d = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+async function deriveCareKey(pw, saltB64) { const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveKey']); return crypto.subtle.deriveKey({ name: 'PBKDF2', salt: b64d(saltB64), iterations: 200000, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']); }
+async function encJSON(key, obj) { const iv = crypto.getRandomValues(new Uint8Array(12)); const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(JSON.stringify(obj))); return { iv: b64e(iv), data: b64e(new Uint8Array(ct)) }; }
+async function decJSON(key, blob) { const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64d(blob.iv) }, key, b64d(blob.data)); return JSON.parse(new TextDecoder().decode(pt)); }
+async function encryptCare(obj, key) { const { _id, ...plain } = obj; const e = await encJSON(key || S.careKey, plain); return { enc: 'aes-gcm-v1', name: plain.name || '', studentId: plain.studentId || '', updated: today(), ...e }; }
+async function decryptCare(dd) { // dd.careRaw(암호문) → dd.care(평문). 열쇠가 안 맞는 문서는 건너뜀
+  const out = []; for (const r of dd.careRaw || []) { if (r._id === '_verify') continue; if (r.enc) { try { out.push({ _id: r._id, ...(await decJSON(S.careKey, r)) }); } catch (e) { console.warn('심방 카드 복호화 실패', r._id); } } else out.push(r); } dd.care = out;
+}
+async function saveCareDoc(dd, id, obj) { const data = await encryptCare(obj); await backend.set(`depts/${dd.id}/care/${id}`, data); const i = (dd.careRaw || []).findIndex(x => x._id === id); const raw = { _id: id, ...data }; if (i >= 0) dd.careRaw[i] = raw; else (dd.careRaw = dd.careRaw || []).push(raw); }
+function adminModeDialog(dd) {
+  const ver = (dd.careRaw || []).find(c => c._id === '_verify');
+  if (!ver) { // 처음: 비밀번호 정하기
+    openModal(`<h2>${esc(dd.doc.name)} 관리자 비밀번호 정하기<button class="btn s" id="modal-close">닫기</button></h2><p class="note">심방 카드를 처음 여는 교역자·부장이 정합니다. 이 비밀번호로 심방 기록이 암호화되므로 <b>잊으면 복구할 수 없습니다</b>. 부서 비밀번호와 다르게 정하세요.</p><div class="stack" style="margin-top:8px"><input type="password" id="am-pw" placeholder="관리자 비밀번호 (8자 이상)"><input type="password" id="am-pw2" placeholder="한 번 더"><div id="am-err" class="note" style="color:var(--bad)" hidden></div><button class="btn p" id="am-go">정하고 관리자 모드 열기</button></div>`);
+    $('#am-go').onclick = async () => { const a = $('#am-pw').value, b = $('#am-pw2').value; const el = $('#am-err'); if (a.length < 8) { el.hidden = false; el.textContent = '8자 이상으로 정하세요.'; return; } if (a !== b) { el.hidden = false; el.textContent = '두 번 입력한 비밀번호가 다릅니다.'; return; } const salt = b64e(crypto.getRandomValues(new Uint8Array(16))); const key = await deriveCareKey(a, salt); const check = await encJSON(key, { ok: true }); const v = { salt, ...check, set: today() }; await backend.set(`depts/${dd.id}/care/_verify`, v); (dd.careRaw = dd.careRaw || []).push({ _id: '_verify', ...v }); S.careKey = key; S.careDept = dd.id; await decryptCare(dd); closeModal(); S.view = 'care'; render(); toast('관리자 모드'); };
+    return;
+  }
+  openModal(`<h2>${esc(dd.doc.name)} 관리자 모드<button class="btn s" id="modal-close">닫기</button></h2><p class="note">관리자 비밀번호를 넣으면 이 부서의 심방 카드가 열립니다. 브라우저를 닫거나 "나가기"를 누르면 다시 잠깁니다.</p><div class="stack" style="margin-top:8px"><input type="password" id="am-pw" placeholder="관리자 비밀번호" autocomplete="off"><div id="am-err" class="note" style="color:var(--bad)" hidden></div><button class="btn p" id="am-go">열기</button></div>`);
+  const go = async () => { try { const key = await deriveCareKey($('#am-pw').value, ver.salt); await decJSON(key, ver); S.careKey = key; S.careDept = dd.id; await decryptCare(dd); closeModal(); S.view = 'care'; render(); toast('관리자 모드'); } catch (e) { const el = $('#am-err'); el.hidden = false; el.textContent = '비밀번호가 맞지 않습니다.'; } };
+  $('#am-go').onclick = go; $('#am-pw').onkeydown = e => { if (e.key === 'Enter') go(); }; $('#am-pw').focus();
+}
+function changeCarePassword(dd) {
+  openModal(`<h2>관리자 비밀번호 바꾸기<button class="btn s" id="modal-close">닫기</button></h2><p class="note">모든 심방 카드를 새 비밀번호로 다시 암호화합니다 (${(dd.care || []).length}건).</p><div class="stack" style="margin-top:8px"><input type="password" id="am-pw" placeholder="새 비밀번호 (8자 이상)"><input type="password" id="am-pw2" placeholder="한 번 더"><div id="am-err" class="note" style="color:var(--bad)" hidden></div><button class="btn p" id="am-go">바꾸기</button></div>`);
+  $('#am-go').onclick = async () => { const a = $('#am-pw').value, b = $('#am-pw2').value; const el = $('#am-err'); if (a.length < 8 || a !== b) { el.hidden = false; el.textContent = a.length < 8 ? '8자 이상으로 정하세요.' : '두 번 입력한 비밀번호가 다릅니다.'; return; } const salt = b64e(crypto.getRandomValues(new Uint8Array(16))); const key = await deriveCareKey(a, salt); const items = [{ path: `depts/${dd.id}/care/_verify`, data: { salt, ...(await encJSON(key, { ok: true })), set: today() } }]; for (const c of dd.care) items.push({ path: `depts/${dd.id}/care/${c._id}`, data: await encryptCare(c, key) }); await backend.batchSet(items); S.careKey = key; dd.careRaw = items.map(it => ({ _id: it.path.split('/').pop(), ...it.data })); closeModal(); render(); toast('관리자 비밀번호를 바꿨습니다'); };
+}
+
 
 /* ───────────── 시작 ───────────── */
 backend.onSession(async d => {
