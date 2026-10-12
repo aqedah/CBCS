@@ -1151,6 +1151,9 @@ const ageAt = (birth, ref) => { if (!birth || !/^\d{4}-\d\d-\d\d$/.test(birth)) 
 const yearsSince = (from, ref) => (new Date(ref + 'T00:00:00') - new Date(from + 'T00:00:00')) / (365.25 * 864e5);
 const isBaptized = s => /세례|입교/.test(s.faith || '') && s.faith !== '유아세례';
 function youngStart(dd, s) {
+  // 제적됐다가 복적한 사람은 복적일부터 새로 센다 (제적 뒤 재등록은 새가족과 같음) — 복적 기록은 statusLog의 left→active
+  const back = (s.statusLog || []).filter(l => l.from === 'left' && l.to !== 'left' && l.date).map(l => l.date).sort().pop();
+  if (back) return { date: back, est: false, rejoined: true };
   if (s.joinDate) return { date: s.joinDate, est: false };
   const c = []; const h = s.history || [];
   const yh = h.filter(x => x.dept === 'young').map(x => x.year); if (yh.length) c.push(`${Math.min(...yh)}-01-01`);
@@ -1183,6 +1186,7 @@ function judge(dd, s, base, R) {
   const cnt = yearReps.filter(r => (r.att || {})[s.id]).length; const rate = yearReps.length ? Math.round(cnt / yearReps.length * 100) : null;
   const ys = youngStart(dd, s), cs = churchStart(dd, s);
   const yYears = ys ? yearsSince(ys.date, base) : null, cYears = cs ? yearsSince(cs.date, base) : null;
+  if (ys && ys.rejoined) why.push(`제적 후 ${ys.date} 복적 — 출석 연수·6개월은 복적일부터`);
   // 4조 회원
   let member = 'ok';
   if (s.status === 'left') { member = 'no'; why.push('제적·졸업'); }
@@ -1195,7 +1199,7 @@ function judge(dd, s, base, R) {
   const memberWhy = why.slice();
   // 5조 선거권
   let voter = member;
-  const sinceNew = s.newcomerDone || (ys ? ys.date : '');
+  const sinceNew = ys && ys.rejoined && !(s.newcomerDone > ys.date) ? ys.date : (s.newcomerDone || (ys ? ys.date : ''));
   // 교회 원칙: 결의권자·회장·부회장·임명직 모두 세례교인이 기본 (회칙 판과 무관하게 항상 적용)
   if (voter !== 'no') { if (!s.faith) { voter = 'check'; why.push('신급 모름'); } else if (!isBaptized(s)) { voter = 'no'; why.push(`세례교인 아님(${s.faith})`); } }
   if (voter !== 'no') {
