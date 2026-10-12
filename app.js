@@ -1151,6 +1151,13 @@ const ageAt = (birth, ref) => { if (!birth || !/^\d{4}-\d\d-\d\d$/.test(birth)) 
 const yearsSince = (from, ref) => (new Date(ref + 'T00:00:00') - new Date(from + 'T00:00:00')) / (365.25 * 864e5);
 const isBaptized = s => /세례|입교/.test(s.faith || '') && s.faith !== '유아세례';
 function youngStart(dd, s) {
+  const r = youngStartRaw(dd, s); if (!r) return null;
+  // 고3까지는 중고등부: 청년부 등록일은 만 19세가 되는 해 1월 1일보다 앞설 수 없다
+  const by = s.birth ? +s.birth.slice(0, 4) : 0; const floor = by ? `${by + 19}-01-01` : '';
+  if (floor && r.date < floor) return { ...r, date: floor, floored: true };
+  return r;
+}
+function youngStartRaw(dd, s) {
   // 제적됐다가 복적한 사람은 복적일부터 새로 센다 (제적 뒤 재등록은 새가족과 같음) — 복적 기록은 statusLog의 left→active
   const back = (s.statusLog || []).filter(l => l.from === 'left' && l.to !== 'left' && l.date).map(l => l.date).sort().pop();
   if (back) return { date: back, est: false, rejoined: true };
@@ -1187,6 +1194,7 @@ function judge(dd, s, base, R) {
   const ys = youngStart(dd, s), cs = churchStart(dd, s);
   const yYears = ys ? yearsSince(ys.date, base) : null, cYears = cs ? yearsSince(cs.date, base) : null;
   if (ys && ys.rejoined) why.push(`제적 후 ${ys.date} 복적 — 출석 연수·6개월은 복적일부터`);
+  if (ys && ys.floored) why.push(`청년부 등록 ${ys.date} (만 19세 되는 해 1월, 그 전은 중고등부)`);
   // 4조 회원
   let member = 'ok';
   if (s.status === 'left') { member = 'no'; why.push('제적·졸업'); }
