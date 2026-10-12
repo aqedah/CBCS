@@ -319,3 +319,11 @@ details.m-cls[open]{padding-bottom:12px}
 .m-abs-row input{flex:1}
 .bylaw-grid{grid-template-columns:minmax(0,2fr) minmax(0,1fr);align-items:start}
 @media (max-width:980px){.bylaw-grid{grid-template-columns:1fr}}
+/* 가족 표·지도 */
+table.fam{table-layout:fixed;width:100%}
+table.fam td,table.fam th{white-space:normal;word-break:keep-all;overflow-wrap:anywhere}
+.map-box{margin-top:6px}
+.map-box>summary{cursor:pointer;color:var(--accent);font-size:13px;display:inline-block}
+.map-frame iframe{width:100%;height:260px;border:1px solid var(--line);border-radius:8px;margin-top:8px}
+.map-links{gap:12px;margin-top:6px;font-size:13px}
+.map-links a{color:var(--accent)}

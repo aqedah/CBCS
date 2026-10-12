@@ -452,7 +452,7 @@ function studentCard(dd, s) {
   return `<h2>${esc(s.name)} <span class="note">${esc(c ? c.name : s.classId)} · ${esc(s.sex)}</span><button class="btn s" id="modal-close">닫기</button></h2>
     ${s.flags && s.flags.length ? `<div class="flags">${s.flags.map(esc).join('<br>')}</div>` : ''}
     <div class="grid2" style="margin-top:10px">
-      <dl class="kvl"><dt>생년월일</dt><dd>${f('birth')}</dd><dt>신급</dt><dd>${esc(faithLabel(s))}</dd><dt>학교</dt><dd>${f('school')}</dd><dt>연락처(본인)</dt><dd>${f('phone')}</dd><dt>보호자 연락처</dt><dd>${f('guardianPhone')}${s.guardianPhone ? ' (' + esc(s.guardianRel || '보호자') + ')' : ''}</dd><dt>아버지</dt><dd>${f('father')}</dd><dt>어머니</dt><dd>${f('mother')}</dd><dt>주소</dt><dd>${f('address')}</dd><dt>전도자</dt><dd>${f('evangelist')}</dd><dt>장학</dt><dd>${esc((s.scholarship || []).join(', '))}</dd><dt>비고</dt><dd>${f('note')}</dd></dl>
+      <dl class="kvl"><dt>생년월일</dt><dd>${f('birth')}</dd><dt>신급</dt><dd>${esc(faithLabel(s))}</dd><dt>학교</dt><dd>${f('school')}</dd><dt>연락처(본인)</dt><dd>${f('phone')}</dd><dt>보호자 연락처</dt><dd>${f('guardianPhone')}${s.guardianPhone ? ' (' + esc(s.guardianRel || '보호자') + ')' : ''}</dd><dt>아버지</dt><dd>${f('father')}</dd><dt>어머니</dt><dd>${f('mother')}</dd><dt>주소</dt><dd>${f('address')}${mapToggle(s.address)}</dd><dt>전도자</dt><dd>${f('evangelist')}</dd><dt>장학</dt><dd>${esc((s.scholarship || []).join(', '))}</dd><dt>비고</dt><dd>${f('note')}</dd></dl>
       <div><div class="note" style="margin-bottom:4px">소속 이력</div><table><tbody>${(s.history || []).map(h => `<tr><td>${h.year}</td><td>${esc(DEPTS[h.dept] || h.dept)}${h.origDept && h.origDept !== DEPTS[h.dept] ? ' (' + esc(h.origDept) + ')' : ''}</td><td>${esc(h.classId || '')}</td><td class="note">${esc(h.note || '')}</td></tr>`).join('') || '<tr><td class="note">기록 없음</td></tr>'}<tr><td>${YEAR}</td><td>${esc(dd.doc.name)}</td><td>${esc(c ? c.name : s.classId)}</td><td class="note">현재</td></tr></tbody></table>
         ${(s.statusLog || []).length ? `<div class="note" style="margin:10px 0 4px">상태 변경 기록</div><div class="note">${s.statusLog.map(l => `${esc(l.date)} ${l.to === 'left' ? '제적·졸업' : '복적'}${l.kind ? '(' + esc(l.kind) + ')' : ''}${l.reason ? ' — ' + esc(l.reason) : ''}`).join('<br>')}</div>` : ''}
         <div class="note" style="margin:10px 0 4px">${YEAR}년 출석 ${present}/${reps.length}회</div>
@@ -1530,15 +1530,30 @@ function bindTimeline(dd, s) {
 }
 
 /* ───────────── 청년부: 심방 카드 (교역자·부장 전용) ───────────── */
+// 가족: 심방 카드의 가족 기록이 없으면 출석부의 부·모·형제자매에서 표를 만듦 (이름 뒤 직분은 교회(직분) 칸으로)
+const TITLE_RE = /\s*(목사|전도사|장로|권사|안수집사|집사|성도|청년)$/;
+function familyRows(s) {
+  const split = (v, rel) => { const t = String(v || '').trim(); if (!t) return null; const m = t.match(TITLE_RE); return { name: m ? t.slice(0, m.index).trim() : t, rel, birth: '', church: m ? m[1] : '', note: '' }; };
+  const rows = [split(s.father, '부'), split(s.mother, '모')].filter(Boolean);
+  (s.siblings || []).forEach(n => { let where = ''; for (const d of Object.keys(DEPTS)) { const dd = S.data[d]; const x = dd && dd.students.find(y => y.name === n && y.status !== 'left'); if (x) { where = `${DEPTS[d]} ${(classOf(dd, x) || {}).name || x.classId || ''}`.trim(); break; } } rows.push({ name: n, rel: '형제자매', birth: '', church: where ? '본교회' : '', note: where }); });
+  return rows;
+}
+// 주소 옆 지도: 펼칠 때만 지도를 불러옴(펼치기 전에는 주소가 지도 서비스로 가지 않음)
+function mapToggle(addr) {
+  if (!addr) return '';
+  const q = encodeURIComponent(addr);
+  return `<details class="map-box no-print" data-map="${esc(addr)}"><summary>지도 펼치기</summary><div class="map-frame"></div><div class="row map-links"><a href="https://map.kakao.com/link/search/${q}" target="_blank" rel="noopener">카카오맵</a><a href="https://map.naver.com/p/search/${q}" target="_blank" rel="noopener">네이버 지도</a><a href="https://www.google.com/maps/search/?api=1&query=${q}" target="_blank" rel="noopener">구글 지도</a><span class="note">길찾기는 지도 앱에서</span></div></details>`;
+}
+document.addEventListener('toggle', e => { const d = e.target; if (!d.matches || !d.matches('details[data-map]') || !d.open) return; const f = d.querySelector('.map-frame'); if (f && !f.firstChild) f.innerHTML = `<iframe title="지도" loading="lazy" referrerpolicy="no-referrer" src="https://maps.google.com/maps?q=${encodeURIComponent(d.dataset.map)}&z=16&output=embed"></iframe>`; }, true);
 function careOf(dd, s) { return (dd.care || []).find(c => c._id === s.id) || (dd.care || []).find(c => normName(c.name) === normName(s.name) && (!c.birth || !s.birth || c.birth === s.birth)) || null; }
 function careCardHTML(dd, s, c, forPrint) {
   const tl = studentTimeline(dd, s); const off = officersOf(dd, s);
-  const fam = (c && c.family || []);
+  const famSaved = (c && c.family || []).filter(f => f.name || f.rel); const fam = famSaved.length ? famSaved : familyRows(s);
   const notes = (c && c.notes || []).slice().sort((a, b) => a.date < b.date ? 1 : -1);
   return `<div class="care-card">
     <div class="care-head"><div><div class="care-name">${esc(s.name)} <span class="note">${esc(s.sex)} · ${s.birth ? fmtShort(s.birth) + ' (만 ' + ageAt(s.birth, today()) + '세)' : '생년월일 미입력'} · ${esc((classOf(dd, s) || {}).name || s.classId || '')}</span></div><div class="note">${esc(faithLabel(s))}${c && c.faith && c.faith !== s.faith ? ' · 명부 신급: ' + esc(c.faith) : ''} · ${esc(phoneLabel(s))}</div></div><div class="note">${{ active: '재적', newcomer: '새친구', longabsent: '장기결석', left: '제적·졸업' }[s.status] || ''}</div></div>
-    <dl class="kvl"><dt>직장·학교</dt><dd>${esc(c && c.job || s.school || '')}</dd><dt>취미</dt><dd>${esc(c && c.hobby || '')}</dd><dt>주소</dt><dd>${esc(s.address || c && c.address || '')}</dd><dt>청년부 첫 출석</dt><dd>${esc(s.joinDate || '')}</dd><dt>임원·팸장</dt><dd>${off.map(o => `${o.year} ${esc(o.role)}`).join(', ')}</dd></dl>
-    <h3>가족</h3><table><thead><tr><th>이름</th><th>관계</th><th>생년</th><th>교회(직분)</th><th>기타</th></tr></thead><tbody>${fam.map(f => `<tr><td>${esc(f.name)}</td><td>${esc(f.rel)}</td><td>${esc(f.birth)}</td><td>${esc(f.church)}</td><td class="wrap">${esc(f.note)}</td></tr>`).join('') || `<tr><td colspan="5" class="note">${[s.father ? '부 ' + esc(s.father) : '', s.mother ? '모 ' + esc(s.mother) : '', (s.siblings || []).length ? '형제자매 ' + esc(s.siblings.join(', ')) : ''].filter(Boolean).join(' · ') || '기록 없음'}</td></tr>`}</tbody></table>
+    <dl class="kvl"><dt>직장·학교</dt><dd>${esc(c && c.job || s.school || '')}</dd><dt>취미</dt><dd>${esc(c && c.hobby || '')}</dd><dt>주소</dt><dd>${esc(s.address || c && c.address || '')}${forPrint ? '' : mapToggle(s.address || c && c.address || '')}</dd><dt>청년부 첫 출석</dt><dd>${esc(s.joinDate || '')}</dd><dt>임원·팸장</dt><dd>${off.map(o => `${o.year} ${esc(o.role)}`).join(', ')}</dd></dl>
+    <h3>가족 ${famSaved.length ? '' : fam.length ? '<span class="note">출석부의 부모·형제 정보에서 가져옴 — 아래에서 고쳐 저장하면 이 표가 됩니다</span>' : ''}</h3><div class="tw"><table class="fam"><colgroup><col style="width:22%"><col style="width:13%"><col style="width:13%"><col style="width:20%"><col></colgroup><thead><tr><th>이름</th><th>관계</th><th>생년</th><th>교회(직분)</th><th>기타</th></tr></thead><tbody>${fam.map(f => `<tr><td>${esc(f.name)}</td><td>${esc(f.rel)}</td><td>${esc(f.birth)}</td><td>${esc(f.church)}</td><td class="wrap">${esc(f.note)}</td></tr>`).join('') || `<tr><td colspan="5" class="note">기록 없음</td></tr>`}</tbody></table></div>
     <h3>상담·참고 (명부)</h3><p class="care-text">${esc(c && c.counsel || '—')}</p>
     <h3>심방 기록 <span class="note">${notes.length}건</span></h3>
     <div class="list">${notes.map(n => `<div class="item"><div><div class="t">${fmtShort(n.date)} <span class="note">${esc(n.by || '')}${n.place ? ' · ' + esc(n.place) : ''}</span></div><div class="d care-text">${esc(n.text)}</div></div>${forPrint ? '' : `<button class="btn s d" data-note-del="${esc(n.id)}">삭제</button>`}</div>`).join('') || '<div class="note">아직 심방 기록이 없습니다.</div>'}</div>
@@ -1571,7 +1586,7 @@ function careForm(dd, s, c) {
     ${careCardHTML(dd, s, c, false)}
     <div class="fields" style="margin-top:12px"><label class="f"><span>직장·학교</span><input type="text" id="cf-job" value="${esc(c.job || '')}"></label><label class="f"><span>취미</span><input type="text" id="cf-hobby" value="${esc(c.hobby || '')}"></label>
       <label class="f" style="grid-column:span 2"><span>상담·참고 (명부)</span><textarea id="cf-counsel">${esc(c.counsel || '')}</textarea></label>
-      <label class="f" style="grid-column:span 2"><span>가족 (한 줄에 한 명: 이름 / 관계 / 생년 / 교회(직분) / 기타)</span><textarea id="cf-family" placeholder="홍길동 / 부 / 1970년생 / 본교회(집사) / 비고">${esc((c.family || []).map(f => [f.name, f.rel, f.birth, f.church, f.note].join(' / ')).join('\n'))}</textarea></label></div>
+      <label class="f" style="grid-column:span 2"><span>가족 (한 줄에 한 명: 이름 / 관계 / 생년 / 교회(직분) / 기타)</span><textarea id="cf-family" placeholder="홍길동 / 부 / 1970년생 / 본교회(집사) / 비고">${esc(((c.family || []).filter(f => f.name || f.rel).length ? c.family : familyRows(s)).map(f => [f.name, f.rel, f.birth, f.church, f.note].join(' / ')).join('\n'))}</textarea></label></div>
     <div class="row" style="margin-top:8px"><button class="btn p" id="cf-save">카드 저장</button></div>
     <h3 style="font-size:13px;margin:14px 0 6px">심방 기록 추가</h3><div class="row" style="flex-wrap:wrap"><input type="date" id="cn-date" value="${today()}" style="width:auto"><input type="text" id="cn-by" placeholder="심방자" style="width:120px"><input type="text" id="cn-place" placeholder="장소·방법 (식사, 전화…)" style="width:160px"></div><textarea id="cn-text" placeholder="만나서 나눈 내용, 기도 제목, 다음에 챙길 것" style="margin-top:6px"></textarea><div class="row" style="margin-top:6px"><button class="btn p" id="cn-add">기록 저장</button></div>`;
 }
