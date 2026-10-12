@@ -41,7 +41,7 @@ depts/{d}/events/{id} · notices/{id}       연간 행사 · 부서 공지
 committee/main (+ notices, events)         교육위원회 임원 · 공지 · 공통 일정
 scholarship/{id}                           장학(교육위원회 전용, 계좌 포함)
 archive/{id}                               2025년 이전 파일 색인(파일은 시놀로지)
-promotions/{year_studentId}                다음 해 진급 예정자(보내는 부서가 자동 기록, 받는 부서가 "명단에 받기")
+promotions/{year_studentId}                다음 해 진급 예정자(보내는 부서가 자동 기록, 받는 부서가 "출석부에 받기")
 meta/import                                가져오기 기록
 ```
 
@@ -49,7 +49,7 @@ meta/import                                가져오기 기록
 
 - 비밀번호 변경: Firebase 콘솔 → Authentication → 사용자 → 비밀번호 재설정.
 - 담당자 교체: 부서 비밀번호만 새로 알려주면 됨. 교회 계정이 생기면 Firebase "사용자 및 권한"과 GitHub 저장소 소유권을 그 계정으로 이전.
-- 연도 바뀔 때: 각 부서 명단의 "진급자 명단 출력"으로 확인 → 받는 부서가 "명단에 받기" → 보내는 부서는 졸업자를 제적·졸업으로 → `config.js`의 `CBCS_YEAR`를 바꾸고 연간 계획 입력.
+- 연도 바뀔 때: 각 부서 출석부의 "진급자 명단 출력"으로 확인 → 받는 부서가 "출석부에 받기" → 보내는 부서는 졸업자를 제적·졸업으로 → `config.js`의 `CBCS_YEAR`를 바꾸고 연간 계획 입력.
 - 로컬 시험: `python3 -m http.server` 후 `index.html?mock=1` (브라우저 저장소만 사용, `data/import_data.json`이 있으면 자동 적재).
 
 ## 자료 보관
