@@ -1353,9 +1353,31 @@ function pickAssembly(dd) {
 const asmPicker = (list, a) => `<select id="as-pick" style="width:auto">${list.map(x => `<option value="${esc(x.id)}" ${x.id === a.id ? 'selected' : ''}>${esc(x.date)} ${esc(x.kind)}</option>`).join('')}${a.unsaved ? `<option value="${esc(a.id)}" selected>${esc(a.date)} ${esc(a.kind)} (새로 만드는 중)</option>` : ''}</select>${canYoung() ? '<button class="btn s" id="as-new">새 총회</button>' : ''}`;
 
 /* 회칙 */
+// 회칙·헌장 본문 보기: 편 > 장 > 절·관 > 조 > 항(①) > 호(1. 가.)와, 장·조에 속하지 않는 머리말·전문·소제목을 구분해 보여 준다
+const BL_SPECIAL = /^[\[【<〈《(「]?\s*(머\s*리\s*말|전\s*문|서\s*문|前\s*文|서\s*언|총\s*강|강\s*령|신앙\s*고백|신\s*조|선\s*언(?:\s*문)?|선\s*서(?:\s*문)?|목\s*적|이\s*념|정\s*신|비\s*전|사\s*명(?:\s*선언)?|맺\s*음\s*말|부\s*록|별\s*표|별\s*지)(?:\s*[:：].*)?\s*[\]】>〉》)」]?$/;
 function bylawHTML(t) {
   if (!t.trim()) return '';
-  return t.split('\n').map(l => { const x = l.trim(); if (!x) return ''; if (/^제\s*\d+\s*장/.test(x) || /^부\s*칙/.test(x)) return `<h3>${esc(x)}</h3>`; const m = x.match(/^(제\s*\d+\s*조(?:의\s*\d+)?\s*(?:\([^)]*\))?)(.*)$/); return m ? `<p><span class="art">${esc(m[1])}</span>${esc(m[2])}</p>` : `<p>${esc(x)}</p>`; }).join('');
+  const out = [], toc = []; let first = true, inArticles = false, pre = false, n = 0;
+  const head = (tag, cls, x) => { const id = 'bl-h' + (n++); toc.push({ id, cls, x }); return `<div role="heading" aria-level="${tag.slice(1)}" class="${cls}" id="${id}">${esc(x)}</div>`; };
+  for (const l of t.split('\n')) {
+    const x = l.trim(); if (!x) continue;
+    const isTitle = first && x.length <= 40 && !/^제\s*\d+\s*(편|장|조)/.test(x); first = false;
+    if (isTitle) { out.push(`<div class="bl-title">${esc(x)}</div>`); continue; }
+    if (/^제\s*\d+\s*편/.test(x)) { pre = false; out.push(head('h2', 'bl-part', x)); continue; }
+    if (/^제\s*\d+\s*장/.test(x) || /^부\s*칙/.test(x)) { pre = false; out.push(head('h3', 'bl-chap', x)); continue; }
+    if (/^제\s*\d+\s*(절|관)/.test(x)) { pre = false; out.push(head('h4', 'bl-sect', x)); continue; }
+    const m = x.match(/^(제\s*\d+\s*조(?:\s*의\s*\d+)?\s*(?:[(（][^)）]*[)）])?)(.*)$/);
+    if (m) { pre = false; inArticles = true; out.push(`<p class="bl-art"><span class="art">${esc(m[1])}</span>${esc(m[2])}</p>`); continue; }
+    if (BL_SPECIAL.test(x)) { pre = true; out.push(head('h3', 'bl-special', x.replace(/^[\[【<〈《(「]\s*|\s*[\]】>〉》)」]$/g, ''))); continue; }
+    if (/^([①-⑳]|\(\d+\)|（\d+）)/.test(x)) { out.push(`<p class="bl-cl1">${esc(x)}</p>`); continue; }
+    if (/^(\d+\s*[.)]|[가-하]\s*[.)]|\d+\s*\.\s*\d+)\s*/.test(x) && !/^\d{4}\s*[.년]/.test(x)) { out.push(`<p class="bl-cl2">${esc(x)}</p>`); continue; }
+    const shortHead = x.length <= 24 && !/[.。:;,，다요음함됨임]$/.test(x) && !/\d{4}/.test(x);
+    if (shortHead) { pre = !inArticles; out.push(head('h4', 'bl-sub', x)); continue; }
+    out.push(`<p class="${pre || !inArticles ? 'bl-pre' : ''}">${esc(x)}</p>`);
+  }
+  const big = toc.filter(h => h.cls !== 'bl-sub' && h.cls !== 'bl-sect');
+  const tocHTML = big.length >= 4 ? `<nav class="bl-toc no-print"><b>차례</b>${big.map(h => `<a href="#${h.id}" class="t-${h.cls.slice(3)}" data-bltoc="${h.id}">${esc(h.x)}</a>`).join('')}</nav>` : '';
+  return tocHTML + out.join('');
 }
 VIEWS.bylaws = async () => {
   const dd = await loadYoung();
@@ -1489,6 +1511,7 @@ function bylawUploadDialog(dd, b) {
 }
 BIND.bylaws = () => {
   const dd = S.data.young; const kind = (dd.bylaws.find(x => x.id === S.sub.bylaw) ? bylawKind(dd.bylaws.find(x => x.id === S.sub.bylaw)) : (S.sub.rdoc || 'young')); const b = dd.bylaws.find(x => x.id === S.sub.bylaw) || currentOf(dd, kind);
+  document.querySelectorAll('[data-bltoc]').forEach(a => a.onclick = e => { e.preventDefault(); const h = document.getElementById(a.dataset.bltoc); if (h) h.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
   document.querySelectorAll('[data-rdoc]').forEach(x => x.onclick = () => { S.sub = { rdoc: x.dataset.rdoc }; render(); });
   document.querySelectorAll('[data-bylaw]').forEach(x => x.onclick = () => { S.sub = { bylaw: x.dataset.bylaw }; render(); });
   const pr = $('#bl-print'); if (pr) pr.onclick = () => { S.sub.print = true; render(); };
@@ -1496,7 +1519,7 @@ BIND.bylaws = () => {
   const dn = $('#bl-down'); if (dn) dn.onclick = async () => { const f = await backend.get(`depts/young/bylawFiles/${b.id}`); if (!f || !f.data) { toast('원본 파일을 찾지 못했습니다'); return; } const bin = atob(f.data); const u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([u8], { type: f.type || 'application/octet-stream' })); a.download = f.name || 'bylaw'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); };
   const bk = $('#bl-back'); if (bk) { bk.onclick = () => { delete S.sub.print; render(); }; $('#bl-pr').onclick = () => window.print(); return; }
   const ed = $('#bl-edit'); if (ed) ed.onclick = () => { S.sub.editText = true; S.sub.bylaw = b.id; render(); };
-  const cc = $('#bt-cancel'); if (cc) { cc.onclick = () => { delete S.sub.editText; render(); }; $('#bt-save').onclick = async () => { Object.assign(b, { title: $('#bt-title').value.trim(), revision: $('#bt-rev').value.trim(), date: $('#bt-date').value, text: $('#bt-text').value }); await saveBylaw(dd, b); delete S.sub.editText; render(); toast('회칙을 저장했습니다'); }; return; }
+  const cc = $('#bt-cancel'); if (cc) { cc.onclick = () => { delete S.sub.editText; render(); }; $('#bt-save').onclick = async () => { Object.assign(b, { title: $('#bt-title').value.trim(), revision: $('#bt-rev').value.trim(), date: $('#bt-date').value, text: $('#bt-text').value }); await saveBylaw(dd, b); delete S.sub.editText; render(); toast(`${RULE_DOCS[kind].name}을(를) 저장했습니다`); }; return; }
   const cu = $('#bl-current'); if (cu) cu.onclick = () => { openModal(`<h2>현행 ${esc(RULE_DOCS[kind].name)} 지정<button class="btn s" id="modal-close">닫기</button></h2><p>"${esc(b.revision)}"을 현행으로 지정할까요? 지금 현행인 판은 "이전 판"이 됩니다.${kind === 'young' ? ' 총회 자료의 자동 판정은 이 판의 기준값을 따릅니다. 보통 총회에서 개정안이 통과된 뒤에 누릅니다.' : ''}</p><div class="row"><button class="btn p" id="cu-yes">지정</button><button class="btn" id="cu-no">취소</button></div>`); $('#cu-no').onclick = closeModal; $('#cu-yes').onclick = async () => { for (const x of bylawsOf(dd, kind)) { if (x.status === 'current' && x !== b && !x.unsaved) { x.status = 'old'; await saveBylaw(dd, x); } } b.status = 'current'; await saveBylaw(dd, b); closeModal(); render(); toast('현행으로 지정했습니다'); }; };
   const ad = $('#bl-add'); if (ad) ad.onclick = async () => { const cur = currentOf(dd, kind); const n = { id: (kind === 'charter' ? 'charter_' : 'rev_') + uid(), ...(kind === 'young' ? { params: { ...(cur.params || RULE_2025) } } : { kind }), title: cur.title.replace(/ 개정안$/, '') + ' 개정안', revision: `${YEAR + 1} 개정안`, date: today(), status: 'draft', text: cur.text, summary: [], notes: '' }; await saveBylaw(dd, n); dd.bylaws.push(n); S.sub = { bylaw: n.id, editText: true }; render(); };
   const rs = $('#rp-save'); if (rs) rs.onclick = async () => { const R = { ...(b.params || RULE_2025) }; document.querySelectorAll('[data-rp]').forEach(i => { const k = i.dataset.rp; R[k] = /Baptized/.test(k) ? i.value === '1' : +i.value || 0; }); b.params = R; await saveBylaw(dd, b); render(); toast('기준값을 저장했습니다'); };
