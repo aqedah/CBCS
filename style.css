@@ -225,3 +225,18 @@ textarea[readonly],input[readonly]{background:var(--line-soft)}
 .doc-tabs button{border:0;background:none;padding:10px 16px;font-size:14px;color:var(--muted);border-bottom:3px solid transparent;margin-bottom:-2px;white-space:nowrap}
 .doc-tabs button.on{color:var(--accent);border-bottom-color:var(--accent);font-weight:700}
 .doc-tabs button:hover{color:var(--fg)}
+
+/* 패치 현황 전광판 — 메인 맨 위. 최근 5건이 한 줄씩 위로 넘어가고, 누르면 전체 내역 */
+.board{--bh:24px;display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:8px 14px;border:1px solid #2a2824;border-radius:8px;background:#1d1c19;color:#f3f1ec;font-size:13px}
+.board .lab{flex-shrink:0;font-size:11px;font-weight:700;letter-spacing:.08em;color:#ffcf6b;padding-right:12px;border-right:1px solid #45423b;white-space:nowrap}
+.board .win{flex:1;min-width:0;height:var(--bh);overflow:hidden;display:block}
+.board .roll{display:block;animation:board-roll 25s cubic-bezier(.6,0,.3,1) infinite}
+.board:hover .roll,.board:focus-visible .roll{animation-play-state:paused}
+.board .ln{display:block;height:var(--bh);line-height:var(--bh);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.board .dt{color:#ffcf6b;font-variant-numeric:tabular-nums;margin-right:10px}
+.board .ln b{font-weight:500}
+.board .mm{color:#b9b4a8;margin-left:10px}
+.board .more{flex-shrink:0;font-size:12px;color:#b9b4a8;white-space:nowrap}
+@keyframes board-roll{0%,17%{transform:translateY(0)}20%,37%{transform:translateY(calc(var(--bh)*-1))}40%,57%{transform:translateY(calc(var(--bh)*-2))}60%,77%{transform:translateY(calc(var(--bh)*-3))}80%,97%{transform:translateY(calc(var(--bh)*-4))}100%{transform:translateY(calc(var(--bh)*-5))}}
+@media (prefers-reduced-motion:reduce){.board .roll{animation:none}}
+@media(max-width:760px){.board{gap:8px;padding:8px 10px}.board .lab{padding-right:8px}.board .mm{display:none}.board .more{font-size:11px}}

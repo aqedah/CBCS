@@ -208,6 +208,20 @@ function monthNav(m) { return `<div class="row" style="margin-bottom:8px"><butto
 function bindMonthNav() { document.querySelectorAll('[data-month]').forEach(b => b.onclick = () => { S.sub.month = b.dataset.month; render(); }); }
 function eventListHTML(events, m) { const ev = events.filter(e => ym(e.date) === m || (e.end && e.date <= m+'-31' && e.end >= m+'-01')).sort((a,b) => a.date < b.date ? -1 : 1); return `<div class="list">${ev.map(e => `<div class="item"><div><div class="t">${esc(e.title)}</div><div class="d">${fmtK(e.date)}${e.end ? ' ~ ' + fmtK(e.end) : ''}${e.note ? ' · ' + esc(e.note) : ''}</div></div>${e.c ? '<span class="pill mute">교육위원회</span>' : ''}</div>`).join('') || '<div class="note">이달 일정이 없습니다.</div>'}</div>`; }
 
+/* ───────────── 패치 현황 전광판 ───────────── */
+const PATCHES = window.CBCS_PATCHES || [];
+const patchDay = d => `${+d.slice(5, 7)}/${+d.slice(8, 10)}`;
+function patchBoard() {
+  if (!PATCHES.length) return '';
+  const top = Array.from({ length: 5 }, (_, i) => PATCHES[i % PATCHES.length]); // 최근 5건을 차례로 넘김(끝에 첫 줄을 한 번 더 붙여 이음매 없이)
+  const line = (p, hide) => `<div class="ln"${hide ? ' aria-hidden="true"' : ''}><span class="dt">${patchDay(p.d)}</span><b>${esc(p.t)}</b><span class="mm">${esc(p.m)}</span></div>`;
+  return `<button type="button" class="board no-print" id="board" title="패치 내역 전체 보기"><span class="lab">패치 현황</span><span class="win"><span class="roll">${top.map((p, i) => line(p, i > 0)).join('')}${line(top[0], true)}</span></span><span class="more">전체 ${PATCHES.length}건 ›</span></button>`;
+}
+function bindBoard() {
+  const b = $('#board'); if (!b) return;
+  b.onclick = () => openModal(`<h2>패치 현황<button class="btn s" id="modal-close">닫기</button></h2><div class="note" style="margin-bottom:10px">최근 순서입니다. 가장 최근 패치: ${fmtK(PATCHES[0].d)}</div><div class="list">${PATCHES.map(p => `<div class="item"><div><div class="t">${esc(p.t)}</div><div class="d">${esc(p.m)}</div></div><span class="note" style="white-space:nowrap">${patchDay(p.d)}</span></div>`).join('')}</div>`);
+}
+
 /* ───────────── 메인 ───────────── */
 VIEWS.home = async () => {
   await loadCommittee();
@@ -218,6 +232,7 @@ VIEWS.home = async () => {
     for (const d of Object.keys(DEPTS)) { const dd = await loadDept(d); const r = dd.reports[ls]; rows.push({ d, dd, r, s: r ? reportStats(dd, r) : null }); plans.push({ d, dd, cur: await loadPlan(dd, YEAR), next: await loadPlan(dd, YEAR + 1) }); }
     return `<div class="topbar"><div><h1>교육위원회</h1><div class="sub">전 부서 제출 현황과 공지</div></div><div class="row"><input type="date" id="c-date" value="${ls}" style="width:auto"><button class="btn s" id="c-date-go">조회</button></div></div>
     <div class="stack">
+      ${patchBoard()}
       <div class="card"><h2>주일 보고서 제출 현황 <span class="r">${fmtK(ls)}</span></h2><div class="tw"><table><thead><tr><th>부서</th><th>상태</th><th class="n">재적</th><th class="n">출석</th><th class="n">출석률</th><th class="n">헌금</th><th>특이사항</th><th></th></tr></thead><tbody>
       ${rows.map(({ d, dd, r, s }) => r ? `<tr><td>${DEPTS[d]}</td><td><span class="pill ok">제출</span></td><td class="n">${s.total}</td><td class="n">${s.p}</td><td class="n">${s.rate}%</td><td class="n">${won(s.offSum)}</td><td class="wrap note">${isUnited(r) ? '<span class="pill info">세대통합</span> ' : ''}${esc((r.special||'').split('\n')[0]).slice(0,60)}</td><td><button class="btn s" data-go="reports" data-sub='${JSON.stringify({ dept: d, preview: ls })}'>보기</button></td></tr>`
         : `<tr><td>${DEPTS[d]}</td><td><span class="pill warn">미제출</span></td><td class="n">${activeStudents(dd).length}</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td></td><td></td></tr>`).join('')}
@@ -238,6 +253,7 @@ VIEWS.home = async () => {
   const notices = [...C().notices.map(n => ({ ...n, from: '교육위원회', own: false })), ...dd.notices.map(n => ({ ...n, from: dd.doc.name, own: true }))].sort((a,b) => a.date < b.date ? 1 : -1);
   return `<div class="topbar"><div><h1>${esc(dd.doc.name)}</h1><div class="sub">${fmtK(today())}${dd.doc.notes && dd.doc.notes.merge ? ' · ' + esc(dd.doc.notes.merge) : ''}</div></div>${canEdit() ? `<button class="btn p" data-go="weekly" data-sub='${JSON.stringify({ date: ls })}'>이번 주 보고서 작성</button>` : `<button class="btn p" data-go="attend">출석 체크</button>`}</div>
   <div class="stack">
+    ${patchBoard()}
     ${planBanner(dd, nextPlan && nextPlan.status === 'confirmed' && new Date().getMonth() >= 10 ? nextPlan : curPlan)}
     ${nextPlan && nextPlan.status === 'confirmed' && new Date().getMonth() < 10 ? planBanner(dd, nextPlan, true) : ''}
     <div class="tiles">
@@ -255,7 +271,7 @@ VIEWS.home = async () => {
   </div>`;
 };
 BIND.home = () => {
-  bindMonthNav();
+  bindMonthNav(); bindBoard();
   if (isCommittee()) {
     const g = $('#c-date-go'); if (g) g.onclick = () => { S.sub.date = $('#c-date').value; render(); };
     const a = $('#cn-add'); if (a) a.onclick = async () => { const t = $('#cn-title').value.trim(); if (!t) return; const n = { id: uid(), date: today(), title: t, body: $('#cn-body').value.trim() }; await backend.set(`committee/main/notices/${n.id}`, n); C().notices.push({ _id: n.id, ...n }); render(); };
