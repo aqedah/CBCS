@@ -409,7 +409,7 @@ VIEWS.roster = async () => {
   if (S.sub.leftPrint) return `<div class="topbar no-print"><div><h1>제적 명단 출력</h1></div><div class="row"><button class="btn" id="lf-back">출석부로</button><button class="btn p" id="lf-pr">PDF로 저장 / 인쇄</button></div></div>${leftPaper(dd)}`;
   const show = S.sub.show || 'active';
   const list = dd.students.filter(s => show === 'all' ? true : show === 'active' ? (s.status === 'active' || s.status === 'longabsent') : s.status === show);
-  const sort = S.sub.sort || 'gradeAsc';
+  const sort = S.sub.sort || 'name';
   const corder = s => { const i = dd.doc.classes.findIndex(c => c.id === s.classId); return i < 0 ? 999 : i; };
   const byName = (a, b) => a.name.localeCompare(b.name, 'ko');
   const sorted = list.slice().sort(sort === 'name' ? byName : sort === 'gradeDesc' ? ((a, b) => { const sa = /새친구|장기/.test(a.classId || '') ? 1 : 0, sb = /새친구|장기/.test(b.classId || '') ? 1 : 0; return sa - sb || corder(b) - corder(a) || byName(a, b); }) : ((a, b) => corder(a) - corder(b) || byName(a, b)));
@@ -423,7 +423,7 @@ VIEWS.roster = async () => {
       ${plan.out.length ? `<div class="note" style="margin:10px 0 4px">졸업·상급 부서 진급 예정 (${plan.out.length}명) — 상대 부서 출석부에 자동으로 표시됩니다</div><div class="row" style="gap:6px">${plan.out.map(({ s, toDept, toClass }) => `<span class="pill mute">${esc(s.name)} → ${DEPTS[toDept]} ${esc(toClass)}</span>`).join('')}</div>` : ''}
     </div>` : ''}
     ${show === 'left' ? leftSection(dd, canEdit() && !isCommittee()) : ''}
-    ${show === 'left' ? '' : `<div class="card"><h2><span>학생 <span class="row" style="display:inline-flex;gap:4px;margin-left:8px">${[['gradeAsc', dd.doc.classLabel + ' 오름차순'], ['gradeDesc', dd.doc.classLabel + ' 내림차순'], ['name', '이름 가나다순']].map(([k, v]) => `<button class="btn s ${sort === k ? 'p' : ''}" data-sort="${k}">${esc(v)}</button>`).join('')}</span></span> <span class="r">생년월일·연락처·주소는 부서 안에서만 보이고 PDF에는 이름만 나갑니다</span></h2>
+    ${show === 'left' ? '' : `<div class="card"><h2><span>학생 <span class="row" style="display:inline-flex;gap:4px;margin-left:8px">${[['name', '이름 가나다순'], ['gradeAsc', dd.doc.classLabel + ' 오름차순'], ['gradeDesc', dd.doc.classLabel + ' 내림차순']].map(([k, v]) => `<button class="btn s ${sort === k ? 'p' : ''}" data-sort="${k}">${esc(v)}</button>`).join('')}</span></span> <span class="r">생년월일·연락처·주소는 부서 안에서만 보이고 PDF에는 이름만 나갑니다</span></h2>
       <div class="tw"><table class="roster"><colgroup><col style="width:96px"><col style="width:130px"><col style="width:52px"><col style="width:108px"><col style="width:110px"><col style="width:170px"><col style="width:150px"><col><col style="width:84px"></colgroup><thead><tr><th>이름</th><th>${esc(dd.doc.classLabel)}</th><th>성별</th><th>생년월일</th><th>신급</th><th>연락처</th><th>학교</th><th>비고</th><th>상태</th></tr></thead><tbody>
       ${sorted.map(s => studentRow(dd, s)).join('')}
       </tbody></table></div>
@@ -456,7 +456,7 @@ VIEWS.attlog = async () => {
   const reps = sundays.map(ds => dd.reports[ds] || null);
   const inYear = new Set(); Object.values(dd.reports).forEach(r => { if (r.date.startsWith(String(year))) Object.keys(r.att || {}).forEach(id => inYear.add(id)); });
   const corder = s => { const i = dd.doc.classes.findIndex(c => c.id === s.classId); return i < 0 ? 999 : i; };
-  const list = dd.students.filter(s => s.status !== 'left' || inYear.has(s.id)).sort((a, b) => corder(a) - corder(b) || a.name.localeCompare(b.name, 'ko'));
+  const alSort = S.sub.sort || 'name'; const list = dd.students.filter(s => s.status !== 'left' || inYear.has(s.id)).sort((a, b) => (alSort === 'name' ? 0 : corder(a) - corder(b)) || a.name.localeCompare(b.name, 'ko'));
   const withRep = reps.filter(Boolean).length;
   const unmatched = {}; reps.forEach(r => r && Object.keys(r.attUnmatched || {}).forEach(n => { unmatched[n] = (unmatched[n] || 0) + 1; }));
   const pick = isCommittee() ? `<div class="row" style="margin-bottom:10px">${Object.entries(DEPTS).map(([k, v]) => `<button class="btn ${dd.id === k ? 'p' : ''}" data-dept="${k}">${v}</button>`).join('')}</div>` : '';
@@ -467,6 +467,7 @@ VIEWS.attlog = async () => {
   return `<div class="topbar"><div><h1>출석 기록 — ${esc(dd.doc.name)}</h1><div class="sub">${year}년${mon ? ` ${mon}월` : ''} · 주일 ${sundays.length}번 중 보고서 ${withRep}장 · ● 출석 ◐ 온라인·본당 · 결석 사유가 있으면 · (점에 마우스를 올리면 사유)</div></div>
     <div class="row no-print"><select id="al-year" style="width:auto">${(years.length ? years : [YEAR]).map(y => `<option ${y === year ? 'selected' : ''}>${y}</option>`).join('')}</select>${canEdit() ? '<button class="btn" id="al-print">출력</button>' : ''}</div></div>
   ${pick}
+  <div class="row no-print" style="gap:4px;margin-bottom:6px">${[['name', '이름 가나다순'], ['class', esc(dd.doc.classLabel) + ' 순']].map(([k, l]) => `<button class="btn s ${alSort === k ? 'p' : ''}" data-alsort="${k}">${l}</button>`).join('')}</div>
   <div class="row no-print" style="gap:4px;margin-bottom:10px">${[0, ...Array.from({ length: 12 }, (_, i) => i + 1)].map(m => `<button class="btn s ${mon === m ? 'p' : ''}" data-mon="${m}">${m ? m + '월' : '1년 전체'}</button>`).join('')}</div>
   <div class="card"><div class="tw al-wrap"><table class="attlog"><thead><tr><th class="al-name">이름</th>${head}<th class="n">출석</th><th class="n">출석률</th></tr></thead><tbody>${rows || `<tr><td class="note">학생이 없습니다.</td></tr>`}</tbody><tfoot>${foot}</tfoot></table></div>
     <div class="note" style="margin-top:8px">회색 칸은 그 주일 보고서가 없는 날입니다. "출석(명단)"은 이름으로 체크된 수, "출석(보고서 숫자)"는 보고서에 적힌 숫자라 서로 다를 수 있습니다(새친구·다른 부서 출석 등).</div>
@@ -477,6 +478,7 @@ BIND.attlog = () => {
   document.querySelectorAll('[data-dept]').forEach(b => b.onclick = () => { S.sub = { dept: b.dataset.dept }; render(); });
   $('#al-year').onchange = e => { S.sub.year = +e.target.value; S.sub.mon = 0; render(); };
   document.querySelectorAll('[data-mon]').forEach(b => b.onclick = () => { S.sub.mon = +b.dataset.mon; render(); });
+  document.querySelectorAll('[data-alsort]').forEach(b => b.onclick = () => { S.sub.sort = b.dataset.alsort; render(); });
   const pr = $('#al-print'); if (pr) pr.onclick = () => window.print();
 };
 VIEWS.dropouts = async () => { S.sub.show = 'left'; return VIEWS.roster(); };
