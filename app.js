@@ -5,19 +5,21 @@ const YEAR = window.CBCS_YEAR || new Date().getFullYear();
 const DEPTS = window.CBCS_DEPT_NAMES || { kinder:'영유치부', elem:'초등부', youth:'중고등부', young:'청년부' };
 const ACCOUNTS = window.CBCS_ACCOUNTS || { kinder:'kinder', elem:'elem', youth:'youth', young:'young', committee:'committee' };
 const deptOfAccount = local => Object.keys(ACCOUNTS).find(k => ACCOUNTS[k] === local) || null;
-const MOCK = new URLSearchParams(location.search).has('mock');
+const QS = new URLSearchParams(location.search);
+const DEMO = QS.has('demo'); // 체험 모드: 가상 자료(demo-data.js)만 쓰고 실제 서버에는 접속하지 않음
+const MOCK = QS.has('mock') || DEMO;
 const $ = s => document.querySelector(s);
 const uid = () => Math.random().toString(36).slice(2, 10);
 const won = n => (Number(n) || 0).toLocaleString('ko-KR');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 const DAYS = ['일','월','화','수','목','금','토'];
 const fmtK = d => { if (!d) return ''; const [y,m,dd] = d.split('-'); return `${y}년 ${+m}월 ${+dd}일 (${DAYS[new Date(d+'T00:00:00').getDay()]})`; };
-const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
+const today = () => { if (DEMO) return '2026-10-12'; const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 const ym = d => (d || '').slice(0, 7);
 const pad2 = n => String(n).padStart(2, '0');
 function sundaysOf(y, m) { const r = []; const d = new Date(y, m-1, 1); while (d.getMonth() === m-1) { if (d.getDay() === 0) r.push(`${y}-${pad2(m)}-${pad2(d.getDate())}`); d.setDate(d.getDate()+1); } return r; }
 function weekIndex(date) { const [y,m] = date.split('-').map(Number); const i = sundaysOf(y,m).indexOf(date); return i >= 0 ? i+1 : Math.ceil(Number(date.slice(8))/7); }
-function lastSunday() { const d = new Date(); d.setDate(d.getDate()-d.getDay()); return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; }
+function lastSunday() { if (DEMO) return '2026-10-11'; const d = new Date(); d.setDate(d.getDate()-d.getDay()); return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; }
 function nextMonth(m) { const [y,mm] = m.split('-').map(Number); const d = new Date(y, mm, 1); return `${d.getFullYear()}-${pad2(d.getMonth()+1)}`; }
 function prevMonth(m) { const [y,mm] = m.split('-').map(Number); const d = new Date(y, mm-2, 1); return `${d.getFullYear()}-${pad2(d.getMonth()+1)}`; }
 let toastT; function toast(m, ms = 2200) { const t = $('#toast'); t.textContent = m; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), ms); }
@@ -54,14 +56,15 @@ async function firebaseBackend() {
   };
 }
 function mockBackend() { // 로컬 시험용: data/import_data.json을 읽어 메모리에서 동작, localStorage에 저장
-  let store = {}; const KEY = 'cbcs-mock-store';
+  let store = {}; const KEY = DEMO ? 'cbcs-demo-store' : 'cbcs-mock-store'; const SKEY = DEMO ? 'cbcs-demo-session' : 'cbcs-mock-session';
   try { store = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) {}
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(store)); } catch (e) {} };
-  let session = null; try { session = localStorage.getItem('cbcs-mock-session'); } catch (e) {}
-  const seeded = (async () => { if (Object.keys(store).length) return; try { const r = await fetch('data/import_data.json'); if (!r.ok) return; const payload = await r.json(); payloadToItems(payload, { students: 1, reports: 1, money: 1, plan: 1, sch: 1, arch: 1 }).forEach(it => { store[it.path] = it.data; }); save(); } catch (e) { console.warn('mock seed 실패', e); } })();
+  let session = null; try { session = localStorage.getItem(SKEY); } catch (e) {}
+  const seeded = (async () => { if (Object.keys(store).length) return; try { let payload; if (DEMO) payload = (await import('./demo-data.js')).default; else { const r = await fetch('data/import_data.json'); if (!r.ok) return; payload = await r.json(); } payloadToItems(payload, { students: 1, reports: 1, money: 1, plan: 1, sch: 1, arch: 1 }).forEach(it => { store[it.path] = it.data; }); save(); } catch (e) { console.warn('mock seed 실패', e); } })();
   return {
-    async login(d) { await seeded; session = d; try { localStorage.setItem('cbcs-mock-session', d); } catch (e) {} return d; },
-    async logout() { session = null; try { localStorage.removeItem('cbcs-mock-session'); } catch (e) {} },
+    async login(d) { await seeded; session = d; try { localStorage.setItem(SKEY, d); } catch (e) {} return d; },
+    async logout() { session = null; try { localStorage.removeItem(SKEY); } catch (e) {} },
+    reset() { try { localStorage.removeItem(KEY); localStorage.removeItem(SKEY); } catch (e) {} },
     onSession(cb) { seeded.then(() => cb(session)); },
     async get(p) { return store[p] ? JSON.parse(JSON.stringify(store[p])) : null; },
     async set(p, data) { store[p] = JSON.parse(JSON.stringify(data)); save(); },
@@ -171,12 +174,12 @@ async function render() {
       <nav class="nav">${nav.filter(n => n[0] === 'home').map(n => `<button data-nav="home" class="home ${S.view === 'home' ? 'on' : ''}"><span class="k">${n[2] || '⌂'}</span>${n[1]}</button>`).join('')}
       <div class="nav-sep"></div>
       ${nav.filter(n => n[0] !== 'home' && n[0] !== 'import').map(navButton).join('')}
-      <div class="nav-bottom"><div class="sec">${MOCK ? '시험 모드 (로컬)' : 'CBCS · ' + YEAR}</div>
+      <div class="nav-bottom"><div class="sec">${DEMO ? '체험 모드 (가상 자료)' : MOCK ? '시험 모드 (로컬)' : 'CBCS · ' + YEAR}</div>
       ${nav.filter(n => n[0] === 'import').map(n => `<button data-nav="import" class="${S.view === 'import' ? 'on' : ''}"><span class="k">⇪</span>${n[1]}</button>`).join('')}
       <button data-refresh><span class="k">↻</span>새로고침</button></div></nav>
       ${FOOTER}
     </aside>
-    <main class="main" id="main">${body}<div class="main-foot">${FOOTER}</div></main>
+    <main class="main" id="main">${DEMO ? `<div class="demo-bar no-print"><b>체험 모드</b> · 모든 이름과 숫자는 가상입니다. 바꾼 내용은 이 브라우저에만 저장됩니다.<span style="flex:1"></span><button class="btn s" data-tour>튜토리얼</button><button class="btn s" data-demo-reset>체험 자료 초기화</button></div>` : ''}${body}<div class="main-foot">${FOOTER}</div></main>
     <nav class="mobile-nav">${nav.map(n => `<button data-nav="${n[0]}" class="${navKeyOf(S.view) === n[0] ? 'on' : ''}">${n[1]}</button>`).join('')}<button data-logout>나가기</button></nav>
   </div>`;
   const go = v => { const same = groupOfView(v) && groupOfView(v) === groupOfView(S.view); const keep = same && S.sub.dept ? { dept: S.sub.dept } : {}; S.view = v; S.sub = keep; S.navOpen = {}; render(); };
@@ -189,8 +192,13 @@ async function render() {
   const rf = root.querySelector('[data-refresh]'); if (rf) rf.onclick = async () => { S.data = {}; S.committee = null; toast('다시 불러오는 중…'); await render(); toast('새로고침 완료'); };
   root.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { S.view = b.dataset.go; S.sub = b.dataset.sub ? JSON.parse(b.dataset.sub) : {}; render(); });
   if (BIND[S.view]) { try { BIND[S.view](); } catch (e) { console.error(e); } }
+  root.querySelectorAll('[data-tour]').forEach(b => b.onclick = () => startTour());
+  root.querySelectorAll('[data-demo-reset]').forEach(b => b.onclick = () => { backend.reset(); location.href = location.pathname + '?demo=1'; });
   window.scrollTo(0, 0);
+  if (window.CBCS_TOUR) window.CBCS_TOUR.afterRender();
 }
+// 튜토리얼: 체험 모드에서만 돈다(실제 자료 화면에서는 체험 모드를 새 창으로 연다)
+function startTour() { if (!DEMO) { window.open(location.pathname + '?demo=1&tour=1', '_blank'); return; } if (window.CBCS_TOUR) window.CBCS_TOUR.start(); }
 matchMedia('(max-width:760px)').addEventListener('change', () => { if (S.user) render(); });
 
 /* ───────────── 로그인 ───────────── */
@@ -203,7 +211,8 @@ function loginView() {
       <div id="lg-err" class="note" style="color:var(--bad)" hidden></div>
       <button class="btn p" id="lg-go">들어가기</button>
     </div>
-    <p class="note" style="margin-top:14px">PC에서는 작성·수정·출력, 휴대폰에서는 열람과 출석 체크를 합니다. 비밀번호를 모르면 부서 부장이나 교육위원회에 문의하세요.${MOCK ? '<br><b>시험 모드</b>: 아무 비밀번호나 됩니다. 데이터는 이 브라우저에만 저장됩니다.' : ''}</p>
+    <p class="note" style="margin-top:14px">PC에서는 작성·수정·출력, 휴대폰에서는 열람과 출석 체크를 합니다. 비밀번호를 모르면 부서 부장이나 교육위원회에 문의하세요.${MOCK ? `<br><b>${DEMO ? '체험 모드' : '시험 모드'}</b>: 아무 비밀번호나 됩니다. ${DEMO ? '모든 이름과 숫자는 가상이며, ' : ''}데이터는 이 브라우저에만 저장됩니다.` : ''}</p>
+    <div class="demo-entry">${DEMO ? '<button class="btn p" id="lg-tour">튜토리얼로 둘러보기</button>' : `<a class="btn" href="?demo=1&tour=1">가상 자료로 체험하기 (튜토리얼)</a>`}<span class="note">${DEMO ? '초등부 화면부터 차례로 안내합니다.' : '실제 자료 없이 가상의 교육부로 모든 화면을 눌러 볼 수 있습니다.'}</span></div>
     ${FOOTER}
   </div></div>`;
 }
@@ -213,6 +222,7 @@ function bindLogin() {
     try { await backend.login(d, pw); S.user = d; S.dept = d === 'committee' ? null : d; S.view = 'home'; S.sub = {}; let seen = false; try { seen = localStorage.getItem('cbcs-tutorial-' + d); } catch (e) {} if (!seen) { S.view = 'tutorial'; try { localStorage.setItem('cbcs-tutorial-' + d, '1'); } catch (e) {} } render(); }
     catch (e) { const el = $('#lg-err'); el.hidden = false; el.textContent = /password|credential|user-not-found|invalid/i.test(e.code || e.message) ? '비밀번호가 맞지 않습니다.' : '로그인 실패: ' + (e.code || e.message); btn.disabled = false; btn.textContent = '들어가기'; }
   };
+  const lt = $('#lg-tour'); if (lt) lt.onclick = () => startTour();
   $('#lg-go').onclick = go; $('#lg-pw').onkeydown = e => { if (e.key === 'Enter') go(); };
 }
 
@@ -253,7 +263,7 @@ VIEWS.home = async () => {
     const ls = S.sub.date || lastSunday();
     const rows = []; const plans = [];
     for (const d of Object.keys(DEPTS)) { const dd = await loadDept(d); const r = dd.reports[ls]; rows.push({ d, dd, r, s: r ? reportStats(dd, r) : null }); plans.push({ d, dd, cur: await loadPlan(dd, YEAR), next: await loadPlan(dd, YEAR + 1) }); }
-    return `<div class="topbar"><div><h1>교육위원회</h1><div class="sub">전 부서 제출 현황과 공지</div></div><div class="row"><input type="date" id="c-date" value="${ls}" style="width:auto"><button class="btn s" id="c-date-go">조회</button></div></div>
+    return `<div class="topbar"><div><h1>교육위원회</h1><div class="sub">전 부서 제출 현황과 공지</div></div><div class="row"><button class="btn s" data-tour>튜토리얼</button><input type="date" id="c-date" value="${ls}" style="width:auto"><button class="btn s" id="c-date-go">조회</button></div></div>
     <div class="stack">
       ${patchBoard()}
       ${committeeExtras()}
@@ -275,7 +285,7 @@ VIEWS.home = async () => {
   const dd = await loadDept(S.dept); const ls = lastSunday(); const r = dd.reports[ls]; const s = r ? reportStats(dd, r) : null;
   const curPlan = await loadPlan(dd, YEAR), nextPlan = await loadPlan(dd, YEAR + 1);
   const notices = [...C().notices.map(n => ({ ...n, from: '교육위원회', own: false })), ...dd.notices.map(n => ({ ...n, from: dd.doc.name, own: true }))].sort((a,b) => a.date < b.date ? 1 : -1);
-  return `<div class="topbar"><div><h1>${esc(dd.doc.name)}</h1><div class="sub">${fmtK(today())}${dd.doc.notes && dd.doc.notes.merge ? ' · ' + esc(dd.doc.notes.merge) : ''}</div></div>${canEdit() ? `<button class="btn p" data-go="weekly" data-sub='${JSON.stringify({ date: ls })}'>이번 주 보고서 작성</button>` : `<button class="btn p" data-go="attend">출석 체크</button>`}</div>
+  return `<div class="topbar"><div><h1>${esc(dd.doc.name)}</h1><div class="sub">${fmtK(today())}${dd.doc.notes && dd.doc.notes.merge ? ' · ' + esc(dd.doc.notes.merge) : ''}</div></div><div class="row"><button class="btn s" data-tour>튜토리얼</button>${canEdit() ? `<button class="btn p" data-go="weekly" data-sub='${JSON.stringify({ date: ls })}'>이번 주 보고서 작성</button>` : `<button class="btn p" data-go="attend">출석 체크</button>`}</div></div>
   <div class="stack">
     ${patchBoard()}
     ${planBanner(dd, nextPlan && nextPlan.status === 'confirmed' && new Date().getMonth() >= 10 ? nextPlan : curPlan)}
@@ -2016,9 +2026,12 @@ BIND.backup = () => {
 };
 
 /* ───────────── 시작 ───────────── */
+window.CBCS_APP = { S, render, backend };
 backend.onSession(async d => {
   if (d) { S.user = d; S.dept = d === 'committee' ? null : d; }
   else { S.user = null; S.dept = null; }
+  if (DEMO) { try { localStorage.setItem('cbcs-tutorial-elem', '1'); localStorage.setItem('cbcs-tutorial-committee', '1'); } catch (e) {} }
+  if (DEMO && QS.has('tour')) { history.replaceState(null, '', location.pathname + '?demo=1'); startTour(); return; }
   await render();
 });
 window.addEventListener('error', e => { const t = $('#toast'); if (t) toast('오류: ' + e.message, 4000); });

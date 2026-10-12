@@ -15,6 +15,7 @@
 | `index.html` `style.css` `app.js` | 앱 전체 (설치 없음, 빌드 없음) |
 | `config.js` | Firebase 설정 키, 계정 이메일 도메인, 기준 연도 |
 | `patches.js` | 패치 현황 — 메인 화면 전광판에 나오는 목록. **패치할 때마다 맨 위에 한 줄 추가** |
+| `tour.js` `demo-data.js` | 튜토리얼과 체험 모드(`?demo=1`). 가상 자료는 `tools/make_demo.py`로 생성 — 실제 교인 자료 없음 |
 | `firestore.rules` | Firestore 보안 규칙 — Firebase 콘솔 → Firestore → 규칙 탭에 붙여넣고 게시 |
 | `manifest.webmanifest` `icon-*.png` | 홈 화면 추가(PWA) |
 | `tools/` | HWP·HWPX 텍스트·표 추출기와 데이터 규격(SCHEMA.md). 실제 변환 스크립트는 실명이 들어 있어 교육위원회가 따로 보관 |
