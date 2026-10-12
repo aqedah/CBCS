@@ -1809,12 +1809,12 @@ BIND.care = () => {
   };
   document.querySelectorAll('[data-care]').forEach(tr => tr.onclick = () => open(dd.students.find(x => x.id === tr.dataset.care)));
 };
-// 과거 자료(young_history.json) 가져오기 — 궤적·임원 이력·수련회는 청년부 자료로, 명부(care)는 심방 카드로
+// 과거 자료(young_history.json) 가져오기 — 교회생활·임원 이력·수련회는 청년부 자료로, 명부(care)는 심방 카드로
 function importYoungHistory(dd) {
-  openModal(`<h2>청년부 과거 자료 가져오기<button class="btn s" id="modal-close">닫기</button></h2><p class="note">tools/young_history.py로 만든 <b>young_history.json</b>을 올립니다. 임원 이력·궤적·수련회는 청년부 자료에, 명부(직장·가족·상담내용)는 심방 카드에 들어갑니다. 같은 id는 덮어씁니다.</p><input type="file" id="yh-file" accept=".json,application/json"><pre class="progress" id="yh-log" style="margin-top:10px"></pre>`);
+  openModal(`<h2>청년부 과거 자료 가져오기<button class="btn s" id="modal-close">닫기</button></h2><p class="note">tools/young_history.py로 만든 <b>young_history.json</b>을 올립니다. 임원 이력·교회생활·수련회는 청년부 자료에, 명부(직장·가족·상담내용)는 심방 카드에 들어갑니다. 같은 id는 덮어씁니다.</p><input type="file" id="yh-file" accept=".json,application/json"><pre class="progress" id="yh-log" style="margin-top:10px"></pre>`);
   $('#yh-file').onchange = async e => {
     const f = e.target.files[0]; if (!f) return; const log = m => { $('#yh-log').textContent += m + '\n'; };
-    try { const d = JSON.parse(await f.text()); const items = await youngHistoryItems(d, dd, true); log(`임원 ${(d.officers || []).length} · 궤적 ${(d.timeline || []).length} · 수련회 ${(d.retreats || []).length} · 명부 ${(d.care || []).length} → 문서 ${items.length}개`);
+    try { const d = JSON.parse(await f.text()); const items = await youngHistoryItems(d, dd, true); log(`임원 ${(d.officers || []).length} · 교회생활 ${(d.timeline || []).length} · 수련회 ${(d.retreats || []).length} · 명부 ${(d.care || []).length} → 문서 ${items.length}개`);
       await backend.batchSet(items, (a, b) => { $('#yh-log').textContent = $('#yh-log').textContent.replace(/\n진행.*$/, '') + `\n진행 ${a}/${b}`; }); log('완료. 새로고침하면 반영됩니다.'); (d._review || []).forEach(r => log('※ ' + r)); S.data = {}; }
     catch (err) { log('실패: ' + (err.code || err.message)); }
   };
