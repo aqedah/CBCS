@@ -1768,14 +1768,18 @@ BIND.minutes = () => {
 /* ───────────── 통계 ───────────── */
 VIEWS.stats = async () => {
   const dd = D(); const now = today(); const range = S.sub.range || '1m';
-  const RANGES = [['all', '전체'], ['6m', '6개월'], ['3m', '3개월'], ['1m', '1달']];
-  const from = (() => { if (range === 'all') return YEAR + '-01-01'; const k = +range[0]; const d = new Date(now); d.setMonth(d.getMonth() - k); return d.toISOString().slice(0, 10); })();
-  const reps = Object.values(dd.reports).filter(r => r.date.startsWith(String(YEAR)) && r.date >= from && r.date <= now).sort((a, b) => a.date < b.date ? -1 : 1);
+  const RANGES = [['all', '전체'], ['6m', '6개월'], ['3m', '3개월'], ['1m', '1달'], ['custom', '날짜 지정']];
+  const monthAgo = (() => { const d = new Date(now); d.setMonth(d.getMonth() - 1); return d.toISOString().slice(0, 10); })();
+  const custom = range === 'custom'; const cFrom = S.sub.from || monthAgo, cTo = S.sub.to || now;
+  const from = custom ? cFrom : (() => { if (range === 'all') return YEAR + '-01-01'; const k = +range[0]; const d = new Date(now); d.setMonth(d.getMonth() - k); return d.toISOString().slice(0, 10); })();
+  const to = custom ? cTo : now;
+  const reps = Object.values(dd.reports).filter(r => (custom || r.date.startsWith(String(YEAR))) && r.date >= from && r.date <= to).sort((a, b) => a.date < b.date ? -1 : 1);
   const last4 = Object.values(dd.reports).filter(r => r.date.startsWith(String(YEAR)) && r.date <= now).sort((a, b) => a.date < b.date ? -1 : 1).slice(-4);
   const rows = activeStudents(dd).map(s => { const cnt = reps.filter(r => (r.att || {})[s.id]).length; const streak = last4.length >= 4 && last4.every(r => !(r.att || {})[s.id]); return { s, cnt, rate: reps.length ? Math.round(cnt / reps.length * 100) : 0, streak }; }).sort((a, b) => a.rate - b.rate);
   const trend = reps.map(r => ({ date: r.date, s: reportStats(dd, r) }));
-  return `<div class="topbar"><div><h1>출석 통계</h1><div class="sub">${YEAR}년 1주부터 오늘까지 중 ${RANGES.find(x => x[0] === range)[1] === '전체' ? '전체' : '최근 ' + RANGES.find(x => x[0] === range)[1]} · 주일 보고서 ${reps.length}장 기준${reps.length ? ` (${reps[0].date} ~ ${reps[reps.length - 1].date})` : ''}</div></div>
+  return `<div class="topbar"><div><h1>출석 통계</h1><div class="sub">${custom ? `${fmtK(from)} ~ ${fmtK(to)}` : `${YEAR}년 1주부터 오늘까지 중 ${range === 'all' ? '전체' : '최근 ' + RANGES.find(x => x[0] === range)[1]}`} · 주일 보고서 ${reps.length}장 기준${reps.length ? ` (${reps[0].date} ~ ${reps[reps.length - 1].date})` : ''}</div></div>
     <div class="doc-tabs no-print" style="margin:0">${RANGES.map(([k, l]) => `<button data-range="${k}" class="${range === k ? 'on' : ''}">${l}</button>`).join('')}</div></div>
+  ${custom ? `<div class="card no-print" style="margin-bottom:12px"><div class="row" style="gap:8px;align-items:flex-end;flex-wrap:wrap"><label class="f" style="width:auto"><span>시작일</span><input type="date" id="st-from" value="${esc(cFrom)}"></label><span style="padding-bottom:8px">~</span><label class="f" style="width:auto"><span>끝날</span><input type="date" id="st-to" value="${esc(cTo)}" max="${now}"></label><button class="btn p" id="st-apply">보기</button><span class="note">지난 연도도 고를 수 있습니다. 4주 연속 결석은 기간과 상관없이 최근 4주 기준입니다.</span></div></div>` : ''}
   <div class="stack">
     <div class="card"><h2>주별 출석 추이</h2>${trend.length ? svgTrend(trend) : '<div class="note">보고서가 쌓이면 그래프가 그려집니다.</div>'}</div>
     <div class="grid2">
@@ -1784,7 +1788,8 @@ VIEWS.stats = async () => {
     </div>
   </div>`;
 };
-BIND.stats = () => { document.querySelectorAll('[data-range]').forEach(b => b.onclick = () => { S.sub.range = b.dataset.range; render(); }); };
+BIND.stats = () => { document.querySelectorAll('[data-range]').forEach(b => b.onclick = () => { S.sub.range = b.dataset.range; render(); });
+  const ap = $('#st-apply'); if (ap) ap.onclick = () => { let f = $('#st-from').value, t = $('#st-to').value; if (!f || !t) { toast('시작일과 끝날을 고르세요'); return; } if (f > t) [f, t] = [t, f]; S.sub.from = f; S.sub.to = t; render(); }; };
 function svgTrend(t) {
   const W = 640, H = 170, pl = 36, pr = 22, pt = 16, pb = 30; const max = Math.max(...t.map(x => x.s.total), 1);
   const X = i => pl + (t.length === 1 ? 0 : (W - pl - pr) * i / (t.length - 1)), Y = v => pt + (H - pt - pb) * (1 - v / max);
