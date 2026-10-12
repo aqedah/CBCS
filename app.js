@@ -1778,8 +1778,10 @@ function nameMatches(dd, s, ev) { // 이름이 같고, 둘 다 생년이 있으�
   return true;
 }
 function officersOf(dd, s) { // 연도별 임원 이력 (과거 자료 + 올해 교사·임원 명단)
-  const rows = (dd.officers || []).filter(o => nameMatches(dd, s, o)).map(o => ({ year: o.year, role: o.role, source: o.source, flags: o.flags || [] }));
-  dd.doc.staff.filter(t => t.status !== 'left' && normName(t.name) === normName(s.name)).forEach(t => { if (!rows.some(r => r.year === YEAR && r.role === t.role)) rows.push({ year: YEAR, role: t.role, source: `${YEAR}년 교사·임원 명단`, flags: [] }); });
+  // '임원(직위 미상)'은 직위가 확인돼 더 쓰지 않음(예전 자료에 남아 있어도 무시). '기드온 리더'·'찬양팀 리더'는 찬양리더와 같은 직책
+  const canon = r => String(r || '').trim().replace(/^(기드온|찬양팀)\s*리더$/, '찬양리더').replace(/^미디어\s*팀장$/, '미디어팀장');
+  const rows = (dd.officers || []).filter(o => nameMatches(dd, s, o) && !/직위 미상/.test(o.role || '')).map(o => ({ year: +o.year, role: canon(o.role), source: o.source, flags: o.flags || [] }));
+  dd.doc.staff.filter(t => t.status !== 'left' && normName(t.name) === normName(s.name)).forEach(t => roleParts(t.role).forEach(r => { r = canon(r); if (!rows.some(x => x.year === YEAR && x.role === r)) rows.push({ year: YEAR, role: r, source: `${YEAR}년 교사·임원 명단`, flags: [] }); }));
   return rows.sort((a, b) => (+a.year - +b.year) || String(a.role).localeCompare(String(b.role), 'ko'));
 }
 function studentTimeline(dd, s) {
