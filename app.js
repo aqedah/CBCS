@@ -1679,7 +1679,7 @@ VIEWS.tutorial = async () => {
     <div class="step"><div><h3>작성 완료 → PDF → 종이로 보고</h3><p>"작성 완료"를 누르면 보고서 모양 그대로 미리보기가 뜹니다. "PDF로 저장 / 인쇄"를 누르고 브라우저 인쇄 창에서 "PDF로 저장"을 고르면 됩니다. 지금처럼 부장에게 종이로 보고합니다.</p><div class="who">총무 → 부장 서명 · PC</div></div></div>
     <div class="step"><div><h3>지출이 생길 때마다: 회계</h3><p><b>회계</b>에서 "지출결의서 작성"으로 (기자재·교재·비품은 <b>물품대장</b>에 자동 등록) 날짜·항목·내역·금액을 넣고 결의서를 인쇄해 결재를 받습니다(영수증은 뒷면에). 월 합계, 누계, 예산 잔액, 집행률이 바로 계산됩니다. 찬조금·수련회처럼 잔액을 따로 보는 돈은 장부를 하나 더 만듭니다.</p><div class="who">회계 — 지출 당일 · PC</div>${mob ? '' : '<button class="btn s" data-go="ledger">회계 열기</button>'}</div></div>
     <div class="step"><div><h3>월말: 월간 보고서는 이미 만들어져 있습니다</h3><p><b>보고서 → 월간 보고서</b>를 열면 그 달 주일 보고서 4~5장과 회계가 모여 있습니다. 부장은 "다음 달 계획" 칸만 적고, 부장·총무·회계가 확인한 뒤 PDF로 출력해 교육위원회 월례회에 냅니다.</p><div class="who">부장 · 총무 · 회계 — 매월 마지막 주 · PC</div>${mob ? '' : '<button class="btn s" data-go="monthly">월간 보고서 열기</button>'}</div></div>
-    <div class="step"><div><h3>심방 카드 (관리자 모드)</h3><p>왼쪽 <b>🔒 관리자 모드</b>를 누르고 부서 관리자 비밀번호(처음엔 교역자·부장이 정함)를 넣으면 <b>출석부 → 심방 카드</b>가 열립니다. 학생마다 가족·직장·상담 내용과 날짜별 심방 기록을 적고, 학생 카드의 <b>삶의 궤적</b>과 함께 한 장으로 출력합니다. 기록은 그 비밀번호로 암호화되어 저장되므로 부서 비밀번호만으로는 볼 수 없고, 다른 부서나 교육위원회도 볼 수 없습니다. 비밀번호를 잊으면 복구할 수 없으니 담당자가 바뀔 때 "관리자 비밀번호 바꾸기"로 넘겨 주세요.</p><div class="who">교역자 · 부장 — 심방 후 · PC</div>${mob ? '' : '<button class="btn s" data-go="care">심방 카드 열기</button>'}</div></div>
+    <div class="step"><div><h3>심방 카드 (관리자 모드)</h3><p>왼쪽 <b>🔒 관리자 모드</b>를 누르고 부서 관리자 비밀번호(처음엔 교역자·부장이 정함)를 넣으면 <b>출석부 → 심방 카드</b>가 열립니다. 학생마다 가족·직장·상담 내용과 날짜별 심방 기록을 적고, 학생 카드의 <b>교회생활</b>과 함께 한 장으로 출력합니다. 기록은 그 비밀번호로 암호화되어 저장되므로 부서 비밀번호만으로는 볼 수 없고, 다른 부서나 교육위원회도 볼 수 없습니다. 비밀번호를 잊으면 복구할 수 없으니 담당자가 바뀔 때 "관리자 비밀번호 바꾸기"로 넘겨 주세요.</p><div class="who">교역자 · 부장 — 심방 후 · PC</div>${mob ? '' : '<button class="btn s" data-go="care">심방 카드 열기</button>'}</div></div>
     <div class="step"><div><h3>그때그때: 영수증 · 결석자 · 차량</h3><p>물건을 사면 휴대폰 <b>영수증</b>에서 사진을 찍어 올립니다. 날짜와 금액을 읽어 두었다가 PC 지출결의서에서 그 사진을 고르면 칸이 채워집니다(실물 영수증은 지금처럼 제출). 결석이 4주 이어지는 학생은 메인의 "챙길 일"과 <b>심방 카드</b>(관리자 모드) 맨 위 "먼저 챙길 학생"에 나타나고, 거기서 바로 카드를 열어 심방 기록을 적습니다. 교회 차량은 <b>차량 신청</b>에 올리면 다른 부서와 겹치는지 바로 보입니다. 새친구가 네 번 출석하면 메인에서 재적 전환을 알려 줍니다.</p><div class="who">회계 · 교역자 · 부장</div></div></div>
     <div class="step"><div><h3>가끔: 통계와 공지</h3><p><b>출석부 → 출석 통계</b>에서 기간(전체·6개월·3개월·1달)별 추이와 4주 연속 결석자를 보고, <b>출석부 → 제적 관리</b>에서 오래 결석한 학생을 제적하거나 복적합니다. 청년부는 <b>회칙·총회</b>에서 회칙, 총회 정족수·결의권자·후보자, 회의록을 관리합니다. <b>메인</b>의 공지는 부서 교사들에게, 교육위원회 공지는 모든 부서에 보입니다.</p><div class="who">부장 · 교역자</div><button class="btn s" data-go="stats">출석 통계 열기</button></div></div>
     `}
@@ -1687,7 +1687,7 @@ VIEWS.tutorial = async () => {
   <div class="card" style="margin-top:14px"><h2>변환 자료의 "!" 표시</h2><div class="note">HWP·엑셀에서 옮기면서 숫자가 안 맞거나 확인이 필요한 항목에는 <span class="tag flag">!</span>가 붙어 있습니다. 마우스를 올리면 내용이 보이고, 열어서 "확인했음"을 누르면 표시가 사라집니다.</div></div>`;
 };
 
-/* ───────────── 청년부: 삶의 궤적(타임라인) ───────────── */
+/* ───────────── 청년부: 교회생활(타임라인) ───────────── */
 const TL_KINDS = { 등록: 'info', 새가족교육: 'info', 신급: 'ok', 임원: 'ok', 팸: 'mute', 수련회: 'mute', 장학: 'ok', 제적: 'bad', 복귀: 'ok', 결혼: 'info', 군복무: 'warn', 유학: 'warn', 이사: 'warn', 심방: 'info', 기타: 'mute' };
 const normName = n => String(n || '').replace(/\s/g, '').replace(/(권사|집사|목사|장로|전도사)$/, '');
 function nameMatches(dd, s, ev) { // 이름이 같고, 둘 다 생년이 있으면 생년도 같아야 함
@@ -1719,7 +1719,7 @@ function studentTimeline(dd, s) {
 }
 function timelineHTML(dd, s, edit) {
   const ev = studentTimeline(dd, s);
-  return `<div class="card" style="margin-top:12px"><h2>삶의 궤적 <span class="r">과거 자료와 올해 기록에서 자동으로 모은 것 + 직접 적은 것</span></h2>
+  return `<div class="card" style="margin-top:12px"><h2>교회생활 <span class="r">과거 자료와 올해 기록에서 자동으로 모은 것 + 직접 적은 것</span></h2>
     <div class="tl">${ev.map(e => `<div class="tl-row"><div class="tl-date">${esc((e.date || '').length === 4 ? e.date + '년' : fmtShort(e.date))}</div><div class="tl-dot ${TL_KINDS[e.kind] || 'mute'}"></div><div class="tl-body"><span class="pill ${TL_KINDS[e.kind] || 'mute'}">${esc(e.kind)}</span> ${esc(e.title)}${e.note ? `<div class="note">${esc(e.note)}</div>` : ''}${e.source && !e.derived ? `<div class="note" style="opacity:.7">출처: ${esc(e.source)}</div>` : ''}</div>${edit && !e.derived ? `<button class="btn s d" data-tl-del="${esc(e._id || e.id)}">삭제</button>` : ''}</div>`).join('') || '<div class="note">기록이 없습니다.</div>'}</div>
     ${edit ? `<div class="row" style="margin-top:10px;flex-wrap:wrap"><input type="date" id="tl-date" style="width:auto"><select id="tl-kind" style="width:auto">${Object.keys(TL_KINDS).map(k => `<option>${k}</option>`).join('')}</select><input type="text" id="tl-title" placeholder="무슨 일 (예: 군 입대, 복학, 팸 이동)" style="flex:2"><input type="text" id="tl-note" placeholder="메모" style="flex:2"><button class="btn" id="tl-add">기록 추가</button></div><div class="note" style="margin-top:4px">여기 적는 기록은 청년부 계정 모두가 봅니다. 상담 내용처럼 민감한 것은 관리자 모드의 <b>심방 카드</b>에 적으세요.</div>` : ''}</div>`;
 }
@@ -1757,7 +1757,7 @@ function careCardHTML(dd, s, c, forPrint) {
     <h3>상담·참고 (명부)</h3><p class="care-text">${esc(c && c.counsel || '—')}</p>
     <h3>심방 기록 <span class="note">${notes.length}건</span></h3>
     <div class="list">${notes.map(n => `<div class="item"><div><div class="t">${fmtShort(n.date)} <span class="note">${esc(n.by || '')}${n.place ? ' · ' + esc(n.place) : ''}</span></div><div class="d care-text">${esc(n.text)}</div></div>${forPrint ? '' : `<button class="btn s d" data-note-del="${esc(n.id)}">삭제</button>`}</div>`).join('') || '<div class="note">아직 심방 기록이 없습니다.</div>'}</div>
-    <h3>삶의 궤적</h3><div class="tl compact">${tl.filter(e => !e.att).map(e => `<div class="tl-row"><div class="tl-date">${esc((e.date || '').length === 4 ? e.date + '년' : fmtShort(e.date))}</div><div class="tl-dot ${TL_KINDS[e.kind] || 'mute'}"></div><div class="tl-body"><span class="pill ${TL_KINDS[e.kind] || 'mute'}">${esc(e.kind)}</span> ${esc(e.title)}${e.note ? ` <span class="note">${esc(e.note)}</span>` : ''}</div></div>`).join('') || '<div class="note">기록 없음</div>'}</div>
+    <h3>교회생활</h3><div class="tl compact">${tl.filter(e => !e.att).map(e => `<div class="tl-row"><div class="tl-date">${esc((e.date || '').length === 4 ? e.date + '년' : fmtShort(e.date))}</div><div class="tl-dot ${TL_KINDS[e.kind] || 'mute'}"></div><div class="tl-body"><span class="pill ${TL_KINDS[e.kind] || 'mute'}">${esc(e.kind)}</span> ${esc(e.title)}${e.note ? ` <span class="note">${esc(e.note)}</span>` : ''}</div></div>`).join('') || '<div class="note">기록 없음</div>'}</div>
     <div class="note" style="margin-top:6px">연도별 출석: ${tl.filter(e => e.att).map(e => esc(e.title.replace('년 출석 ', '년 '))).join(' · ') || '—'}</div>
   </div>`;
 }
@@ -1769,7 +1769,7 @@ VIEWS.care = async () => {
   if (S.sub.print) { const s = dd.students.find(x => x.id === S.sub.print); return `<div class="topbar no-print"><div><h1>심방 카드 출력</h1><div class="sub">${esc(s.name)} · ${esc(dd.doc.name)} 관리자 모드 — 출력물 보관에 주의</div></div><div class="row"><button class="btn" id="cr-back">돌아가기</button><button class="btn p" id="cr-print">PDF로 저장 / 인쇄</button></div></div><section class="paper">${careCardHTML(dd, s, careOf(dd, s), true)}<div class="ft"><b>중앙성서교회 ${esc(dd.doc.name)} 심방 카드</b><span>관리자 모드 전용 · ${fmtK(today())}</span></div></section>`; }
   const lastNote = s => { const c = careOf(dd, s); const n = (c && c.notes || []).slice().sort((a, b) => a.date < b.date ? 1 : -1)[0]; return n ? n.date : ''; };
   const sorted = S.sub.sort === 'visit' ? list.slice().sort((a, b) => (lastNote(a) || '0') < (lastNote(b) || '0') ? -1 : 1) : list;
-  return `<div class="topbar"><div><h1>심방 카드 <span class="pill info">${esc(dd.doc.name)} 관리자 모드</span></h1><div class="sub">학생 한 명의 삶의 궤적·가족·상담 내용과 심방 기록. 이 부서 관리자 비밀번호로 암호화되어 저장됩니다.</div></div>
+  return `<div class="topbar"><div><h1>심방 카드 <span class="pill info">${esc(dd.doc.name)} 관리자 모드</span></h1><div class="sub">학생 한 명의 교회생활·가족·상담 내용과 심방 기록. 이 부서 관리자 비밀번호로 암호화되어 저장됩니다.</div></div>
     <div class="row">${['active', 'left', 'all'].map(k => `<button class="btn s ${show === k ? 'p' : ''}" data-show="${k}">${{ active: '재적·새친구', left: '제적·졸업', all: '전체' }[k]}</button>`).join('')}<button class="btn s ${S.sub.sort === 'visit' ? 'p' : ''}" id="cr-sort">심방 오래된 순</button>${canEdit() ? `<button class="btn s" id="cr-import">과거 자료 가져오기</button><button class="btn s" id="cr-pw">관리자 비밀번호 바꾸기</button>` : ''}</div></div>
   <div class="stack">
     ${careNeedsCard(dd)}
@@ -2239,7 +2239,7 @@ VIEWS.backup = async () => {
   return `<div class="topbar"><div><h1>자료 내려받기 · 정리</h1><div class="sub">교육위원회 전용 · 한 달에 한 번 전체 자료를 파일로 받아 시놀로지에 보관합니다</div></div></div>
   <div class="stack">
     <div class="card"><h2>전체 자료 내려받기 <span class="r">${last ? '마지막: ' + esc(last) + ((c.backupMeta || {}).count ? ` · ${c.backupMeta.count}건` : '') : '아직 받은 적 없음'}</span></h2>
-      <p style="margin:0 0 10px">네 부서의 출석부·보고서·회계·물품대장·연간계획서·삶의 궤적과 교육위원회 공지·일정·장학·차량 신청을 파일 하나(JSON)로 받습니다. 실수로 지워졌을 때 "데이터 가져오기"에 이 파일을 올리면 받은 날의 상태로 되돌릴 수 있습니다. 심방 카드는 부서 관리자 비밀번호로 잠겨 있어 교육위원회도 읽을 수 없으므로 이 파일에 들어가지 않습니다.</p>
+      <p style="margin:0 0 10px">네 부서의 출석부·보고서·회계·물품대장·연간계획서·교회생활과 교육위원회 공지·일정·장학·차량 신청을 파일 하나(JSON)로 받습니다. 실수로 지워졌을 때 "데이터 가져오기"에 이 파일을 올리면 받은 날의 상태로 되돌릴 수 있습니다. 심방 카드는 부서 관리자 비밀번호로 잠겨 있어 교육위원회도 읽을 수 없으므로 이 파일에 들어가지 않습니다.</p>
       <div class="row"><button class="btn p" id="bk-go">전체 자료 내려받기</button><label class="row" style="font-size:12.5px"><input type="checkbox" id="bk-img"> 영수증 사진도 포함 (파일이 커집니다)</label></div>
       <pre class="progress" id="bk-log" style="margin-top:10px"></pre>
       <div class="hint" style="margin-top:10px">이 파일에는 학생 연락처·주소와 장학 계좌번호가 들어 있습니다. 시놀로지의 교육위원회 폴더에만 두고, 카톡이나 메일로 보내지 마세요. 받은 뒤에는 컴퓨터의 "다운로드" 폴더에서 지워 주세요.</div></div>

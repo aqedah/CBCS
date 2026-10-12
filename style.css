@@ -257,7 +257,7 @@ textarea[readonly],input[readonly]{background:var(--line-soft)}
 .cand-col h3{font-size:14px;margin:0 0 6px}
 .paper .sign{height:22px;min-width:70px}
 
-/* 청년부: 삶의 궤적 · 심방 카드 · 회칙 판정 */
+/* 청년부: 교회생활 · 심방 카드 · 회칙 판정 */
 .tl{display:flex;flex-direction:column;gap:0;margin-top:6px}
 .tl-row{display:grid;grid-template-columns:84px 14px 1fr auto;gap:0 8px;align-items:start;padding:5px 0;border-bottom:1px solid var(--line-soft);font-size:13px}
 .tl.compact .tl-row{padding:3px 0;font-size:12px}
