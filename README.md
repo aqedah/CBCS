@@ -45,11 +45,16 @@ depts/{d}/plans/{year}                     연간계획서: status(draft|confirm
 depts/young/bylaws/{id}                    청년부 회칙 판: title, revision, date, status(current|draft|old), text(본문), params(판정 기준값), summary[]
 depts/young/assemblies/{date}              총회: kind, title, place, overrides{학생: 선거권 직접 지정}, candidates[], minutes{순서·안건·선거 결과·성원}
 depts/{d}/assets/{id}                      물품대장: no, name, category, spec, qty, unit, price, total, purchaseDate, vendor, location, manager, status, expenseId, source(auto|manual)
+depts/{d}/receipts/{id}                    영수증 사진의 읽은 값: at, date, amount, vendor, memo (지출의 receiptId가 가리킴)
+depts/{d}/receiptImgs/{id}                 영수증 사진 한 장(줄인 JPEG). 볼 때만 읽고, 연말 결산 뒤 교육위원회가 일괄 삭제
+vehicles/{id}                              차량 신청(전 부서 공유): dept, date, dateEnd, start, end, vehicle, dest, purpose, driver, status
+siblings/{부서}                            형제자매 색인: 형제자매가 적힌 학생의 이름·반·형제 이름만 (다른 부서와 이어 보기용)
 committee/main (+ notices, events)         교육위원회 임원 · 공지 · 공통 일정
 scholarship/{id}                           장학(교육위원회 전용, 계좌 포함)
 archive/{id}                               2025년 이전 파일 색인(파일은 시놀로지)
 promotions/{year_studentId}                다음 해 진급 예정자(보내는 부서가 자동 기록, 받는 부서가 "출석부에 받기")
 meta/import                                가져오기 기록
+meta/backup                                마지막 전체 자료 내려받기 날짜
 ```
 
 ## 삶의 궤적 · 심방 카드 · 관리자 모드
@@ -70,6 +75,11 @@ meta/import                                가져오기 기록
 - 비밀번호 변경: Firebase 콘솔 → Authentication → 사용자 → 비밀번호 재설정.
 - 담당자 교체: 부서 비밀번호만 새로 알려주면 됨. 교회 계정이 생기면 Firebase "사용자 및 권한"과 GitHub 저장소 소유권을 그 계정으로 이전.
 - 연도 바뀔 때: 각 부서 출석부의 "진급자 명단 출력"으로 확인 → 받는 부서가 "출석부에 받기" → 보내는 부서는 졸업자를 제적·졸업으로 → `config.js`의 `CBCS_YEAR`를 바꾸고 연간 계획 입력.
+- 월 1회: 교육위원회로 로그인 → **자료 내려받기** → 받은 파일(`CBCS-backup-날짜.json`)을 시놀로지 교육위원회 폴더로 옮김. 되돌릴 때는 "데이터 가져오기"에 그 파일을 올림. 심방 카드(care)는 부서 관리자만 읽을 수 있어 이 파일에 들어가지 않음.
+- 연말 결산 뒤: **자료 내려받기 → 영수증 사진 정리**에서 그 해 사진을 일괄 삭제(증빙은 실물 영수증).
+- `firestore.rules`가 바뀌면(차량 신청·형제자매 색인이 추가됨) Firebase 콘솔 → Firestore → 규칙에 다시 붙여넣고 게시해야 그 기능이 켜짐.
+- 영수증 글자 인식은 브라우저 안에서 돌아가며(Tesseract.js, jsDelivr에서 처음 한 번 약 9MB 내려받음) 사진을 외부 서버로 보내지 않음.
+- 학생의 `watch`(관심 학생)·`settled`(새친구 재적 전환일)는 앱이 적는 표시.
 - 로컬 시험: `python3 -m http.server` 후 `index.html?mock=1` (브라우저 저장소만 사용, `data/import_data.json`이 있으면 자동 적재).
 
 ## 자료 보관

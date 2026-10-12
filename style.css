@@ -45,7 +45,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .btn.d{color:var(--bad)}
 .btn:disabled{opacity:.5;cursor:default}
 .btn.link{border:0;background:none;color:var(--accent);padding:0 2px;text-decoration:underline;white-space:normal}
-input[type=text],input[type=date],input[type=number],input[type=password],input[type=tel],input[type=month],select,textarea{padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:var(--panel);width:100%;min-width:0;color:var(--fg)}
+input[type=text],input[type=date],input[type=time],input[type=number],input[type=password],input[type=tel],input[type=month],select,textarea{padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:var(--panel);width:100%;min-width:0;color:var(--fg)}
 textarea{min-height:70px;resize:vertical}
 label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted);min-width:0}
 label.f>span{font-weight:500}
@@ -281,3 +281,15 @@ textarea[readonly],input[readonly]{background:var(--line-soft)}
 .paper .names{font-size:13px;line-height:1.8;margin:0}
 .paper tfoot td{font-weight:600;background:#f4f3ef}
 textarea#cf-counsel,textarea#cf-family,textarea#cn-text{min-height:72px}
+/* 영수증 사진 · 학생 카드 추가 칸 · 이달 생일 */
+.rc-box{margin-top:14px;padding:12px 14px;border:1px dashed var(--line);border-radius:8px;background:var(--bg)}
+.rc-prev{display:block;max-width:100%;max-height:340px;border:1px solid var(--line);border-radius:6px}
+.rc-full{display:block;max-width:100%;border:1px solid var(--line);border-radius:6px}
+.sx{margin-top:12px;padding:10px 12px;border:1px solid var(--line-soft);border-radius:8px;font-size:13px}
+.sx-row{display:grid;grid-template-columns:110px 1fr;gap:4px 10px;align-items:center}
+.sx-row b{font-weight:400;color:var(--muted)}
+.bd-list{display:flex;flex-wrap:wrap;gap:6px}
+.bd{border:1px solid var(--line);border-radius:999px;padding:3px 10px;font-size:12.5px;white-space:nowrap}
+.bd b{font-weight:500;color:var(--accent);margin-right:2px}
+.bd.today{background:var(--accent-soft);border-color:var(--accent)}
+@media(max-width:760px){.sx-row{grid-template-columns:80px 1fr}}

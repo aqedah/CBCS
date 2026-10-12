@@ -132,9 +132,9 @@ const phoneLabel = s => s.phone ? `${s.phone} (본인)` : s.guardianPhone ? `${s
 const isUnited = r => !!(r.united || /세대통합/.test(r.type || ''));
 
 /* ───────────── 화면 뼈대 ───────────── */
-const NAV_PC = [['home','메인','⌂'],['weekly','보고서','✎'],['roster','출석부','☰'],['ledger','회계','₩'],['assets','물품대장','▢'],['archive','보관함','▣'],['tutorial','사용 안내','?']];
-const NAV_MOBILE = [['home','메인'],['attend','출석 체크'],['reports','보고서'],['members','멤버'],['stats','통계'],['tutorial','안내']];
-const NAV_COMMITTEE = [['home','메인','⌂'],['reports','보고서 열람','✎'],['assets','물품대장 열람','▢'],['roster','출석부 열람','☰'],['scholarship','장학','★'],['archive','보관함','▣'],['import','데이터 가져오기','⇪'],['tutorial','사용 안내','?']];
+const NAV_PC = [['home','메인','⌂'],['weekly','보고서','✎'],['roster','출석부','☰'],['ledger','회계','₩'],['assets','물품대장','▢'],['vehicles','차량 신청','⇄'],['archive','보관함','▣'],['tutorial','사용 안내','?']];
+const NAV_MOBILE = [['home','메인'],['attend','출석 체크'],['receipt','영수증'],['reports','보고서'],['members','멤버'],['stats','통계'],['tutorial','안내']];
+const NAV_COMMITTEE = [['home','메인','⌂'],['reports','보고서 열람','✎'],['assets','물품대장 열람','▢'],['roster','출석부 열람','☰'],['vehicles','차량 신청','⇄'],['scholarship','장학','★'],['archive','보관함','▣'],['backup','자료 내려받기','⇩'],['import','데이터 가져오기','⇪'],['tutorial','사용 안내','?']];
 const NAV_COMMITTEE_MOBILE = [['home','메인'],['reports','보고서'],['scholarship','장학'],['tutorial','안내']];
 const VIEWS = {}, BIND = {};
 // 메뉴 묶음: 사이드 메뉴에서 누르면 아래로 펼쳐지는 하위 메뉴 (휴대폰은 화면 위 탭)
@@ -247,6 +247,7 @@ function bindBoard() {
 /* ───────────── 메인 ───────────── */
 VIEWS.home = async () => {
   await loadCommittee();
+  await loadShared(isCommittee() ? null : await loadDept(S.dept));
   const m = S.sub.month || today().slice(0, 7);
   if (isCommittee()) {
     const ls = S.sub.date || lastSunday();
@@ -255,6 +256,7 @@ VIEWS.home = async () => {
     return `<div class="topbar"><div><h1>교육위원회</h1><div class="sub">전 부서 제출 현황과 공지</div></div><div class="row"><input type="date" id="c-date" value="${ls}" style="width:auto"><button class="btn s" id="c-date-go">조회</button></div></div>
     <div class="stack">
       ${patchBoard()}
+      ${committeeExtras()}
       <div class="card"><h2>주일 보고서 제출 현황 <span class="r">${fmtK(ls)}</span></h2><div class="tw"><table><thead><tr><th>부서</th><th>상태</th><th class="n">재적</th><th class="n">출석</th><th class="n">출석률</th><th class="n">헌금</th><th>특이사항</th><th></th></tr></thead><tbody>
       ${rows.map(({ d, dd, r, s }) => r ? `<tr><td>${DEPTS[d]}</td><td><span class="pill ok">제출</span></td><td class="n">${s.total}</td><td class="n">${s.p}</td><td class="n">${s.rate}%</td><td class="n">${won(s.offSum)}</td><td class="wrap note">${isUnited(r) ? '<span class="pill info">세대통합</span> ' : ''}${esc((r.special||'').split('\n')[0]).slice(0,60)}</td><td><button class="btn s" data-go="reports" data-sub='${JSON.stringify({ dept: d, preview: ls })}'>보기</button></td></tr>`
         : `<tr><td>${DEPTS[d]}</td><td><span class="pill warn">미제출</span></td><td class="n">${activeStudents(dd).length}</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td></td><td></td></tr>`).join('')}
@@ -284,16 +286,17 @@ VIEWS.home = async () => {
       <div class="tile"><div class="v">${s ? won(s.offSum) : '—'}</div><div class="l">지난 주일 헌금(원)</div></div>
       <div class="tile"><div class="v">${r ? (r.status === 'done' ? '<span class="pill ok">작성 완료</span>' : '<span class="pill warn">작성 중</span>') : '<span class="pill warn">미작성</span>'}</div><div class="l">${fmtK(ls)} 보고서</div></div>
     </div>
+    ${homeExtras(dd)}
     <div class="grid2">
       <div class="card"><h2>공지</h2><div class="list">${notices.map(n => `<div class="item"><div><div class="t">${esc(n.title)} <span class="pill mute">${n.from}</span></div><div class="d">${n.date} · ${esc(n.body)}</div></div>${n.own ? `<button class="btn s d edit-only" data-del-n="${n._id}">삭제</button>` : ''}</div>`).join('') || '<div class="note">공지가 없습니다.</div>'}</div>
         <div class="row edit-only" style="margin-top:10px"><input type="text" id="n-title" placeholder="부서 공지 제목" style="flex:2"><input type="text" id="n-body" placeholder="내용" style="flex:3"><button class="btn" id="n-add">올리기</button></div></div>
-      <div class="card"><h2>${m.replace('-','년 ')}월 일정 <span class="r">회색 표시는 교육위원회 공통</span></h2>${monthNav(m)}${eventListHTML(allEvents(dd), m)}</div>
+      <div class="card"><h2>${m.replace('-','년 ')}월 일정 <span class="r">회색 표시는 교육위원회 공통</span></h2>${monthNav(m)}${eventListHTML(homeEvents(dd), m)}</div>
     </div>
-    <div class="card"><h2>${m.replace('-','년 ')}월 달력</h2>${calendarHTML(m, allEvents(dd))}</div>
+    <div class="card"><h2>${m.replace('-','년 ')}월 달력</h2>${calendarHTML(m, homeEvents(dd))}</div>
   </div>`;
 };
 BIND.home = () => {
-  bindMonthNav(); bindBoard();
+  bindMonthNav(); bindBoard(); bindHomeExtras();
   if (isCommittee()) {
     const g = $('#c-date-go'); if (g) g.onclick = () => { S.sub.date = $('#c-date').value; render(); };
     const a = $('#cn-add'); if (a) a.onclick = async () => { const t = $('#cn-title').value.trim(); if (!t) return; const n = { id: uid(), date: today(), title: t, body: $('#cn-body').value.trim() }; await backend.set(`committee/main/notices/${n.id}`, n); C().notices.push({ _id: n.id, ...n }); render(); };
@@ -385,6 +388,7 @@ VIEWS.roster = async () => {
   let dd; if (isCommittee()) { const d = S.sub.dept || 'kinder'; dd = await loadDept(d); } else dd = D();
   const nextYear = YEAR + 1; const plan = promotionPlan(dd, nextYear);
   if (!isCommittee() && canEdit()) { try { await syncPromotions(dd, nextYear); } catch (e) { console.warn('진급 동기화 실패', e); } }
+  await loadShared(); if (!isCommittee() && canEdit()) { try { await syncSiblings(dd); } catch (e) {} }
   const promos = S.promotions || (S.promotions = await backend.list('promotions'));
   const incoming = promos.filter(p => p.toDept === dd.id && p.year === nextYear && !p.received).sort((a, b) => (a.birth || '') < (b.birth || '') ? -1 : 1);
   if (S.sub.promoPrint) return `<div class="topbar no-print"><div><h1>진급자 명단</h1><div class="sub">${nextYear}년 기준 · 인쇄하거나 PDF로 저장</div></div><div class="row"><button class="btn" id="pp-back">출석부로</button><button class="btn p" id="pp-print">PDF로 저장 / 인쇄</button></div></div>${promotionPaper(dd, nextYear, plan, incoming)}`;
@@ -438,12 +442,13 @@ function studentCard(dd, s) {
   return `<h2>${esc(s.name)} <span class="note">${esc(c ? c.name : s.classId)} · ${esc(s.sex)}</span><button class="btn s" id="modal-close">닫기</button></h2>
     ${s.flags && s.flags.length ? `<div class="flags">${s.flags.map(esc).join('<br>')}</div>` : ''}
     <div class="grid2" style="margin-top:10px">
-      <dl class="kvl"><dt>생년월일</dt><dd>${f('birth')}</dd><dt>신급</dt><dd>${esc(faithLabel(s))}</dd><dt>학교</dt><dd>${f('school')}</dd><dt>연락처(본인)</dt><dd>${f('phone')}</dd><dt>보호자 연락처</dt><dd>${f('guardianPhone')}${s.guardianPhone ? ' (' + esc(s.guardianRel || '보호자') + ')' : ''}</dd><dt>아버지</dt><dd>${f('father')}</dd><dt>어머니</dt><dd>${f('mother')}</dd><dt>형제자매</dt><dd>${esc((s.siblings || []).join(', '))}</dd><dt>주소</dt><dd>${f('address')}</dd><dt>전도자</dt><dd>${f('evangelist')}</dd><dt>장학</dt><dd>${esc((s.scholarship || []).join(', '))}</dd><dt>비고</dt><dd>${f('note')}</dd></dl>
+      <dl class="kvl"><dt>생년월일</dt><dd>${f('birth')}</dd><dt>신급</dt><dd>${esc(faithLabel(s))}</dd><dt>학교</dt><dd>${f('school')}</dd><dt>연락처(본인)</dt><dd>${f('phone')}</dd><dt>보호자 연락처</dt><dd>${f('guardianPhone')}${s.guardianPhone ? ' (' + esc(s.guardianRel || '보호자') + ')' : ''}</dd><dt>아버지</dt><dd>${f('father')}</dd><dt>어머니</dt><dd>${f('mother')}</dd><dt>주소</dt><dd>${f('address')}</dd><dt>전도자</dt><dd>${f('evangelist')}</dd><dt>장학</dt><dd>${esc((s.scholarship || []).join(', '))}</dd><dt>비고</dt><dd>${f('note')}</dd></dl>
       <div><div class="note" style="margin-bottom:4px">소속 이력</div><table><tbody>${(s.history || []).map(h => `<tr><td>${h.year}</td><td>${esc(DEPTS[h.dept] || h.dept)}${h.origDept && h.origDept !== DEPTS[h.dept] ? ' (' + esc(h.origDept) + ')' : ''}</td><td>${esc(h.classId || '')}</td><td class="note">${esc(h.note || '')}</td></tr>`).join('') || '<tr><td class="note">기록 없음</td></tr>'}<tr><td>${YEAR}</td><td>${esc(dd.doc.name)}</td><td>${esc(c ? c.name : s.classId)}</td><td class="note">현재</td></tr></tbody></table>
         ${(s.statusLog || []).length ? `<div class="note" style="margin:10px 0 4px">상태 변경 기록</div><div class="note">${s.statusLog.map(l => `${esc(l.date)} ${l.to === 'left' ? '제적·졸업' : '복적'}${l.kind ? '(' + esc(l.kind) + ')' : ''}${l.reason ? ' — ' + esc(l.reason) : ''}`).join('<br>')}</div>` : ''}
         <div class="note" style="margin:10px 0 4px">${YEAR}년 출석 ${present}/${reps.length}회</div>
         <div class="row" style="gap:3px">${attRows.map(a => `<span title="${a.date}${a.reason ? ' ' + esc(a.reason) : ''}" style="width:12px;height:12px;border-radius:2px;display:inline-block;background:${a.v === 'P' ? 'var(--ok)' : a.v === 'O' ? 'var(--warn)' : 'var(--line)'}"></span>`).join('')}</div></div>
     </div>
+    ${studentExtras(dd, s)}
     ${edit ? `<div class="fields" style="margin-top:14px">
       <label class="f"><span>이름</span><input type="text" id="sc-name" value="${esc(s.name)}"></label>
       <label class="f"><span>${esc(dd.doc.classLabel)}</span><select id="sc-class">${dd.doc.classes.map(x => `<option value="${esc(x.id)}" ${x.id === s.classId ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}<option value="${esc(s.classId)}" ${c ? '' : 'selected'}>${esc(s.classId || '(없음)')}</option></select></label>
@@ -491,7 +496,7 @@ BIND.roster = () => {
   document.querySelectorAll('[data-sort]').forEach(b => b.onclick = () => { S.sub.sort = b.dataset.sort; render(); });
   if (S.sub.open) { const id = S.sub.open; delete S.sub.open; setTimeout(() => { const tr = document.querySelector(`[data-student="${CSS.escape(id)}"]`); if (tr) tr.click(); }, 0); }
   document.querySelectorAll('[data-student]').forEach(tr => tr.onclick = () => {
-    const s = dd.students.find(x => x.id === tr.dataset.student); openModal(studentCard(dd, s)); bindTimeline(dd, s);
+    const s = dd.students.find(x => x.id === tr.dataset.student); openModal(studentCard(dd, s)); bindTimeline(dd, s); bindStudentExtras(dd, s);
     const sv = $('#sc-save'); if (sv) sv.onclick = async () => {
       const ns = $('#sc-status').value, was = s.status, ld = $('#sc-ldate').value, lk = $('#sc-lkind').value, lr = $('#sc-lreason').value.trim();
       if (ns === 'left' && was !== 'left') setLeft(s, ld || today(), lk || '제적', lr);
@@ -688,7 +693,7 @@ function reportPaper(dd, r, withBar) {
 /* ───────────── 회계 ───────────── */
 const CATS = ['예배·전도','양육','교제','행사','간식','교사','비품','선물','수련회','기타'];
 VIEWS.ledger = async () => {
-  const dd = D(); const m = S.sub.month || today().slice(0, 7); const lid = S.sub.ledger || (dd.doc.ledgers[0] || {}).id; const L = dd.doc.ledgers.find(l => l.id === lid);
+  const dd = D(); await loadReceipts(dd); const m = S.sub.month || today().slice(0, 7); const lid = S.sub.ledger || (dd.doc.ledgers[0] || {}).id; const L = dd.doc.ledgers.find(l => l.id === lid);
   if (S.sub.voucherView) { const e = dd.expenses.find(x => x.id === S.sub.voucherView); return `<div class="topbar no-print"><div><h1>지출결의서</h1><div class="sub">인쇄해 결재를 받고 영수증을 붙여 제출합니다</div></div><div class="row"><button class="btn" id="v-back">회계로</button><button class="btn" id="v-edit">수정</button><button class="btn p" id="v-print">PDF로 저장 / 인쇄</button></div></div>${voucherPaper(dd, e)}`; }
   if (S.sub.voucherEdit) { const e = S.sub.voucherEdit === 'new' ? { ledgerId: lid, category: '간식', date: today(), receipt: true } : dd.expenses.find(x => x.id === S.sub.voucherEdit); return `<div class="topbar"><div><h1>${S.sub.voucherEdit === 'new' ? '지출결의서 작성' : '지출결의서 수정'}</h1><div class="sub">저장하면 회계 장부에 지출로 기록되고, 결의서를 바로 출력할 수 있습니다</div></div><div class="row"><button class="btn" id="v-cancel">취소</button><button class="btn p" id="v-save">저장하고 결의서 보기</button></div></div><div class="card">${voucherForm(dd, e)}</div>`; }
   if (!L) return `<div class="topbar"><div><h1>회계</h1></div></div><div class="card">장부가 없습니다. <div class="row" style="margin-top:8px"><input type="text" id="l-new" placeholder="장부 이름 (예: 정규 예산)" style="width:240px"><input type="number" id="l-new-budget" placeholder="연간 예산" style="width:140px"><button class="btn" id="l-add">장부 만들기</button></div></div>`;
@@ -705,8 +710,9 @@ VIEWS.ledger = async () => {
       : `<div class="tile"><div class="v">${won(sm.carryIn)}</div><div class="l">전월 이월</div></div><div class="tile"><div class="v">${won(sm.monIn)}</div><div class="l">${+m.slice(5)}월 수입</div></div><div class="tile"><div class="v">${won(sm.monEx)}</div><div class="l">${+m.slice(5)}월 지출</div></div><div class="tile"><div class="v">${won(sm.balance)}</div><div class="l">잔액 <span class="tag">자동</span></div></div><div class="tile"><div class="v">${won((L.carry||0) + sm.totalIn - sm.totalEx)}</div><div class="l">현재 잔액(전체)</div></div>`}
     </div>
     ${noDate.length ? `<div class="hint">날짜가 없는 지출 ${noDate.length}건(합계 ${won(sm.noDateEx)}원)은 월별 집계에서 빠져 있습니다. "전체 보기"에서 날짜를 넣어 주세요.</div>` : ''}
+    ${budgetVsCard(dd, lid, m)}
     <div class="card"><h2>${S.sub.all ? '전체' : +m.slice(5) + '월'} 지출 내역 <span class="r">${esc(L.name)} · ${ex.length}건</span></h2><div class="tw"><table><thead><tr><th>날짜</th><th>항목</th><th>세부 내역</th><th class="n">금액</th><th>청구</th><th class="c">영수증</th><th></th></tr></thead><tbody>
-      ${ex.map(e => `<tr><td>${e.date ? e.date.slice(2) : '<span class="pill warn">날짜 없음</span>'}</td><td>${esc(e.category)}</td><td class="wrap">${esc(e.desc)}${e.note ? ` <span class="note">(${esc(e.note)})</span>` : ''}${e.flags && e.flags.length ? ` <span class="tag flag" title="${esc(e.flags.join(' / '))}">!</span>` : ''}</td><td class="n">${won(e.amount)}</td><td class="note">${esc(e.requester || '')}</td><td class="c">${e.receipt ? '○' : '—'}</td><td style="white-space:nowrap"><button class="btn s" data-voucher="${e.id}" title="지출결의서">결의서</button> <button class="btn s edit-only" data-edit-e="${e.id}">수정</button> <button class="btn s d edit-only" data-del-e="${e.id}">삭제</button></td></tr>`).join('') || '<tr><td colspan="7" class="note">지출이 없습니다.</td></tr>'}
+      ${ex.map(e => `<tr><td>${e.date ? e.date.slice(2) : '<span class="pill warn">날짜 없음</span>'}</td><td>${esc(e.category)}</td><td class="wrap">${esc(e.desc)}${e.note ? ` <span class="note">(${esc(e.note)})</span>` : ''}${e.flags && e.flags.length ? ` <span class="tag flag" title="${esc(e.flags.join(' / '))}">!</span>` : ''}</td><td class="n">${won(e.amount)}</td><td class="note">${esc(e.requester || '')}</td>${receiptCell(dd, e)}<td style="white-space:nowrap"><button class="btn s" data-voucher="${e.id}" title="지출결의서">결의서</button> <button class="btn s edit-only" data-edit-e="${e.id}">수정</button> <button class="btn s d edit-only" data-del-e="${e.id}">삭제</button></td></tr>`).join('') || '<tr><td colspan="7" class="note">지출이 없습니다.</td></tr>'}
       <tr class="sum"><td colspan="3">합계</td><td class="n">${won(ex.reduce((a, e) => a + (+e.amount || 0), 0))}</td><td colspan="3"></td></tr></tbody></table></div>
       <div class="fields edit-only" style="margin-top:12px"><label class="f"><span>날짜</span><input type="date" id="e-date" value="${today()}"></label><label class="f"><span>항목</span><select id="e-cat">${CATS.map(c => `<option>${c}</option>`).join('')}</select></label><label class="f" style="grid-column:span 2"><span>세부 내역</span><input type="text" id="e-desc" placeholder="예: 10월 생일 축하 케이크·선물 (4명)"></label><label class="f"><span>금액</span><input type="number" id="e-amt"></label><label class="f"><span>청구인</span><input type="text" id="e-req"></label><label class="f"><span>영수증</span><select id="e-rc"><option value="1">있음</option><option value="0">없음</option></select></label></div>
       <div class="row edit-only" style="margin-top:8px"><button class="btn p" id="e-add">지출 추가</button></div></div>
@@ -724,6 +730,7 @@ BIND.ledger = () => {
     return; }
   const vn = $('#v-new'); if (vn) vn.onclick = () => { S.sub.voucherEdit = 'new'; render(); };
   document.querySelectorAll('[data-voucher]').forEach(b => b.onclick = () => { S.sub.voucherView = b.dataset.voucher; render(); });
+  bindReceiptView(dd);
   bindMonthNav(); document.querySelectorAll('[data-ledger]').forEach(b => b.onclick = () => { S.sub.ledger = b.dataset.ledger; render(); });
   const la = $('#l-all'); if (la) la.onclick = () => { S.sub.all = !S.sub.all; render(); };
   const add = $('#l-add'); if (add) add.onclick = async () => { const n = $('#l-new').value.trim(); if (!n) return; const b = +$('#l-new-budget').value || 0; const id = `${dd.id}_${uid()}`; dd.doc.ledgers.push({ id, name: n, budget: b, carry: 0, kind: b ? 'budget' : 'balance', note: '', flags: [] }); await saveDeptDoc(dd.id); S.sub.ledger = id; render(); };
@@ -776,17 +783,19 @@ function voucherForm(dd, e) {
   <h3 style="font-size:13px;margin:12px 0 6px">지출 내역 <span class="note">금액은 수량×단가로 자동 계산, 직접 넣어도 됩니다</span></h3>
   <div class="tw"><table id="v-items"><thead><tr><th>내역</th><th>수량</th><th>단가</th><th>금액</th><th title="기자재·교재·비품이면 물품대장에 자동 등록">물품대장</th><th></th></tr></thead><tbody>${items.map((i, k) => `<tr><td><input type="text" class="vi-desc" value="${esc(i.desc || '')}"></td><td><input type="number" class="vi-qty" value="${i.qty || ''}" style="width:70px"></td><td><input type="number" class="vi-price" value="${i.price || ''}" style="width:110px"></td><td><input type="number" class="vi-amt" value="${i.amount || ''}" style="width:120px"></td><td class="c"><input type="checkbox" class="vi-asset" ${i.asset || (i.asset === undefined && isAssetLike(i.desc, e.category)) ? 'checked' : ''}></td><td><button class="btn s d vi-del">×</button></td></tr>`).join('')}</tbody></table></div>
   <div class="row" style="margin-top:6px"><button class="btn s" id="v-add-item">줄 추가</button><span class="note" id="v-total"></span><span class="note">· "물품대장"에 체크한 줄은 저장할 때 물품대장에 자동으로 들어갑니다(기자재·교재·비품은 자동 체크).</span></div>
-  <label class="f" style="margin-top:10px"><span>메모</span><input type="text" id="v-note" value="${esc(e.note || '')}"></label>`;
+  <label class="f" style="margin-top:10px"><span>메모</span><input type="text" id="v-note" value="${esc(e.note || '')}"></label>
+  ${receiptPicker(dd, e)}`;
 }
 function bindVoucherForm() {
   const recalc = () => { let t = 0; document.querySelectorAll('#v-items tbody tr').forEach(tr => { const q = +tr.querySelector('.vi-qty').value, p = +tr.querySelector('.vi-price').value, a = tr.querySelector('.vi-amt'); if (q && p && document.activeElement !== a) a.value = q * p; t += +a.value || 0; }); $('#v-total').textContent = `합계 ${won(t)}원`; };
   const wire = () => { document.querySelectorAll('#v-items input').forEach(i => i.oninput = recalc); document.querySelectorAll('#v-items .vi-desc').forEach(i => i.addEventListener('change', () => { const cb = i.closest('tr').querySelector('.vi-asset'); if (!cb.dataset.touched) cb.checked = isAssetLike(i.value, $('#v-cat').value); })); document.querySelectorAll('#v-items .vi-asset').forEach(cb => cb.onchange = () => { cb.dataset.touched = '1'; }); document.querySelectorAll('.vi-del').forEach(b => b.onclick = () => { if (document.querySelectorAll('#v-items tbody tr').length > 1) { b.closest('tr').remove(); recalc(); } }); };
   $('#v-add-item').onclick = () => { const tr = document.querySelector('#v-items tbody tr').cloneNode(true); tr.querySelectorAll('input').forEach(i => { if (i.type === 'checkbox') { i.checked = false; delete i.dataset.touched; } else i.value = ''; }); document.querySelector('#v-items tbody').appendChild(tr); wire(); };
-  wire(); recalc();
+  wire(); recalc(); bindReceiptPicker();
 }
 function readVoucherForm(e) {
   const items = [...document.querySelectorAll('#v-items tbody tr')].map(tr => ({ desc: tr.querySelector('.vi-desc').value.trim(), qty: +tr.querySelector('.vi-qty').value || '', price: +tr.querySelector('.vi-price').value || '', amount: +tr.querySelector('.vi-amt').value || 0, asset: tr.querySelector('.vi-asset').checked })).filter(i => i.desc || i.amount);
   Object.assign(e, { date: $('#v-date').value, ledgerId: $('#v-ledger').value, category: $('#v-cat').value, requester: $('#v-req').value.trim(), desc: $('#v-desc').value.trim() || (items[0] || {}).desc || '', payMethod: $('#v-pay').value, payTo: $('#v-payto').value.trim(), receipt: $('#v-rc').value === '1', note: $('#v-note').value.trim(), items, amount: items.reduce((a, i) => a + i.amount, 0), voucher: true, flags: [] });
+  const rs = $('#v-receipt'); if (rs) e.receiptId = rs.value || '';
   return e;
 }
 
@@ -923,6 +932,7 @@ function monthlyPaper(dd, m) {
     <div class="grid2"><div><h2>1. ${mm}월 보고 <span class="tag">주일 보고서에서</span></h2><table class="kv"><tbody>${weekly}</tbody></table></div><div><h2>2. ${+nextMonth(m).slice(5)}월 계획</h2><table class="kv"><tbody>${np.map(l => { const [a, ...b] = l.split(':'); return `<tr><th style="width:18%">${esc(a)}</th><td>${esc(b.join(':').trim())}</td></tr>`; }).join('') || '<tr><td class="note">(다음 달 계획을 입력하세요)</td></tr>'}</tbody></table></div></div>
     <h2>3. 출석 현황 및 헌금 집계 <span class="tag">자동</span></h2><div class="tw"><table><thead><tr><th></th><th class="n">주일헌금</th><th class="n">기타헌금</th><th class="n">남</th><th class="n">여</th><th class="n">출석</th><th class="n">재적</th><th class="n">새친구</th><th>특이사항</th></tr></thead><tbody>${rows.join('')}<tr class="sum"><td>합계 (평균)</td><td class="n">${won(sumSun)}</td><td class="n">${won(sumOff - sumSun)}</td><td class="n">${avg('m')}</td><td class="n">${avg('f')}</td><td class="n">${avg('p')}</td><td class="n">${activeStudents(dd).length}</td><td class="n">${stats.reduce((a, s) => a + s.newc, 0)}</td><td>평균 출석률 <span style="color:#8a1f2b">${avg('rate')}%</span></td></tr></tbody></table></div>
     ${main ? `<h2>4. 예산 청구 및 지출 내역 <span class="tag">자동</span></h2><div class="tw"><table><thead><tr><th class="n">부서 예산 (연)</th><th class="n">전월 누계 지출</th><th class="n">${mm}월 지출</th><th class="n">누계 지출</th><th class="n">예산 잔액</th><th class="n">집행률</th></tr></thead><tbody><tr><td class="n">${won(main.budget)}</td><td class="n">${won(sm.prevEx)}</td><td class="n">${won(sm.monEx)}</td><td class="n">${won(sm.cumEx)}</td><td class="n">${won(sm.remain)}</td><td class="n" style="color:#8a1f2b">${sm.rate ?? '—'}%</td></tr></tbody></table></div>` : ''}
+    ${main ? budgetVsPaper(dd, main.id, m) : ''}
     ${others.length ? `<h2>5. 찬조금·행사 장부 현황 <span class="tag">자동</span></h2><div class="tw"><table><thead><tr><th>장부</th><th class="n">전월 이월</th><th class="n">${mm}월 수입</th><th class="n">${mm}월 지출</th><th class="n">잔액</th></tr></thead><tbody>${others.map(l => { const o = ledgerSummary(dd, l.id, m); return `<tr><td>${esc(l.name)}</td><td class="n">${won(o.carryIn)}</td><td class="n">${won(o.monIn)}</td><td class="n">${won(o.monEx)}</td><td class="n">${won(o.balance)}</td></tr>`; }).join('')}</tbody></table></div>` : ''}
     <h2>6. 회계 보고서 (지출 세부) <span class="tag">건별 입력 → 소계·합계 자동</span></h2><div class="tw"><table><thead><tr><th>날짜</th><th>항목</th><th>지출 세부 내역</th><th class="n">금액</th><th class="n">항목 소계</th><th class="c">영수증</th></tr></thead><tbody>${exRows || '<tr><td colspan="6" class="note">이달 지출 없음</td></tr>'}<tr class="sum"><td colspan="3">${mm}월 지출 합계</td><td class="n">${won(sm ? sm.monEx : 0)}</td><td class="n">${won(sm ? sm.monEx : 0)}</td><td></td></tr></tbody></table></div>
     ${dd.doc.notes && dd.doc.notes.merge ? `<div class="merge">※ ${esc(dd.doc.notes.merge)}</div>` : ''}
@@ -1301,7 +1311,7 @@ VIEWS.stats = async () => {
   <div class="stack">
     <div class="card"><h2>주별 출석 추이</h2>${trend.length ? svgTrend(trend) : '<div class="note">보고서가 쌓이면 그래프가 그려집니다.</div>'}</div>
     <div class="grid2">
-      <div class="card"><h2>장기 결석 (최근 4주 연속)</h2><div class="list">${rows.filter(r => r.streak).map(r => `<div class="item"><div class="t">${esc(r.s.name)} <span class="note">${esc((classOf(dd, r.s) || {}).name || '')}</span></div><span class="pill bad">4주 결석</span></div>`).join('') || `<div class="note">${last4.length < 4 ? '보고서가 4장 이상 쌓이면 자동으로 찾습니다.' : '해당자가 없습니다.'}</div>`}</div><div class="note" style="margin-top:8px">연말 제적 정리 후보도 여기서 뽑습니다.</div></div>
+      <div class="card"><h2>장기 결석 (최근 4주 연속)</h2><div class="list">${rows.filter(r => r.streak).map(r => `<div class="item"><div class="t">${esc(r.s.name)} <span class="note">${esc((classOf(dd, r.s) || {}).name || '')}</span></div><span class="row" style="gap:6px"><span class="pill bad">4주 결석</span>${canEdit() ? `<button class="btn s" data-go="care">심방 카드</button>` : ''}</span></div>`).join('') || `<div class="note">${last4.length < 4 ? '보고서가 4장 이상 쌓이면 자동으로 찾습니다.' : '해당자가 없습니다.'}</div>`}</div><div class="note" style="margin-top:8px">연말 제적 정리 후보도 여기서 뽑습니다.</div></div>
       <div class="card"><h2>학생별 출석률 <span class="r">낮은 순</span></h2><div class="tw" style="max-height:480px;overflow:auto"><table><thead><tr><th>이름</th><th>${esc(dd.doc.classLabel)}</th><th class="n">출석</th><th class="n">출석률</th></tr></thead><tbody>${rows.map(r => `<tr><td>${esc(r.s.name)}</td><td class="note">${esc((classOf(dd, r.s) || {}).name || '')}</td><td class="n">${r.cnt}/${reps.length}</td><td class="n">${r.rate}%</td></tr>`).join('')}</tbody></table></div></div>
     </div>
   </div>`;
@@ -1377,10 +1387,10 @@ VIEWS.import = async () => `<div class="topbar"><div><h1>데이터 가져오기<
   <div class="card"><h2>엑셀 가져오기 (앞으로)</h2><div class="note">출석부·회계 엑셀을 정해진 양식으로 올리면 바로 반영하는 기능은 전 부서 시행 후 양식을 정해 추가합니다.</div></div></div>`;
 BIND.import = () => {
   let payload = null; const log = m => { $('#im-log').textContent += m + '\n'; };
-  $('#im-file').onchange = async e => { const f = e.target.files[0]; if (!f) return; try { payload = JSON.parse(await f.text()); $('#im-go').disabled = false; log(`파일 확인: 부서 ${Object.keys(payload.depts || {}).join(', ')} · 장학 ${(payload.scholarship || []).length}건 · 보관 색인 ${(payload.archiveIndex || []).length}건`); } catch (err) { log('JSON을 읽지 못했습니다: ' + err.message); } };
+  $('#im-file').onchange = async e => { const f = e.target.files[0]; if (!f) return; try { payload = JSON.parse(await f.text()); $('#im-go').disabled = false; if (payload.raw) log(`전체 자료 내려받기 파일입니다(${(payload.generated || '').slice(0, 10)} · ${payload.raw.length}건). 올리면 같은 자료를 그날 상태로 덮어씁니다.`); if (!payload.raw) log(`파일 확인: 부서 ${Object.keys(payload.depts || {}).join(', ')} · 장학 ${(payload.scholarship || []).length}건 · 보관 색인 ${(payload.archiveIndex || []).length}건`); } catch (err) { log('JSON을 읽지 못했습니다: ' + err.message); } };
   $('#im-go').onclick = async () => {
     if (!payload) return; $('#im-go').disabled = true; const on = id => $('#' + id).checked;
-    const items = payloadToItems(payload, { students: on('im-students'), reports: on('im-reports'), money: on('im-money'), plan: on('im-plan'), sch: on('im-sch'), arch: on('im-arch') });
+    const items = payload.raw ? payload.raw.map(x => ({ path: x.path, data: x.data })) : payloadToItems(payload, { students: on('im-students'), reports: on('im-reports'), money: on('im-money'), plan: on('im-plan'), sch: on('im-sch'), arch: on('im-arch') });
     log(`문서 ${items.length}개를 올립니다…`);
     try { await backend.batchSet(items, (a, b) => { $('#im-log').textContent = $('#im-log').textContent.replace(/\n진행.*$/, '') + `\n진행 ${a}/${b}`; }); log('완료. 새로고침하면 반영됩니다.'); S.data = {}; S.committee = null; S.scholarship = null; S.archive = null; }
     catch (err) { log('실패: ' + (err.code || err.message) + ' — Firestore 보안 규칙과 로그인 계정을 확인하세요.'); $('#im-go').disabled = false; }
@@ -1416,6 +1426,7 @@ VIEWS.tutorial = async () => {
     <div class="step"><div><h3>공지와 공통 일정 올리기</h3><p>메인의 공지·공통 일정에 적으면 모든 부서 메인 화면과 주일 보고서 "이달 일정"에 나타납니다.</p><div class="who">교육위원장 · PC</div></div></div>
     <div class="step"><div><h3>월례회 전에 월간 보고서 열람</h3><p>월간 보고서 화면에서 부서를 고르면 그 달 보고서가 보입니다. 부서가 출력해 온 종이와 같은 내용입니다.</p><div class="who">교육위원회</div></div></div>
     <div class="step"><div><h3>장학 관리</h3><p>장학 메뉴에서 연도별 명단·금액·계좌를 봅니다. 계좌번호는 "계좌 보기"를 눌러야 보입니다. 후보 추가와 확정 처리도 여기서 합니다.</p><div class="who">교육위원회 · PC</div></div></div>
+    <div class="step"><div><h3>한 달에 한 번: 자료 내려받기</h3><p><b>자료 내려받기</b>에서 전체 자료를 파일 하나로 받아 시놀로지에 보관합니다. 연말 결산이 끝나면 같은 화면에서 영수증 사진을 한꺼번에 지웁니다. <b>차량 신청</b>에서는 전 부서 신청과 겹침을 봅니다.</p><div class="who">교육위원회 · PC</div></div></div>
     <div class="step"><div><h3>데이터 가져오기</h3><p>변환된 초기 데이터 파일이나, 앞으로 정해진 양식의 자료를 올립니다. 처음 한 번만 하면 됩니다.</p><div class="who">관리자</div></div></div>
     ` : `
     <div class="step"><div><h3>연초에 한 번: 출석부와 연간 계획</h3><p><b>출석부</b>에서 반(또는 팸·학년) 편성, 학생, 교사·임원을 넣습니다. <b>연간계획서</b>에 표어·말씀·목표·행사표·예산안을 쓰고 "확정"을 누르면 메인 화면에 알려집니다. 다음 해 계획서는 10~11월에 연도를 바꿔 작성합니다.</p><div class="who">교역자 · 총무 — 11~12월 · PC</div>${mob ? '' : '<button class="btn s" data-go="roster">출석부 열기</button> <button class="btn s" data-go="plan">연간계획서 열기</button>'}</div></div>
@@ -1424,6 +1435,7 @@ VIEWS.tutorial = async () => {
     <div class="step"><div><h3>지출이 생길 때마다: 회계</h3><p><b>회계</b>에서 "지출결의서 작성"으로 (기자재·교재·비품은 <b>물품대장</b>에 자동 등록) 날짜·항목·내역·금액을 넣고 결의서를 인쇄해 결재를 받습니다(영수증은 뒷면에). 월 합계, 누계, 예산 잔액, 집행률이 바로 계산됩니다. 찬조금·수련회처럼 잔액을 따로 보는 돈은 장부를 하나 더 만듭니다.</p><div class="who">회계 — 지출 당일 · PC</div>${mob ? '' : '<button class="btn s" data-go="ledger">회계 열기</button>'}</div></div>
     <div class="step"><div><h3>월말: 월간 보고서는 이미 만들어져 있습니다</h3><p><b>보고서 → 월간 보고서</b>를 열면 그 달 주일 보고서 4~5장과 회계가 모여 있습니다. 부장은 "다음 달 계획" 칸만 적고, 부장·총무·회계가 확인한 뒤 PDF로 출력해 교육위원회 월례회에 냅니다.</p><div class="who">부장 · 총무 · 회계 — 매월 마지막 주 · PC</div>${mob ? '' : '<button class="btn s" data-go="monthly">월간 보고서 열기</button>'}</div></div>
     <div class="step"><div><h3>심방 카드 (관리자 모드)</h3><p>왼쪽 <b>🔒 관리자 모드</b>를 누르고 부서 관리자 비밀번호(처음엔 교역자·부장이 정함)를 넣으면 <b>출석부 → 심방 카드</b>가 열립니다. 학생마다 가족·직장·상담 내용과 날짜별 심방 기록을 적고, 학생 카드의 <b>삶의 궤적</b>과 함께 한 장으로 출력합니다. 기록은 그 비밀번호로 암호화되어 저장되므로 부서 비밀번호만으로는 볼 수 없고, 다른 부서나 교육위원회도 볼 수 없습니다. 비밀번호를 잊으면 복구할 수 없으니 담당자가 바뀔 때 "관리자 비밀번호 바꾸기"로 넘겨 주세요.</p><div class="who">교역자 · 부장 — 심방 후 · PC</div>${mob ? '' : '<button class="btn s" data-go="care">심방 카드 열기</button>'}</div></div>
+    <div class="step"><div><h3>그때그때: 영수증 · 결석자 · 차량</h3><p>물건을 사면 휴대폰 <b>영수증</b>에서 사진을 찍어 올립니다. 날짜와 금액을 읽어 두었다가 PC 지출결의서에서 그 사진을 고르면 칸이 채워집니다(실물 영수증은 지금처럼 제출). 결석이 4주 이어지는 학생은 메인의 "챙길 일"과 <b>심방 카드</b>(관리자 모드) 맨 위 "먼저 챙길 학생"에 나타나고, 거기서 바로 카드를 열어 심방 기록을 적습니다. 교회 차량은 <b>차량 신청</b>에 올리면 다른 부서와 겹치는지 바로 보입니다. 새친구가 네 번 출석하면 메인에서 재적 전환을 알려 줍니다.</p><div class="who">회계 · 교역자 · 부장</div></div></div>
     <div class="step"><div><h3>가끔: 통계와 공지</h3><p><b>출석부 → 출석 통계</b>에서 기간(전체·6개월·3개월·1달)별 추이와 4주 연속 결석자를 보고, <b>출석부 → 제적 관리</b>에서 오래 결석한 학생을 제적하거나 복적합니다. 청년부는 <b>회칙·총회</b>에서 회칙, 총회 정족수·결의권자·후보자, 회의록을 관리합니다. <b>메인</b>의 공지는 부서 교사들에게, 교육위원회 공지는 모든 부서에 보입니다.</p><div class="who">부장 · 교역자</div><button class="btn s" data-go="stats">출석 통계 열기</button></div></div>
     `}
   </div>
@@ -1500,6 +1512,7 @@ VIEWS.care = async () => {
   return `<div class="topbar"><div><h1>심방 카드 <span class="pill info">${esc(dd.doc.name)} 관리자 모드</span></h1><div class="sub">학생 한 명의 삶의 궤적·가족·상담 내용과 심방 기록. 이 부서 관리자 비밀번호로 암호화되어 저장됩니다.</div></div>
     <div class="row">${['active', 'left', 'all'].map(k => `<button class="btn s ${show === k ? 'p' : ''}" data-show="${k}">${{ active: '재적·새친구', left: '제적·졸업', all: '전체' }[k]}</button>`).join('')}<button class="btn s ${S.sub.sort === 'visit' ? 'p' : ''}" id="cr-sort">심방 오래된 순</button>${canEdit() ? `<button class="btn s" id="cr-import">과거 자료 가져오기</button><button class="btn s" id="cr-pw">관리자 비밀번호 바꾸기</button>` : ''}</div></div>
   <div class="stack">
+    ${careNeedsCard(dd)}
     <div class="card"><div class="tw"><table class="rtab"><thead><tr><th>이름</th><th>나이</th><th>팸</th><th>직장·학교</th><th>최근 심방</th><th>최근 기록</th><th>명부</th><th></th></tr></thead><tbody>
     ${sorted.map(s => { const c = careOf(dd, s); const n = (c && c.notes || []).slice().sort((a, b) => a.date < b.date ? 1 : -1)[0]; const yr = Object.values(dd.reports).filter(r => r.date.startsWith(String(YEAR))); const p = yr.filter(r => (r.att || {})[s.id]).length;
       return `<tr class="click" data-care="${s.id}"><td>${esc(s.name)}</td><td>${s.birth ? '만 ' + ageAt(s.birth, today()) : '—'}</td><td class="note">${esc((classOf(dd, s) || {}).name || s.classId || '')}</td><td class="wrap note">${esc(c && c.job || s.school || '')}</td><td>${n ? fmtShort(n.date) : '<span class="pill warn">없음</span>'}</td><td class="wrap note">${esc(n ? n.text.slice(0, 50) : '')}</td><td>${c ? '<span class="pill ok">있음</span>' : '<span class="pill mute">없음</span>'}</td><td class="note">${YEAR} 출석 ${p}/${yr.length}</td></tr>`; }).join('')}
@@ -1525,6 +1538,7 @@ BIND.care = () => {
   document.querySelectorAll('[data-show]').forEach(b => b.onclick = () => { S.sub.show = b.dataset.show; render(); });
   $('#cr-sort').onclick = () => { S.sub.sort = S.sub.sort === 'visit' ? '' : 'visit'; render(); };
   const im = $('#cr-import'); if (im) im.onclick = () => importYoungHistory(dd);
+  bindCareNeeds(dd);
   const open = s => {
     let c = careOf(dd, s); openModal(careForm(dd, s, c));
     const saveCare = async (patch) => { if (!c) { c = { _id: s.id, name: s.name, birth: s.birth || '', job: '', hobby: '', address: '', faith: '', counsel: '', family: [], notes: [], source: '앱 입력' }; dd.care.push(c); } else if (c._id !== s.id) { dd.care = dd.care.filter(x => x !== c); c = { ...c, _id: s.id }; dd.care.push(c); } Object.assign(c, patch); await saveCareDoc(dd, s.id, c); };
@@ -1580,6 +1594,418 @@ function changeCarePassword(dd) {
   $('#am-go').onclick = async () => { const a = $('#am-pw').value, b = $('#am-pw2').value; const el = $('#am-err'); if (a.length < 8 || a !== b) { el.hidden = false; el.textContent = a.length < 8 ? '8자 이상으로 정하세요.' : '두 번 입력한 비밀번호가 다릅니다.'; return; } const salt = b64e(crypto.getRandomValues(new Uint8Array(16))); const key = await deriveCareKey(a, salt); const items = [{ path: `depts/${dd.id}/care/_verify`, data: { salt, ...(await encJSON(key, { ok: true })), set: today() } }]; for (const c of dd.care) items.push({ path: `depts/${dd.id}/care/${c._id}`, data: await encryptCare(c, key) }); await backend.batchSet(items); S.careKey = key; dd.careRaw = items.map(it => ({ _id: it.path.split('/').pop(), ...it.data })); closeModal(); render(); toast('관리자 비밀번호를 바꿨습니다'); };
 }
 
+
+/* ═════════════ 추가 기능: 영수증 · 결석자 챙기기 · 자료 내려받기 · 생일/새친구 · 형제자매 · 예산 대비 · 차량 ═════════════ */
+/* 필요할 때만 불러오는 부서 자료 (dd[key]에 보관, 새로고침하면 다시 읽음) */
+async function lazy(dd, key, path) {
+  if (!dd[key]) { try { dd[key] = (await backend.list(path)).map(x => ({ ...x, id: x.id || x._id })); dd[key + 'Err'] = ''; } catch (e) { console.warn(key, e); dd[key] = []; dd[key + 'Err'] = e.code || e.message || '읽기 실패'; } }
+  return dd[key];
+}
+const deptLabel = d => DEPTS[d] || (d === 'committee' ? '교육위원회' : d || '');
+const byDateDesc = (a, b) => (a.date || '') < (b.date || '') ? 1 : -1;
+/* 부서 공통으로 읽는 자료(차량·형제자매 색인·내려받기 기록). S.committee에 붙여 두어 새로고침·로그아웃 때 함께 비워진다 */
+async function loadShared(dd) {
+  const c = await loadCommittee();
+  if (!c.vehicles) { try { c.vehicles = (await backend.list('vehicles')).map(x => ({ ...x, id: x.id || x._id })); c.vehiclesErr = ''; } catch (e) { c.vehicles = []; c.vehiclesErr = e.code || e.message || '읽기 실패'; } }
+  if (!c.sib) { try { c.sib = await backend.list('siblings'); c.sibErr = ''; } catch (e) { c.sib = []; c.sibErr = e.code || e.message || '읽기 실패'; } }
+  if (isCommittee() && c.backupMeta === undefined) { try { c.backupMeta = await backend.get('meta/backup'); } catch (e) { c.backupMeta = null; } }
+  if (dd) await loadReceipts(dd);
+  return c;
+}
+const RULES_HINT = '<div class="hint">이 기능은 보안 규칙을 한 번 새로 게시해야 켜집니다. Firebase 콘솔 → Firestore → 규칙 탭에 저장소의 firestore.rules 내용을 붙여넣고 게시해 주세요.</div>';
+
+/* ───────────── 영수증 사진 (글자 인식 → 지출결의서) ─────────────
+   실물 영수증 제출이 원칙. 사진은 날짜·금액 입력을 돕는 용도이며 연말 결산 뒤 교육위원회가 한꺼번에 지운다.
+   depts/{d}/receipts/{id}    날짜·금액·상호·메모 (가벼움)
+   depts/{d}/receiptImgs/{id} 줄인 사진 한 장 (볼 때만 읽음) */
+const loadReceipts = dd => lazy(dd, 'receipts', `depts/${dd.id}/receipts`);
+const usedReceiptIds = dd => new Set(dd.expenses.map(e => e.receiptId).filter(Boolean));
+const pendingReceipts = dd => { const used = usedReceiptIds(dd); return (dd.receipts || []).filter(r => !used.has(r.id)).sort(byDateDesc); };
+async function shrinkImage(file, max, q) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => no(new Error('사진을 열 수 없습니다. JPG나 PNG로 다시 찍어 주세요.')); i.src = url; });
+    const draw = (mx, qq) => { const k = Math.min(1, mx / Math.max(img.width, img.height)); const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(img.width * k)); c.height = Math.max(1, Math.round(img.height * k)); const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height); return c.toDataURL('image/jpeg', qq); };
+    let out = draw(max, q); if (out.length > 600000) out = draw(Math.round(max * .75), Math.max(.4, q - .15)); if (out.length > 900000) out = draw(800, .4);
+    return out;
+  } finally { URL.revokeObjectURL(url); }
+}
+let ocrLib = null;
+async function readReceiptText(dataUrl, onStep) {
+  if (!ocrLib) ocrLib = new Promise((ok, no) => { const s = document.createElement('script'); s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js'; s.onload = () => window.Tesseract ? ok(window.Tesseract) : no(new Error('글자 인식 도구를 불러오지 못했습니다')); s.onerror = () => no(new Error('글자 인식 도구를 불러오지 못했습니다(인터넷 연결 확인)')); document.head.appendChild(s); });
+  let T; try { T = await ocrLib; } catch (e) { ocrLib = null; throw e; }
+  const w = await T.createWorker('kor+eng', 1, { logger: m => { if (onStep && m.status === 'recognizing text') onStep(Math.round((m.progress || 0) * 100)); } });
+  try { const { data } = await w.recognize(dataUrl); return data.text || ''; } finally { try { await w.terminate(); } catch (e) {} }
+}
+function parseReceipt(text) {
+  const lines = String(text || '').split('\n').map(l => l.trim()).filter(Boolean);
+  const out = { date: '', amount: 0, vendor: '', sure: false };
+  const okDate = (y, m, d) => y >= YEAR - 1 && y <= YEAR + 1 && m >= 1 && m <= 12 && d >= 1 && d <= 31;
+  for (const l of lines) {
+    let x = /(20\d{2})\s*[-./년]\s*(\d{1,2})\s*[-./월]\s*(\d{1,2})/.exec(l);
+    if (x && okDate(+x[1], +x[2], +x[3])) { out.date = `${x[1]}-${pad2(+x[2])}-${pad2(+x[3])}`; break; }
+    x = /(?:^|[^\d])(\d{2})[-./](\d{1,2})[-./](\d{1,2})(?:[^\d]|$)/.exec(l);
+    if (x && okDate(2000 + +x[1], +x[2], +x[3])) { out.date = `${2000 + +x[1]}-${pad2(+x[2])}-${pad2(+x[3])}`; break; }
+  }
+  const nums = l => [...l.replace(/(\d)\s+(?=[,.]\d{3})/g, '$1').matchAll(/\d{1,3}(?:[,.]\d{3})+|\d{3,8}/g)].map(x => +x[0].replace(/[,.]/g, '')).filter(n => n >= 100 && n < 100000000);
+  const KEY = /(합\s*계|총\s*액|총\s*금\s*액|결\s*제\s*금\s*액|받\s*을\s*금\s*액|판\s*매\s*합\s*계|승\s*인\s*금\s*액|청\s*구\s*금\s*액|총\s*결\s*제|총\s*구\s*매|total)/i;
+  const SKIP = /(부가세|과세|면세|공급가|거스름|받은\s*돈|받은\s*금액|사업자|전화|tel|카드\s*번호|승인\s*번호|가맹점|단말기|포인트|주소|대표)/i;
+  const keyed = [];
+  lines.forEach((l, i) => { if (!KEY.test(l) || /부가세|면세|과세\s*물품|공급가/.test(l)) return; let n = nums(l); if (!n.length && lines[i + 1] && !SKIP.test(lines[i + 1])) n = nums(lines[i + 1]); keyed.push(...n); });
+  if (keyed.length) { out.amount = Math.max(...keyed); out.sure = true; }
+  else { const all = lines.filter(l => !SKIP.test(l) && !/20\d{2}\s*[-./년]/.test(l) && !/\d{2,4}-\d{2,4}-\d{4,5}/.test(l)).flatMap(nums); if (all.length) out.amount = Math.max(...all); }
+  const v = lines.slice(0, 6).find(l => /[가-힣A-Za-z]{2,}/.test(l) && !/(영수증|receipt|매출\s*전표|신용|고객용|주문\s*번호|\[)/i.test(l) && !SKIP.test(l) && l.length <= 30);
+  if (v) out.vendor = v.replace(/[^\w가-힣()&·.\- ]/g, '').trim();
+  return out;
+}
+/* 사진 한 장을 줄이고, 글자를 읽어 값을 돌려준다. 읽기에 실패해도 사진과 빈 값은 돌려준다 */
+async function processReceiptFile(file, say) {
+  say('사진 줄이는 중…');
+  const img = await shrinkImage(file, 1280, .6);
+  let parsed = { date: '', amount: 0, vendor: '', sure: false }, err = '';
+  try { say('글자 읽는 중… (처음 한 번은 20~30초 걸립니다)'); const big = await shrinkImage(file, 1800, .8); parsed = parseReceipt(await readReceiptText(big, p => say(`글자 읽는 중… ${p}%`))); }
+  catch (e) { console.warn('영수증 인식 실패', e); err = /load|network|불러오지/i.test(String((e && e.message) || e)) ? '인터넷 연결이 약해 인식 도구를 받지 못했습니다' : '사진이 흐리거나 글자가 작습니다'; }
+  return { img, parsed, err };
+}
+async function saveReceipt(dd, rec, img) {
+  await backend.set(`depts/${dd.id}/receiptImgs/${rec.id}`, { id: rec.id, img, at: rec.at });
+  await backend.set(`depts/${dd.id}/receipts/${rec.id}`, rec);
+  (dd.receipts = dd.receipts || []).push(rec);
+}
+async function deleteReceipt(dd, id) { await backend.del(`depts/${dd.id}/receiptImgs/${id}`); await backend.del(`depts/${dd.id}/receipts/${id}`); dd.receipts = (dd.receipts || []).filter(r => r.id !== id); }
+async function showReceiptImage(dd, id) {
+  openModal(`<h2>영수증 사진<button class="btn s" id="modal-close">닫기</button></h2><div class="note" id="rcv-st">불러오는 중…</div><div id="rcv-img"></div><div class="note" style="margin-top:8px">증빙은 실물 영수증입니다. 이 사진은 연말 결산 뒤 지워집니다.</div>`);
+  try { const d = await backend.get(`depts/${dd.id}/receiptImgs/${id}`); if (!$('#rcv-st')) return; if (d && d.img) { $('#rcv-st').textContent = ''; const im = document.createElement('img'); im.src = d.img; im.alt = '영수증 사진'; im.className = 'rc-full'; $('#rcv-img').appendChild(im); } else $('#rcv-st').textContent = '사진이 이미 지워졌습니다(결산 완료).'; }
+  catch (e) { if ($('#rcv-st')) $('#rcv-st').textContent = '사진을 불러오지 못했습니다: ' + (e.code || e.message); }
+}
+const receiptLine = r => `${r.date ? r.date.slice(5).replace('-', '/') : '날짜 미상'} · ${won(r.amount)}원${r.vendor ? ' · ' + esc(r.vendor) : ''}${r.memo ? ' · ' + esc(r.memo) : ''}`;
+function receiptCell(dd, e) {
+  const has = e.receiptId && (dd.receipts || []).some(r => r.id === e.receiptId);
+  return `<td class="c">${e.receipt ? '○' : '—'}${has ? ` <button class="btn link" data-rcv="${esc(e.receiptId)}" title="영수증 사진 보기">사진</button>` : ''}</td>`;
+}
+function bindReceiptView(dd) { document.querySelectorAll('[data-rcv]').forEach(b => b.onclick = ev => { ev.stopPropagation(); showReceiptImage(dd, b.dataset.rcv); }); }
+/* 지출결의서 작성 화면 아래의 영수증 칸 (PC) */
+function receiptPicker(dd, e) {
+  const pend = pendingReceipts(dd); const cur = e.receiptId && (dd.receipts || []).find(r => r.id === e.receiptId);
+  const opts = [...(cur ? [cur] : []), ...pend];
+  return `<div class="rc-box"><h3 style="font-size:13px;margin:0 0 6px">영수증 사진 <span class="note" style="font-weight:400">찍어 둔 사진을 고르면 날짜·금액·받는 곳이 채워집니다. 맞는지 꼭 확인하세요.</span></h3>
+    <div class="row"><select id="v-receipt" style="flex:1;min-width:200px"><option value="">(사진 없음)</option>${opts.map(r => `<option value="${esc(r.id)}" ${cur && cur.id === r.id ? 'selected' : ''}>${receiptLine(r)}</option>`).join('')}</select>
+      <label class="btn" for="v-photo">새 사진 고르기</label><input type="file" id="v-photo" accept="image/*" hidden><button type="button" class="btn s" id="v-rc-view">사진 보기</button></div>
+    <div class="note" id="v-rc-st" style="margin-top:6px">${pend.length ? `휴대폰으로 올린 영수증 ${pend.length}장이 기다리고 있습니다.` : '휴대폰 메뉴의 "영수증"에서 찍어 올리면 여기에 나타납니다.'} 실물 영수증은 결의서 뒷면에 붙여 제출합니다. 사진은 연말 결산 뒤 지워집니다.</div></div>`;
+}
+function fillVoucherFromReceipt(r) {
+  if (!r) return; const got = [];
+  if (r.date && $('#v-date')) { $('#v-date').value = r.date; got.push('날짜'); }
+  const rows = document.querySelectorAll('#v-items tbody tr');
+  if (r.amount && rows.length === 1) { const a = rows[0].querySelector('.vi-amt'); const q = rows[0].querySelector('.vi-qty'), p = rows[0].querySelector('.vi-price'); if (!(+q.value && +p.value)) { a.value = r.amount; a.dispatchEvent(new Event('input')); got.push('금액'); } }
+  if (r.vendor && $('#v-payto') && !$('#v-payto').value.trim()) { $('#v-payto').value = r.vendor; got.push('받는 곳'); }
+  if (r.memo && $('#v-desc') && !$('#v-desc').value.trim()) { $('#v-desc').value = r.memo; got.push('적요'); const d0 = rows[0] && rows[0].querySelector('.vi-desc'); if (d0 && !d0.value.trim()) d0.value = r.memo; }
+  if ($('#v-rc')) $('#v-rc').value = '1';
+  const st = $('#v-rc-st'); if (st) st.textContent = got.length ? `사진에서 채운 칸: ${got.join(', ')} — 실제 영수증과 맞는지 확인하세요.` : '사진을 연결했습니다. 읽은 값이 없어 직접 입력해 주세요.';
+}
+function bindReceiptPicker() {
+  const sel = $('#v-receipt'); if (!sel) return; const dd = D();
+  sel.onchange = () => fillVoucherFromReceipt((dd.receipts || []).find(r => r.id === sel.value));
+  $('#v-rc-view').onclick = () => { if (sel.value) showReceiptImage(dd, sel.value); else toast('고른 사진이 없습니다'); };
+  $('#v-photo').onchange = async ev => {
+    const f = ev.target.files[0]; if (!f) return; const st = $('#v-rc-st'); const say = m => { if (st) st.textContent = m; };
+    try {
+      const { img, parsed, err } = await processReceiptFile(f, say);
+      const rec = { id: 'r_' + uid(), at: today(), date: parsed.date || '', amount: parsed.amount || 0, vendor: parsed.vendor || '', memo: '', sure: !!parsed.sure };
+      await saveReceipt(dd, rec, img);
+      const o = document.createElement('option'); o.value = rec.id; o.innerHTML = receiptLine(rec); sel.appendChild(o); sel.value = rec.id; fillVoucherFromReceipt(rec);
+      if (err && st) st.textContent = `사진은 올렸지만 글자를 읽지 못했습니다(${err}). 날짜와 금액을 직접 넣어 주세요.`;
+    } catch (e) { say('사진을 올리지 못했습니다: ' + (e.code || e.message)); }
+    ev.target.value = '';
+  };
+}
+/* 휴대폰 "영수증" 화면: 찍어서 올려 두면 PC 지출결의서에서 골라 쓴다 */
+VIEWS.receipt = async () => {
+  const dd = D(); await loadReceipts(dd); const pend = pendingReceipts(dd); const d = S.sub.draft;
+  return `<div class="topbar"><div><h1>영수증 올리기</h1><div class="sub">사진을 찍으면 날짜와 금액을 읽어 둡니다. 지출결의서는 PC 회계 화면에서 이 사진을 골라 씁니다.</div></div></div>
+  <div class="stack">
+    <div class="hint info">실물 영수증은 지금처럼 결의서에 붙여 제출합니다. 사진은 입력을 돕는 용도이고, 연말 결산이 끝나면 지워집니다.</div>
+    ${dd.receiptsErr ? `<div class="hint">영수증 목록을 읽지 못했습니다: ${esc(dd.receiptsErr)}</div>` : ''}
+    <div class="card"><h2>${d ? '읽은 내용 확인' : '사진 찍기'}</h2>
+      ${d ? `<img class="rc-prev" src="${d.img}" alt="찍은 영수증">
+        ${d.err ? `<div class="hint" style="margin-top:8px">글자를 읽지 못했습니다(${esc(d.err)}). 아래 칸에 직접 적어 주세요.</div>` : `<div class="note" style="margin-top:8px">${d.sure ? '합계 줄에서 금액을 읽었습니다.' : '합계 줄을 찾지 못해 가장 큰 숫자를 넣었습니다.'} 틀린 곳은 고쳐 주세요.</div>`}
+        <div class="fields" style="margin-top:10px"><label class="f"><span>날짜</span><input type="date" id="rc-date" value="${esc(d.date || '')}"></label><label class="f"><span>금액</span><input type="number" id="rc-amount" inputmode="numeric" value="${d.amount || ''}"></label><label class="f"><span>산 곳</span><input type="text" id="rc-vendor" value="${esc(d.vendor || '')}"></label><label class="f"><span>무엇을 샀는지</span><input type="text" id="rc-memo" placeholder="예: 10월 생일 간식" value="${esc(d.memo || '')}"></label></div>
+        <div class="row" style="margin-top:10px"><button class="btn p" id="rc-save">올려 두기</button><button class="btn" id="rc-cancel">다시 찍기</button></div>`
+      : `<div class="row"><label class="btn p" for="rc-file">영수증 사진 찍기 / 고르기</label><input type="file" id="rc-file" accept="image/*" capture="environment" hidden></div><div class="note" id="rc-st" style="margin-top:8px">영수증 전체가 화면에 들어오게, 밝은 곳에서 반듯하게 찍어 주세요.</div>`}
+    </div>
+    <div class="card"><h2>기다리는 영수증 <span class="r">${pend.length}장 · 결의서에 연결되면 여기서 빠집니다</span></h2><div class="list">${pend.map(r => `<div class="item"><div><div class="t">${won(r.amount)}원 <span class="note">${esc(r.date || '날짜 미상')}</span></div><div class="d">${esc([r.vendor, r.memo].filter(Boolean).join(' · ') || '메모 없음')}</div></div><span class="row" style="gap:4px"><button class="btn s" data-rcv="${esc(r.id)}">보기</button><button class="btn s d" data-rc-del="${esc(r.id)}">삭제</button></span></div>`).join('') || '<div class="note">기다리는 영수증이 없습니다.</div>'}</div></div>
+  </div>`;
+};
+BIND.receipt = () => {
+  const dd = D(); bindReceiptView(dd);
+  document.querySelectorAll('[data-rc-del]').forEach(b => b.onclick = async () => { try { await deleteReceipt(dd, b.dataset.rcDel); render(); toast('삭제했습니다'); } catch (e) { toast('삭제 실패: ' + (e.code || e.message), 4000); } });
+  const f = $('#rc-file'); if (f) f.onchange = async ev => {
+    const file = ev.target.files[0]; if (!file) return; const say = m => { const st = $('#rc-st'); if (st) st.textContent = m; };
+    try { const { img, parsed, err } = await processReceiptFile(file, say); S.sub.draft = { img, date: parsed.date || today(), amount: parsed.amount || 0, vendor: parsed.vendor || '', memo: '', sure: !!parsed.sure, err }; if (S.view === 'receipt') render(); }
+    catch (e) { say('사진을 처리하지 못했습니다: ' + (e.message || e)); }
+  };
+  const sv = $('#rc-save'); if (sv) sv.onclick = async () => {
+    const d = S.sub.draft; const rec = { id: 'r_' + uid(), at: today(), date: $('#rc-date').value, amount: +$('#rc-amount').value || 0, vendor: $('#rc-vendor').value.trim(), memo: $('#rc-memo').value.trim(), sure: !!d.sure };
+    sv.disabled = true; try { await saveReceipt(dd, rec, d.img); delete S.sub.draft; render(); toast('올려 두었습니다 — PC 회계에서 결의서를 쓰세요', 3200); } catch (e) { sv.disabled = false; toast('올리지 못했습니다: ' + (e.code || e.message), 4000); }
+  };
+  const cc = $('#rc-cancel'); if (cc) cc.onclick = () => { delete S.sub.draft; render(); };
+};
+
+/* ───────────── 결석자 → 심방 카드 ─────────────
+   심방 기록 자체는 관리자 모드의 심방 카드(암호화)에 적는다. 여기서는 "누구를 먼저 챙길지"만 찾아 그 카드로 이어 준다.
+   학생의 watch 표시(관심 학생)는 내용 없이 표시만 남는다. */
+function absent4(dd) { // 이름별 출석이 적힌 최근 주일 보고서 4장에 모두 빠진 재적 학생
+  const last4 = namedReports(dd).filter(r => r.date.startsWith(String(YEAR))).slice(-4); if (last4.length < 4) return [];
+  return activeStudents(dd).filter(s => !s_excused(s) && last4.every(r => !(r.att || {})[s.id]));
+}
+const lastCareNote = (dd, s) => { const c = careOf(dd, s); return ((c && c.notes) || []).slice().sort(byDateDesc)[0] || null; };
+function careNeeds(dd) {
+  const map = new Map(); const add = (s, why) => { if (!map.has(s.id)) map.set(s.id, { s, why: [] }); map.get(s.id).why.push(why); };
+  absent4(dd).forEach(s => add(s, '4주 연속 결석'));
+  dd.students.filter(s => s.status === 'longabsent').forEach(s => add(s, '장기결석'));
+  dd.students.filter(s => s.watch && s.status !== 'left').forEach(s => add(s, '관심 학생'));
+  return [...map.values()].map(x => ({ ...x, last: lastCareNote(dd, x.s) })).sort((a, b) => ((a.last || {}).date || '') < ((b.last || {}).date || '') ? -1 : 1);
+}
+function careNeedsCard(dd) { // 심방 카드 화면(관리자 모드) 맨 위
+  const needs = careNeeds(dd); const edit = canEdit(); const people = dd.students.filter(s => s.status !== 'left' && !s.watch).sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+  return `<div class="card"><h2>먼저 챙길 학생 <span class="r">4주 연속 결석 · 장기결석 · 관심 학생 — 심방한 지 오래된 순</span></h2>
+    ${needs.length ? `<div class="tw"><table><thead><tr><th>이름</th><th>${esc(dd.doc.classLabel)}</th><th>이유</th><th>마지막 출석</th><th>마지막 심방</th><th>연락처</th><th></th></tr></thead><tbody>${needs.map(x => `<tr><td>${esc(x.s.name)}</td><td class="note">${esc((classOf(dd, x.s) || {}).name || x.s.classId || '')}</td><td>${x.why.map(w => `<span class="pill ${w === '관심 학생' ? 'info' : 'bad'}">${w}</span>`).join(' ')}</td><td>${lastAttended(dd, x.s) || '기록 없음'}</td><td>${x.last ? esc(fmtShort(x.last.date)) : '<span class="pill warn">아직 없음</span>'}</td><td class="note">${esc(phoneLabel(x.s))}</td><td style="white-space:nowrap"><button class="btn s" data-care="${esc(x.s.id)}">카드 열기</button>${edit && x.s.watch ? ` <button class="btn s" data-unwatch="${esc(x.s.id)}">관심 해제</button>` : ''}</td></tr>`).join('')}</tbody></table></div>` : `<div class="note">${namedReports(dd).length < 4 ? '출석 체크된 주일 보고서가 4장 이상 쌓이면 결석이 이어지는 학생을 자동으로 찾습니다.' : '지금은 해당 학생이 없습니다.'}</div>`}
+    ${edit ? `<div class="row" style="margin-top:10px"><select id="watch-pick" style="width:auto;max-width:220px"><option value="">학생 고르기</option>${people.map(s => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('')}</select><button class="btn" id="watch-add">관심 학생으로 표시</button><span class="note">결석이 아니어도 함께 챙길 학생을 이 목록에 올립니다. 표시만 남고 사유는 심방 카드에 적습니다.</span></div>` : ''}</div>`;
+}
+function bindCareNeeds(dd) {
+  const setWatch = async (id, on) => { const s = dd.students.find(x => x.id === id); if (!s) return; s.watch = on; await backend.set(`depts/${dd.id}/students/${s.id}`, s); render(); toast(on ? s.name + ' — 관심 학생으로 표시' : s.name + ' — 관심 해제'); };
+  document.querySelectorAll('[data-unwatch]').forEach(b => b.onclick = () => setWatch(b.dataset.unwatch, false));
+  const wa = $('#watch-add'); if (wa) wa.onclick = () => { const id = $('#watch-pick').value; if (!id) { toast('학생을 고르세요'); return; } setWatch(id, true); };
+}
+
+/* ───────────── 형제자매 연결 ─────────────
+   학생 카드의 형제자매 이름을 같은 부서·다른 부서 학생과 이어 보여 준다.
+   siblings/{부서}: 형제자매가 적힌 학생의 이름·반·형제 이름만 담은 색인(연락처·주소 없음). 로그인한 모든 부서가 읽는다. */
+const sibIndexOf = dd => dd.students.filter(s => s.status !== 'left' && (s.siblings || []).length).map(s => ({ id: s.id, name: s.name, classId: (classOf(dd, s) || {}).name || s.classId || '', siblings: s.siblings }));
+async function syncSiblings(dd) {
+  const c = await loadShared(); if (c.sibErr) return;
+  const mine = sibIndexOf(dd); const cur = c.sib.find(x => x._id === dd.id);
+  if (JSON.stringify((cur || {}).list || []) === JSON.stringify(mine)) return;
+  const doc = { dept: dd.id, updated: today(), list: mine };
+  try { await backend.set(`siblings/${dd.id}`, doc); c.sib = [...c.sib.filter(x => x._id !== dd.id), { _id: dd.id, ...doc }]; } catch (e) { c.sibErr = e.code || e.message; }
+}
+function siblingLinks(dd, s) {
+  if (!s) return []; const names = new Set(s.siblings || []); const out = []; const seen = new Set();
+  dd.students.filter(x => x.id !== s.id && x.status !== 'left' && (names.has(x.name) || (x.siblings || []).includes(s.name))).forEach(x => { seen.add(x.name); out.push({ name: x.name, where: (classOf(dd, x) || {}).name || x.classId || '', same: true }); });
+  ((S.committee || {}).sib || []).filter(d => d._id !== dd.id).forEach(d => (d.list || []).forEach(x => { if (names.has(x.name) || (x.siblings || []).includes(s.name)) { seen.add(x.name); out.push({ name: x.name, where: `${deptLabel(d._id)} ${x.classId || ''}`.trim(), same: false }); } }));
+  [...names].filter(n => !seen.has(n)).forEach(n => out.push({ name: n, where: '', same: false }));
+  return out;
+}
+const siblingChips = (dd, s) => siblingLinks(dd, s).map(l => `<span class="pill ${l.where ? (l.same ? 'ok' : 'info') : 'mute'}">${esc(l.name)}${l.where ? ' · ' + esc(l.where) : ''}</span>`).join(' ');
+const siblingNote = (dd, s) => { const c = siblingChips(dd, s); return c ? '형제자매: ' + c : ''; };
+/* 학생 카드에 붙는 칸: 형제자매 편집 */
+function studentExtras(dd, s) {
+  const edit = canEdit() && !isCommittee(); const chips = siblingChips(dd, s);
+  return `<div class="sx">
+    <div class="sx-row"><b>형제자매</b><span>${chips || '<span class="note">적힌 형제자매가 없습니다</span>'}</span></div>
+    ${edit ? `<div class="row" style="margin-top:6px"><input type="text" id="sx-sib" value="${esc((s.siblings || []).join(', '))}" placeholder="이름을 쉼표로 구분 (예: 김하늘, 김바다)" style="flex:1;min-width:180px"><button class="btn s" id="sx-sib-save">형제자매 저장</button></div><div class="note" style="margin-top:4px">다른 부서에 있는 형제자매는 그 부서에서도 서로 이름을 적어 두면 부서·반이 함께 보입니다.</div>` : ''}
+  </div>`;
+}
+function bindStudentExtras(dd, s) {
+  const sv = $('#sx-sib-save'); if (sv) sv.onclick = async () => { s.siblings = [...new Set($('#sx-sib').value.split(/[,，、\/]/).map(x => x.trim().replace(/\s+/g, '')).filter(x => x && x !== s.name))]; await backend.set(`depts/${dd.id}/students/${s.id}`, s); try { await syncSiblings(dd); } catch (e) {} closeModal(); render(); toast('형제자매를 저장했습니다'); };
+}
+
+/* ───────────── 메인: 이달 생일 · 챙길 일(새친구 정착·결석·영수증·차량) ───────────── */
+const SETTLE_COUNT = 4; // 새친구가 이만큼 출석하면 재적 전환을 권한다
+const attendCount = (dd, s) => Object.values(dd.reports).filter(r => (r.att || {})[s.id]).length;
+const settleCandidates = dd => dd.students.filter(s => s.status === 'newcomer').map(s => ({ s, n: attendCount(dd, s) })).filter(x => x.n >= SETTLE_COUNT);
+function birthdaysOf(dd, month) {
+  const mm = pad2(month); const out = [];
+  dd.students.filter(s => s.status !== 'left' && (s.birth || '').slice(5, 7) === mm).forEach(s => out.push({ day: +s.birth.slice(8, 10), name: s.name, sub: (classOf(dd, s) || {}).name || s.classId || '', age: s.birth.slice(0, 4) }));
+  dd.doc.staff.filter(t => t.status !== 'left' && /^\d{4}-\d{2}-\d{2}$/.test(t.birth || '') && t.birth.slice(5, 7) === mm).forEach(t => out.push({ day: +t.birth.slice(8, 10), name: t.name, sub: t.role || '교사', age: '' }));
+  return out.sort((a, b) => a.day - b.day || a.name.localeCompare(b.name, 'ko'));
+}
+function homeExtras(dd) {
+  const now = new Date(); const mo = now.getMonth() + 1; const bd = birthdaysOf(dd, mo); const edit = canEdit();
+  const settle = settleCandidates(dd); const abs = absent4(dd).filter(s => { if (!isCare()) return true; const n = lastCareNote(dd, s); return !n || (n.date || '') < today().slice(0, 8) + '01'; }); const pend = pendingReceipts(dd);
+  const m = today().slice(0, 7); const mine = vehiclesIn(m).filter(v => v.dept === dd.id); const clash = vehicleClashes(vehiclesIn(m)); const myClash = mine.filter(v => clash.has(v.id));
+  const todo = [];
+  settle.forEach(x => todo.push(`<div class="item"><div><div class="t">${esc(x.s.name)} <span class="pill info">새친구</span></div><div class="d">등록 후 ${x.n}번 출석했습니다. 재적으로 바꿀 때가 되었습니다.</div></div>${edit ? `<button class="btn s" data-settle="${esc(x.s.id)}">재적으로 전환</button>` : ''}</div>`));
+  if (abs.length) todo.push(`<div class="item"><div><div class="t">4주 연속 결석 ${abs.length}명 <span class="pill bad">심방 필요</span></div><div class="d">${abs.slice(0, 6).map(s => esc(s.name)).join(', ')}${abs.length > 6 ? ' 외' : ''}${isCare() ? ' · 이번 달 심방 기록이 없습니다' : ' · 심방 카드(관리자 모드)에서 챙겨 주세요'}</div></div>${edit ? '<button class="btn s" data-go="care">심방 카드</button>' : ''}</div>`);
+  if (pend.length) todo.push(`<div class="item"><div><div class="t">기다리는 영수증 ${pend.length}장</div><div class="d">사진은 올라왔고 지출결의서가 아직 없습니다 · 합계 ${won(pend.reduce((a, r) => a + (+r.amount || 0), 0))}원</div></div><button class="btn s" data-go="${edit ? 'ledger' : 'receipt'}">${edit ? '회계 열기' : '영수증 보기'}</button></div>`);
+  if (myClash.length) todo.push(`<div class="item"><div><div class="t">차량 신청 겹침 ${myClash.length}건 <span class="pill warn">확인</span></div><div class="d">${myClash.map(v => esc(v.date.slice(5).replace('-', '/') + ' ' + (v.vehicle || '차량 미정'))).join(', ')} — 다른 신청과 시간이 겹칩니다</div></div>${edit ? '<button class="btn s" data-go="vehicles">차량 신청</button>' : ''}</div>`);
+  return `<div class="grid2">
+    <div class="card"><h2>${mo}월 생일 <span class="r">${bd.length}명</span></h2><div class="bd-list">${bd.map(b => `<span class="bd ${b.day === now.getDate() ? 'today' : ''}"><b>${b.day}일</b> ${esc(b.name)} <span class="note">${esc(b.sub)}</span></span>`).join('') || '<span class="note">이달 생일인 학생·교사가 없습니다. 생년월일은 출석부 학생 카드에서 넣습니다.</span>'}</div></div>
+    <div class="card"><h2>챙길 일 <span class="r">자동으로 찾은 것</span></h2><div class="list">${todo.join('') || '<div class="note">지금 챙길 일이 없습니다.</div>'}</div></div>
+  </div>`;
+}
+function bindHomeExtras() {
+  if (isCommittee()) return; const dd = D(); if (!dd) return;
+  document.querySelectorAll('[data-settle]').forEach(b => b.onclick = async () => { const s = dd.students.find(x => x.id === b.dataset.settle); if (!s) return; s.status = 'active'; s.settled = today(); s.flags = (s.flags || []).filter(f => !/^새친구 등록/.test(f)); if (/새친구/.test(s.classId || '') && dd.doc.classes.some(c => !/새친구|장기/.test(c.id))) (s.flags = s.flags || []).push('재적 전환 — 반 배정 확인'); await backend.set(`depts/${dd.id}/students/${s.id}`, s); render(); toast(s.name + ' — 재적으로 전환했습니다. 출석부에서 반을 확인하세요.', 3200); });
+}
+function committeeExtras() {
+  const c = S.committee || {}; const last = (c.backupMeta || {}).at || ''; const days = last ? Math.floor((new Date(today()) - new Date(last)) / 86400000) : null;
+  const m = today().slice(0, 7); const clash = vehicleClashes(vehiclesIn(m)); const n = vehiclesIn(m).filter(v => clash.has(v.id)).length;
+  const out = [];
+  if (canEdit() && (days === null || days > 31)) out.push(`<div class="hint">${days === null ? '전체 자료를 아직 한 번도 내려받지 않았습니다.' : `마지막 자료 내려받기가 ${days}일 전(${esc(last)})입니다.`} 한 달에 한 번 내려받아 시놀로지에 보관해 주세요. <button class="btn s" data-go="backup">자료 내려받기</button></div>`);
+  if (n) out.push(`<div class="hint">이번 달 차량 신청 ${n}건이 서로 겹칩니다. <button class="btn s" data-go="vehicles">차량 신청 보기</button></div>`);
+  return out.join('');
+}
+
+/* ───────────── 항목별 예산 · 집행 · 차액 ───────────── */
+function budgetVsActual(dd, ledgerId, m) {
+  const y = m.slice(0, 4); const cats = new Map(); const at = c => { c = c || '기타'; if (!cats.has(c)) cats.set(c, { c, b: 0, a: 0, mon: 0 }); return cats.get(c); };
+  (dd.doc.budgetPlan || []).forEach(b => { at(b.category).b += +b.amount || 0; });
+  dd.expenses.filter(e => e.ledgerId === ledgerId && e.date && e.date.startsWith(y) && ym(e.date) <= m).forEach(e => { const x = at(e.category); x.a += +e.amount || 0; if (ym(e.date) === m) x.mon += +e.amount || 0; });
+  const rows = [...cats.values()].map(x => ({ ...x, diff: x.b - x.a, rate: x.b ? Math.round(x.a / x.b * 1000) / 10 : null }));
+  const sum = rows.reduce((t, x) => ({ b: t.b + x.b, a: t.a + x.a, mon: t.mon + x.mon }), { b: 0, a: 0, mon: 0 });
+  return { rows, sum: { ...sum, diff: sum.b - sum.a, rate: sum.b ? Math.round(sum.a / sum.b * 1000) / 10 : null }, hasPlan: (dd.doc.budgetPlan || []).length > 0 };
+}
+function budgetVsCard(dd, ledgerId, m) {
+  const L = dd.doc.ledgers.find(l => l.id === ledgerId); if (!L || L.kind !== 'budget') return '';
+  const { rows, sum, hasPlan } = budgetVsActual(dd, ledgerId, m); if (!rows.length) return '';
+  const mm = +m.slice(5);
+  return `<div class="card"><h2>항목별 예산 · 집행 · 차액 <span class="r">${m.slice(0, 4)}년 1월 ~ ${mm}월 누계 · 예산은 연간계획서 예산안에서</span></h2>
+    ${hasPlan ? '' : '<div class="hint" style="margin-bottom:8px">연간계획서에 예산안이 없어 집행액만 보입니다. 보고서 → 연간계획서에서 예산안을 넣으면 항목별로 비교됩니다.</div>'}
+    <div class="tw"><table><thead><tr><th>항목</th><th class="n">예산</th><th class="n">${mm}월 집행</th><th class="n">누계 집행</th><th class="n">차액(남은 돈)</th><th class="n">집행률</th><th style="width:140px"></th></tr></thead><tbody>
+    ${rows.map(x => `<tr><td>${esc(x.c)}${x.b === 0 && x.a > 0 ? ' <span class="pill warn">예산 없음</span>' : ''}${x.b > 0 && x.diff < 0 ? ' <span class="pill bad">초과</span>' : ''}</td><td class="n">${won(x.b)}</td><td class="n">${won(x.mon)}</td><td class="n">${won(x.a)}</td><td class="n" ${x.diff < 0 ? 'style="color:var(--bad)"' : ''}>${won(x.diff)}</td><td class="n">${x.rate === null ? '—' : x.rate + '%'}</td><td>${x.rate === null ? '' : `<div class="bar"><i style="width:${Math.min(100, x.rate)}%"></i></div>`}</td></tr>`).join('')}
+    <tr class="sum"><td>합계</td><td class="n">${won(sum.b)}</td><td class="n">${won(sum.mon)}</td><td class="n">${won(sum.a)}</td><td class="n">${won(sum.diff)}</td><td class="n">${sum.rate === null ? '—' : sum.rate + '%'}</td><td></td></tr></tbody></table></div>
+    ${hasPlan && L.budget && sum.b !== L.budget ? `<div class="note" style="margin-top:6px">예산안 합계(${won(sum.b)}원)와 장부의 연간 예산(${won(L.budget)}원)이 다릅니다. 연간계획서나 장부 설정을 확인하세요.</div>` : ''}</div>`;
+}
+function budgetVsPaper(dd, ledgerId, m) {
+  const { rows, sum, hasPlan } = budgetVsActual(dd, ledgerId, m); if (!hasPlan || !rows.length) return '';
+  const mm = +m.slice(5);
+  return `<h2>4-1. 항목별 예산 대비 집행 <span class="tag">자동</span></h2><div class="tw"><table><thead><tr><th>항목</th><th class="n">예산</th><th class="n">${mm}월 집행</th><th class="n">누계 집행</th><th class="n">차액</th><th class="n">집행률</th></tr></thead><tbody>${rows.map(x => `<tr><td>${esc(x.c)}${x.b > 0 && x.diff < 0 ? ' (초과)' : ''}</td><td class="n">${won(x.b)}</td><td class="n">${won(x.mon)}</td><td class="n">${won(x.a)}</td><td class="n">${won(x.diff)}</td><td class="n">${x.rate === null ? '—' : x.rate + '%'}</td></tr>`).join('')}<tr class="sum"><td>합계</td><td class="n">${won(sum.b)}</td><td class="n">${won(sum.mon)}</td><td class="n">${won(sum.a)}</td><td class="n">${won(sum.diff)}</td><td class="n">${sum.rate === null ? '—' : sum.rate + '%'}</td></tr></tbody></table></div>`;
+}
+
+/* ───────────── 차량 신청 ─────────────
+   vehicles/{id}: dept, date, dateEnd, start, end, vehicle, dest, purpose, driver, people, status(신청|확정|취소), note
+   전 부서가 함께 보고(달력), 같은 차량·같은 시간이 겹치면 표시한다. 결재는 출력한 신청서로 받는다. */
+const VEH_STATUS = ['신청', '확정', '취소'];
+const vehNorm = s => String(s || '').replace(/\s+/g, '').toLowerCase();
+const vehEnd = v => v.dateEnd && v.dateEnd > v.date ? v.dateEnd : v.date;
+const vehiclesIn = m => (((S.committee || {}).vehicles) || []).filter(v => v.date && ym(v.date) <= m && ym(vehEnd(v)) >= m);
+function vehicleClashes(list) {
+  const out = new Set(); const act = list.filter(v => v.status !== '취소' && v.date);
+  for (let i = 0; i < act.length; i++) for (let j = i + 1; j < act.length; j++) {
+    const a = act[i], b = act[j]; if (vehNorm(a.vehicle) !== vehNorm(b.vehicle)) continue;
+    if (a.date > vehEnd(b) || b.date > vehEnd(a)) continue;
+    const multi = vehEnd(a) !== a.date || vehEnd(b) !== b.date;
+    if (multi || ((a.start || '00:00') < (b.end || '23:59') && (b.start || '00:00') < (a.end || '23:59'))) { out.add(a.id); out.add(b.id); }
+  }
+  return out;
+}
+const vehTime = v => v.start || v.end ? `${v.start || ''}~${v.end || ''}` : '종일';
+const vehicleEvents = () => (((S.committee || {}).vehicles) || []).filter(v => v.status !== '취소' && v.date).map(v => ({ date: v.date, end: v.dateEnd && v.dateEnd > v.date ? v.dateEnd : '', title: `차량 · ${deptLabel(v.dept)}${v.dest ? ' ' + v.dest : ''}`, note: [v.vehicle, vehTime(v)].filter(Boolean).join(' '), c: false }));
+const homeEvents = dd => [...allEvents(dd), ...vehicleEvents()];
+function vehiclePaper(v) {
+  const dd = S.data[v.dept]; const head = dd ? dd.doc.staff.find(t => t.status !== 'left' && /부장|회장/.test(t.role)) : null;
+  return `<section class="paper voucher">
+    <div class="hd"><div><h1>차 량 운 행 신 청 서</h1><div class="sub">중앙성서교회 교육위원회 · ${esc(deptLabel(v.dept))}</div></div>
+      <table class="sign"><tr><th rowspan="2" style="width:22px">결<br>재</th><th>부장</th><th>교육디렉터</th><th>교육위원장</th><th>교장</th></tr><tr><td>${esc(head ? head.name : '')}</td><td></td><td></td><td></td></tr></table></div>
+    <table class="kv"><tbody>
+      <tr><th>신청 부서</th><td>${esc(deptLabel(v.dept))}</td><th>신청일</th><td>${esc(fmtK(v.created || today()))}</td></tr>
+      <tr><th>운행일</th><td>${esc(fmtK(v.date))}${vehEnd(v) !== v.date ? ' ~ ' + esc(fmtK(vehEnd(v))) : ''}</td><th>시간</th><td>${esc(vehTime(v))}</td></tr>
+      <tr><th>차량</th><td>${esc(v.vehicle || '')}</td><th>탑승 인원</th><td>${v.people ? esc(v.people) + '명' : ''}</td></tr>
+      <tr><th>행선지</th><td colspan="3">${esc(v.dest || '')}</td></tr>
+      <tr><th>목적</th><td colspan="3" style="height:70px;vertical-align:top">${esc(v.purpose || '')}</td></tr>
+      <tr><th>운전자</th><td>${esc(v.driver || '')}</td><th>연락처</th><td>${esc(v.driverPhone || '')}</td></tr>
+      <tr><th>비고</th><td colspan="3" style="height:50px;vertical-align:top">${esc(v.note || '')}</td></tr>
+    </tbody></table>
+    <div class="lines" style="margin-top:12px"><p>위와 같이 차량 운행을 신청합니다.</p><p style="text-align:right">${esc(fmtK(v.created || today()))} &nbsp; 신청인 ${esc(v.requester || '')} (인)</p></div>
+    <div class="merge">운전자는 출발 전 차량 상태와 보험 적용 범위를 확인합니다. 운행 뒤 주유·이상 여부를 비고에 적어 제출합니다.</div>
+    <div class="ft"><b>중앙성서교회 교육위원회</b><span>CBCS에서 생성 · 차량운행신청서 ${esc(v.date || '')}</span></div>
+  </section>`;
+}
+VIEWS.vehicles = async () => {
+  const c = await loadShared(); const m = S.sub.month || today().slice(0, 7); const me = isCommittee() ? 'committee' : S.dept;
+  if (S.sub.vehPrint) { const v = c.vehicles.find(x => x.id === S.sub.vehPrint); if (v) { if (DEPTS[v.dept]) await loadDept(v.dept).catch(() => {}); return `<div class="topbar no-print"><div><h1>차량 운행 신청서</h1><div class="sub">인쇄해 결재를 받습니다</div></div><div class="row"><button class="btn" id="vh-back">차량 신청으로</button><button class="btn p" id="vh-print">PDF로 저장 / 인쇄</button></div></div>${vehiclePaper(v)}`; } }
+  const list = vehiclesIn(m).sort((a, b) => (a.date + (a.start || '')) < (b.date + (b.start || '')) ? -1 : 1); const clash = vehicleClashes(list);
+  const editing = S.sub.vehEdit ? c.vehicles.find(x => x.id === S.sub.vehEdit) : null; const cur = editing || { date: '', dateEnd: '', start: '', end: '', vehicle: '', dest: '', purpose: '', driver: '', driverPhone: '', people: '', requester: '', note: '', status: '신청' };
+  const names = [...new Set(c.vehicles.map(v => (v.vehicle || '').trim()).filter(Boolean))];
+  const can = v => canEdit() && (isCommittee() || v.dept === me);
+  return `<div class="topbar"><div><h1>차량 신청</h1><div class="sub">신청하면 모든 부서 달력에 올라가고, 같은 차량·같은 시간이 겹치면 표시됩니다. 결재는 출력한 신청서로 받습니다.</div></div></div>
+  <div class="stack">
+    ${c.vehiclesErr ? RULES_HINT : ''}
+    ${monthNav(m)}
+    ${clash.size ? `<div class="hint">${m.replace('-', '년 ')}월에 겹치는 신청이 ${clash.size}건 있습니다. 아래 표에서 "겹침" 표시를 확인하고 부서끼리 조정해 주세요.</div>` : ''}
+    <div class="card"><h2>${m.replace('-', '년 ')}월 차량 달력 <span class="r">회색은 다른 부서</span></h2>${calendarHTML(m, list.filter(v => v.status !== '취소').map(v => ({ date: v.date, end: vehEnd(v), title: `${deptLabel(v.dept)} ${v.vehicle || ''}`.trim(), c: v.dept !== me })))}</div>
+    <div class="card"><h2>${m.replace('-', '년 ')}월 신청 내역 <span class="r">${list.length}건</span></h2><div class="tw"><table><thead><tr><th>날짜</th><th>시간</th><th>부서</th><th>차량</th><th>행선지 · 목적</th><th>운전자</th><th class="n">인원</th><th>상태</th><th></th></tr></thead><tbody>
+      ${list.map(v => `<tr><td>${v.date.slice(5).replace('-', '/')}${vehEnd(v) !== v.date ? '~' + vehEnd(v).slice(5).replace('-', '/') : ''} (${DAYS[new Date(v.date + 'T00:00:00').getDay()]})</td><td>${esc(vehTime(v))}</td><td>${esc(deptLabel(v.dept))}</td><td>${esc(v.vehicle || '미정')}</td><td class="wrap">${esc([v.dest, v.purpose].filter(Boolean).join(' · '))}</td><td>${esc(v.driver || '')}</td><td class="n">${esc(v.people || '')}</td><td><span class="pill ${v.status === '확정' ? 'ok' : v.status === '취소' ? 'mute' : 'info'}">${esc(v.status || '신청')}</span>${clash.has(v.id) ? ' <span class="pill bad">겹침</span>' : ''}</td><td style="white-space:nowrap">${canEdit() ? `<button class="btn s" data-vh-print="${esc(v.id)}">신청서</button>` : ''}${can(v) ? ` <button class="btn s" data-vh-edit="${esc(v.id)}">수정</button> <button class="btn s d" data-vh-del="${esc(v.id)}">삭제</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="9" class="note">이달 신청이 없습니다.</td></tr>'}
+    </tbody></table></div></div>
+    ${canEdit() ? `<div class="card" id="vh-form"><h2>${editing ? '신청 수정' : '차량 신청하기'} <span class="r">${esc(deptLabel(editing ? editing.dept : me))}</span></h2>
+      <div class="fields"><label class="f"><span>운행일</span><input type="date" id="vh-date" value="${esc(cur.date || '')}"></label><label class="f"><span>끝나는 날 (수련회 등)</span><input type="date" id="vh-date-end" value="${esc(cur.dateEnd || '')}"></label><label class="f"><span>출발 시각</span><input type="time" id="vh-start" value="${esc(cur.start || '')}"></label><label class="f"><span>돌아오는 시각</span><input type="time" id="vh-end" value="${esc(cur.end || '')}"></label>
+        <label class="f"><span>차량</span><input type="text" id="vh-vehicle" list="vh-names" value="${esc(cur.vehicle || '')}" placeholder="예: 교회 승합차(12인승)"><datalist id="vh-names">${names.map(n => `<option value="${esc(n)}">`).join('')}</datalist></label><label class="f"><span>탑승 인원</span><input type="number" id="vh-people" value="${esc(cur.people || '')}"></label><label class="f"><span>운전자</span><input type="text" id="vh-driver" value="${esc(cur.driver || '')}"></label><label class="f"><span>운전자 연락처</span><input type="tel" id="vh-phone" value="${esc(cur.driverPhone || '')}"></label>
+        <label class="f" style="grid-column:span 2"><span>행선지</span><input type="text" id="vh-dest" value="${esc(cur.dest || '')}"></label><label class="f" style="grid-column:span 2"><span>목적</span><input type="text" id="vh-purpose" value="${esc(cur.purpose || '')}" placeholder="예: 가을 현장학습"></label>
+        <label class="f"><span>신청인</span><input type="text" id="vh-req" value="${esc(cur.requester || '')}"></label><label class="f"><span>상태</span><select id="vh-status">${VEH_STATUS.map(k => `<option ${(cur.status || '신청') === k ? 'selected' : ''}>${k}</option>`).join('')}</select></label><label class="f" style="grid-column:span 2"><span>비고</span><input type="text" id="vh-note" value="${esc(cur.note || '')}"></label></div>
+      <div class="row" style="margin-top:10px"><button class="btn p" id="vh-save">${editing ? '수정 저장' : '신청 저장'}</button>${editing ? '<button class="btn" id="vh-cancel">취소</button>' : ''}<span class="note">차량 이름을 똑같이 적어야 겹침을 찾습니다(목록에서 고르면 편합니다). 종이 결재가 끝나면 상태를 "확정"으로 바꿉니다.</span></div></div>` : ''}
+  </div>`;
+};
+BIND.vehicles = () => {
+  const c = S.committee; const me = isCommittee() ? 'committee' : S.dept;
+  const vb = $('#vh-back'); if (vb) { vb.onclick = () => { delete S.sub.vehPrint; render(); }; $('#vh-print').onclick = () => window.print(); return; }
+  bindMonthNav();
+  document.querySelectorAll('[data-vh-print]').forEach(b => b.onclick = () => { S.sub.vehPrint = b.dataset.vhPrint; render(); });
+  document.querySelectorAll('[data-vh-edit]').forEach(b => b.onclick = () => { S.sub.vehEdit = b.dataset.vhEdit; render().then(() => { const f = $('#vh-form'); if (f) f.scrollIntoView({ block: 'start' }); }); });
+  document.querySelectorAll('[data-vh-del]').forEach(b => b.onclick = async () => { try { await backend.del(`vehicles/${b.dataset.vhDel}`); c.vehicles = c.vehicles.filter(v => v.id !== b.dataset.vhDel); render(); toast('신청을 삭제했습니다'); } catch (e) { toast('삭제 실패: ' + (e.code || e.message), 4000); } });
+  const sv = $('#vh-save'); if (sv) sv.onclick = async () => {
+    const date = $('#vh-date').value; if (!date) { toast('운행일을 넣어 주세요'); return; }
+    const old = S.sub.vehEdit ? c.vehicles.find(x => x.id === S.sub.vehEdit) : null;
+    const v = Object.assign(old || { id: 'vh_' + uid(), dept: me, created: today() }, { date, dateEnd: $('#vh-date-end').value > date ? $('#vh-date-end').value : '', start: $('#vh-start').value, end: $('#vh-end').value, vehicle: $('#vh-vehicle').value.trim(), people: $('#vh-people').value.trim(), driver: $('#vh-driver').value.trim(), driverPhone: $('#vh-phone').value.trim(), dest: $('#vh-dest').value.trim(), purpose: $('#vh-purpose').value.trim(), requester: $('#vh-req').value.trim(), status: $('#vh-status').value, note: $('#vh-note').value.trim() });
+    try { const { _id, ...data } = v; await backend.set(`vehicles/${v.id}`, data); if (!old) c.vehicles.push(v); S.sub = { month: ym(date) }; await render(); const hit = vehicleClashes(vehiclesIn(ym(date))).has(v.id); toast(hit ? '저장했습니다 — 다른 신청과 겹칩니다. 표를 확인하세요.' : '저장했습니다', hit ? 4000 : 2200); }
+    catch (e) { toast('저장 실패: ' + (e.code || e.message) + ' — 보안 규칙을 게시했는지 확인하세요', 5000); }
+  };
+  const vc = $('#vh-cancel'); if (vc) vc.onclick = () => { delete S.sub.vehEdit; render(); };
+};
+
+/* ───────────── 자료 내려받기 · 영수증 사진 정리 (교육위원회) ─────────────
+   새 자료 종류(하위 묶음)를 만들면 아래 두 목록에 이름을 추가해야 내려받기에 포함된다. */
+const BACKUP_DEPT_SUBS = ['students', 'reports', 'expenses', 'incomes', 'events', 'notices', 'assets', 'plans', 'timeline', 'officers', 'retreats', 'receipts', 'receiptImgs', 'bylaws', 'assemblies']; // care(심방 카드)는 부서 관리자만 읽을 수 있어 넣지 못함
+const BACKUP_TOP = ['scholarship', 'archive', 'promotions', 'vehicles', 'siblings', 'meta'];
+async function collectAll(withImgs, say) {
+  const raw = []; const miss = []; const put = (path, x) => { const { _id, ...data } = x; raw.push({ path, data }); };
+  const grab = async path => { try { (await backend.list(path)).forEach(x => put(`${path}/${x._id}`, x)); } catch (e) { miss.push(path); } };
+  for (const d of Object.keys(DEPTS)) {
+    say(`${DEPTS[d]} 읽는 중…`);
+    try { const doc = await backend.get(`depts/${d}`); if (doc) raw.push({ path: `depts/${d}`, data: doc }); } catch (e) { miss.push(`depts/${d}`); }
+    for (const sub of BACKUP_DEPT_SUBS) { if (sub === 'receiptImgs' && !withImgs) continue; await grab(`depts/${d}/${sub}`); }
+  }
+  say('교육위원회 자료 읽는 중…');
+  try { const doc = await backend.get('committee/main'); if (doc) raw.push({ path: 'committee/main', data: doc }); } catch (e) { miss.push('committee/main'); }
+  await grab('committee/main/notices'); await grab('committee/main/events');
+  for (const t of BACKUP_TOP) await grab(t);
+  return { raw, miss };
+}
+function downloadText(name, text) { const a = document.createElement('a'); const url = URL.createObjectURL(new Blob([text], { type: 'application/json' })); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000); }
+VIEWS.backup = async () => {
+  const c = await loadShared(); const last = (c.backupMeta || {}).at || '';
+  const counts = []; for (const d of Object.keys(DEPTS)) { const dd = await loadDept(d); await loadReceipts(dd); counts.push({ d, n: dd.receipts.length, pend: pendingReceipts(dd).length, err: dd.receiptsErr }); }
+  const total = counts.reduce((a, x) => a + x.n, 0);
+  return `<div class="topbar"><div><h1>자료 내려받기 · 정리</h1><div class="sub">교육위원회 전용 · 한 달에 한 번 전체 자료를 파일로 받아 시놀로지에 보관합니다</div></div></div>
+  <div class="stack">
+    <div class="card"><h2>전체 자료 내려받기 <span class="r">${last ? '마지막: ' + esc(last) + ((c.backupMeta || {}).count ? ` · ${c.backupMeta.count}건` : '') : '아직 받은 적 없음'}</span></h2>
+      <p style="margin:0 0 10px">네 부서의 출석부·보고서·회계·물품대장·연간계획서·삶의 궤적과 교육위원회 공지·일정·장학·차량 신청을 파일 하나(JSON)로 받습니다. 실수로 지워졌을 때 "데이터 가져오기"에 이 파일을 올리면 받은 날의 상태로 되돌릴 수 있습니다. 심방 카드는 부서 관리자 비밀번호로 잠겨 있어 교육위원회도 읽을 수 없으므로 이 파일에 들어가지 않습니다.</p>
+      <div class="row"><button class="btn p" id="bk-go">전체 자료 내려받기</button><label class="row" style="font-size:12.5px"><input type="checkbox" id="bk-img"> 영수증 사진도 포함 (파일이 커집니다)</label></div>
+      <pre class="progress" id="bk-log" style="margin-top:10px"></pre>
+      <div class="hint" style="margin-top:10px">이 파일에는 학생 연락처·주소와 장학 계좌번호가 들어 있습니다. 시놀로지의 교육위원회 폴더에만 두고, 카톡이나 메일로 보내지 마세요. 받은 뒤에는 컴퓨터의 "다운로드" 폴더에서 지워 주세요.</div></div>
+    <div class="card"><h2>영수증 사진 정리 <span class="r">지금 ${total}장</span></h2>
+      <p style="margin:0 0 10px">영수증 사진은 입력을 돕는 용도이고 증빙은 실물 영수증입니다. 연말 결산과 감사가 끝나면 그 해 사진을 한꺼번에 지웁니다. 회계 장부의 지출 기록은 그대로 남습니다.</p>
+      <div class="tw"><table><thead><tr><th>부서</th><th class="n">보관 중인 사진</th><th class="n">결의서 없는 사진</th></tr></thead><tbody>${counts.map(x => `<tr><td>${DEPTS[x.d]}</td><td class="n">${x.err ? '읽기 실패' : x.n}</td><td class="n">${x.err ? '' : x.pend}</td></tr>`).join('')}</tbody></table></div>
+      <div class="row" style="margin-top:10px"><select id="bk-year" style="width:auto">${[YEAR, YEAR - 1, YEAR - 2].map(y => `<option value="${y}" ${y === YEAR - 1 ? 'selected' : ''}>${y}년까지</option>`).join('')}</select><button class="btn d" id="bk-purge">결산 완료 — 영수증 사진 삭제</button><span class="note">고른 해의 12월 31일까지 올라온 사진을 지웁니다. 되돌릴 수 없습니다.</span></div></div>
+  </div>`;
+};
+BIND.backup = () => {
+  const log = m => { const el = $('#bk-log'); if (el) el.textContent = m; };
+  const go = $('#bk-go'); if (go) go.onclick = async () => {
+    go.disabled = true;
+    try { const { raw, miss } = await collectAll($('#bk-img').checked, log); const payload = { kind: 'cbcs-backup', generated: new Date().toISOString(), year: YEAR, count: raw.length, raw };
+      downloadText(`CBCS-backup-${today()}.json`, JSON.stringify(payload));
+      try { const meta = { at: today(), count: raw.length }; await backend.set('meta/backup', meta); S.committee.backupMeta = meta; } catch (e) {}
+      log(`${raw.length}건을 내려받았습니다.${miss.length ? '\n읽지 못한 묶음: ' + miss.join(', ') : ''}\n파일을 시놀로지 교육위원회 폴더로 옮겨 주세요.`); }
+    catch (e) { log('내려받기 실패: ' + (e.code || e.message)); }
+    go.disabled = false;
+  };
+  const pg = $('#bk-purge'); if (pg) pg.onclick = () => { const y = +$('#bk-year').value; const lim = `${y}-12-31`;
+    const targets = Object.keys(DEPTS).map(d => ({ dd: S.data[d], list: ((S.data[d] || {}).receipts || []).filter(r => (r.at || r.date || '') <= lim) })).filter(x => x.dd);
+    const n = targets.reduce((a, x) => a + x.list.length, 0); if (!n) { toast(`${y}년까지 올라온 영수증 사진이 없습니다`); return; }
+    openModal(`<h2>영수증 사진 삭제<button class="btn s" id="modal-close">닫기</button></h2><p>${y}년 12월 31일까지 올라온 영수증 사진 <b>${n}장</b>을 지웁니다. 결산과 감사가 끝났는지 확인해 주세요. 되돌릴 수 없습니다.</p><div class="row"><button class="btn d" id="bk-purge-yes">${n}장 삭제</button><button class="btn" id="bk-purge-no">취소</button></div>`);
+    $('#bk-purge-no').onclick = closeModal; $('#bk-purge-yes').onclick = async () => { $('#bk-purge-yes').disabled = true; let done = 0; try { for (const { dd, list } of targets) for (const r of list) { await deleteReceipt(dd, r.id); done++; } closeModal(); render(); toast(`영수증 사진 ${done}장을 지웠습니다`, 3200); } catch (e) { closeModal(); render(); toast(`${done}장 삭제 후 멈췄습니다: ` + (e.code || e.message), 5000); } }; };
+};
 
 /* ───────────── 시작 ───────────── */
 backend.onSession(async d => {
