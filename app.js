@@ -384,10 +384,10 @@ VIEWS.home = async () => {
     ${planBanner(dd, nextPlan && nextPlan.status === 'confirmed' && new Date().getMonth() >= 10 ? nextPlan : curPlan)}
     ${nextPlan && nextPlan.status === 'confirmed' && new Date().getMonth() < 10 ? planBanner(dd, nextPlan, true) : ''}
     <div class="tiles">
-      <div class="tile"><div class="v">${activeStudents(dd).length}</div><div class="l">재적</div></div>
-      <div class="tile"><div class="v">${s ? s.p : '—'}</div><div class="l">지난 주일 출석 ${s ? `(${s.rate}%)` : ''}</div></div>
-      <div class="tile"><div class="v">${s ? won(s.offSum) : '—'}</div><div class="l">지난 주일 헌금(원)</div></div>
-      <div class="tile"><div class="v">${r ? (r.status === 'done' ? '<span class="pill ok">작성 완료</span>' : '<span class="pill warn">작성 중</span>') : '<span class="pill warn">미작성</span>'}</div><div class="l">${fmtK(ls)} 보고서</div></div>
+      <button class="tile go" data-goto="roster" title="출석부로 가기"><div class="v">${activeStudents(dd).length}</div><div class="l">재적 ›</div></button>
+      <button class="tile go" data-goto="roster" title="출석부로 가기"><div class="v">${s ? s.p : '—'}</div><div class="l">지난 주일 출석 ${s ? `(${s.rate}%)` : ''} ›</div></button>
+      <button class="tile go" data-goto="ledger" title="회계로 가기"><div class="v">${s ? won(s.offSum) : '—'}</div><div class="l">지난 주일 헌금(원) ›</div></button>
+      <button class="tile go" data-goto="report" data-date="${esc(ls)}" title="보고서로 가기"><div class="v">${r ? (r.status === 'done' ? '<span class="pill ok">작성 완료</span>' : '<span class="pill warn">작성 중</span>') : '<span class="pill warn">미작성</span>'}</div><div class="l">${fmtK(ls)} 보고서 ›</div></button>
     </div>
     ${homeExtras(dd)}
     <div class="grid2">
@@ -400,6 +400,7 @@ VIEWS.home = async () => {
 };
 BIND.home = () => {
   bindMonthNav(); bindBoard(); bindHomeExtras();
+  document.querySelectorAll('[data-goto]').forEach(b => b.onclick = () => { const g = b.dataset.goto; S.navOpen = {}; if (g === 'report') { S.view = isCommittee() || isMobile() ? 'reports' : 'weekly'; S.sub = { date: b.dataset.date }; } else { S.view = g; S.sub = {}; } render(); });
   if (isCommittee()) {
     const g = $('#c-date-go'); if (g) g.onclick = () => { S.sub.date = $('#c-date').value; render(); };
     const a = $('#cn-add'); if (a) a.onclick = async () => { const t = $('#cn-title').value.trim(); if (!t) return; const n = { id: uid(), date: today(), title: t, body: $('#cn-body').value.trim() }; await backend.set(`committee/main/notices/${n.id}`, n); C().notices.push({ _id: n.id, ...n }); render(); };
