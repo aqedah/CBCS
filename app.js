@@ -1187,8 +1187,8 @@ const ASSEMBLY_POS = ['회장', '부회장', '총무', '회계', '서기'];
 const ASSEMBLY_POS_SUB = ['부총무', '부서기', '부회계']; // 부임원도 일단 임원으로 본다
 // 청년부 직책 구분: 임원(회장·부회장·총무·서기·회계, 부총무 등 부임원) / 팀장(사역팀) / 팸장 / 교역자·부장
 const OFFICER_CORE = ['회장', '부회장', '총무', '서기', '회계'];
-// 직책 이름 통일: 찬양리더·찬양팀 리더 → 기드온 리더, 찬양인도·인도자 → 기드온 인도자, 찬양부인도 → 기드온 부인도자, 미디어 팀장 → 미디어팀장
-function canonRole(r) { r = String(r || '').trim(); if (/^(찬양|기드온|찬양팀)?\s*(부인도자|부인도)$/.test(r)) return '기드온 부인도자'; if (/^(찬양|기드온|찬양팀)?\s*(인도자|인도)$/.test(r)) return '기드온 인도자'; if (/^(찬양|기드온|찬양팀)?\s*리더$/.test(r)) return '기드온 리더'; return r.replace(/^미디어\s*팀장$/, '미디어팀장'); }
+// 직책 이름 통일: 찬양리더·찬양팀 리더 → 기드온 리더, 찬양인도·인도자 → 기드온 인도자, 찬양부인도 → 기드온 부인도자, 찬양총무 → 기드온 총무, 선교팀장 → 밀알선교팀장, 미디어 팀장 → 미디어팀장
+function canonRole(r) { r = String(r || '').trim(); if (/^(찬양|기드온|찬양팀)?\s*(부인도자|부인도)$/.test(r)) return '기드온 부인도자'; if (/^(찬양|기드온|찬양팀)?\s*(인도자|인도)$/.test(r)) return '기드온 인도자'; if (/^(찬양|기드온|찬양팀)?\s*리더$/.test(r)) return '기드온 리더'; if (/^(찬양|기드온|찬양팀)\s*총무$/.test(r)) return '기드온 총무'; if (/^(밀알)?\s*선교\s*팀?\s*(팀장|장)$/.test(r)) return '밀알선교팀장'; return r.replace(/^미디어\s*팀장$/, '미디어팀장'); }
 function roleKind(r) { r = String(r || '').trim(); if (!r) return ''; if (/^임원/.test(r) || OFFICER_CORE.includes(r) || (r.startsWith('부') && OFFICER_CORE.includes(r.slice(1)))) return '임원'; if (/팸장$/.test(r)) return '팸장'; if (/^(교역자|목사|전도사|부장|부감|교육디렉터|디렉터)$/.test(r)) return '교역자·부장'; return '팀장'; }
 const roleParts = role => String(role || '').split(/[,，\/]/).map(x => x.trim()).filter(Boolean);
 const ROLE_PILL = { 임원: 'ok', 팀장: 'info', 팸장: 'mute', '교역자·부장': 'warn' };
