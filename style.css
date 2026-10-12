@@ -401,3 +401,6 @@ td.no,th.no{width:42px;color:var(--muted);font-variant-numeric:tabular-nums}
 .card.principle{margin-bottom:14px;border-left:4px solid var(--accent)}
 .card.principle p{margin:0 0 6px;line-height:1.7}
 .card.principle ol{margin:0;padding-left:1.4em;line-height:1.8}
+.bylaw-text .bl-subtitle{text-align:center;color:var(--muted);margin:-8px 0 14px;font-size:14px}
+.bylaw-text .bl-note{margin:0 0 4px 2.4em;font-size:13px;color:var(--muted)}
+.bylaw-text .bl-cl2.bl-pre{border-left:3px solid var(--line);margin-left:0;padding-left:calc(1.4em + 12px)}

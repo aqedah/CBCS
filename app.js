@@ -175,6 +175,9 @@ function normalizeFaith(s) {
   const yr = raw.match(/\(?\s*(\d{2}|\d{4})\s*(상|하)?\s*\)?\s*$/);
   let base = '', tag = '';
   if (/어린이\s*세례/.test(raw)) { tag = '어린이세례(타교단)'; }
+  else if (/^[?？\s]*$|확인\s*필요/.test(raw)) { tag = '신급 확인 필요'; }
+  else if (/^미\s*대상/.test(raw)) { tag = `신급 기록: ${raw}`; }
+  else if (/타\s*(교회|교단)/.test(raw)) { base = /유아\s*세례/.test(raw) ? '유아세례' : /입교/.test(raw) ? '입교' : /세례/.test(raw) ? '세례' : /학습/.test(raw) ? '학습' : ''; tag = raw.replace(/^(유아\s*세례|세례|입교|학습)\s*[(（]\s*(타\s*(?:교회|교단))\s*[)）]$/, '$1($2)'); }
   else if (/대상/.test(raw)) { base = ''; tag = /입교\s*대상/.test(raw) ? '입교대상자' : /학습\s*대상/.test(raw) ? '학습대상자' : /세례\s*대상/.test(raw) ? '세례대상자' : '학습대상자'; if (/유아세례/.test(raw)) base = '유아세례'; }
   else if (/유아\s*세례/.test(raw)) base = '유아세례';
   else if (/입교/.test(raw)) base = '입교';
@@ -1360,26 +1363,37 @@ const asmPicker = (list, a) => `<select id="as-pick" style="width:auto">${list.m
 const BL_SPECIAL = /^[\[【<〈《(「]?\s*(머\s*리\s*말|전\s*문|서\s*문|前\s*文|서\s*언|총\s*강|강\s*령|신앙\s*고백|신\s*조|선\s*언(?:\s*문)?|선\s*서(?:\s*문)?|목\s*적|이\s*념|정\s*신|비\s*전|사\s*명(?:\s*선언)?|맺\s*음\s*말|부\s*록|별\s*표|별\s*지)(?:\s*[:：].*)?\s*[\]】>〉》)」]?$/;
 function bylawHTML(t) {
   if (!t.trim()) return '';
-  const out = [], toc = []; let first = true, inArticles = false, pre = false, n = 0;
-  const head = (tag, cls, x) => { const id = 'bl-h' + (n++); toc.push({ id, cls, x }); return `<div role="heading" aria-level="${tag.slice(1)}" class="${cls}" id="${id}">${esc(x)}</div>`; };
-  for (const l of t.split('\n')) {
-    const x = l.trim(); if (!x) continue;
-    const isTitle = first && x.length <= 40 && !/^제\s*\d+\s*(편|장|조)/.test(x); first = false;
-    if (isTitle) { out.push(`<div class="bl-title">${esc(x)}</div>`); continue; }
-    if (/^제\s*\d+\s*편/.test(x)) { pre = false; out.push(head('h2', 'bl-part', x)); continue; }
-    if (/^제\s*\d+\s*장/.test(x) || /^부\s*칙/.test(x)) { pre = false; out.push(head('h3', 'bl-chap', x)); continue; }
-    if (/^제\s*\d+\s*(절|관)/.test(x)) { pre = false; out.push(head('h4', 'bl-sect', x)); continue; }
-    const m = x.match(/^(제\s*\d+\s*조(?:\s*의\s*\d+)?\s*(?:[(（][^)）]*[)）])?)(.*)$/);
-    if (m) { pre = false; inArticles = true; out.push(`<p class="bl-art"><span class="art">${esc(m[1])}</span>${esc(m[2])}</p>`); continue; }
-    if (BL_SPECIAL.test(x)) { pre = true; out.push(head('h3', 'bl-special', x.replace(/^[\[【<〈《(「]\s*|\s*[\]】>〉》)」]$/g, ''))); continue; }
-    if (/^([①-⑳]|\(\d+\)|（\d+）)/.test(x)) { out.push(`<p class="bl-cl1">${esc(x)}</p>`); continue; }
-    if (/^(\d+\s*[.)]|[가-하]\s*[.)]|\d+\s*\.\s*\d+)\s*/.test(x) && !/^\d{4}\s*[.년]/.test(x)) { out.push(`<p class="bl-cl2">${esc(x)}</p>`); continue; }
-    const shortHead = x.length <= 24 && !/[.。:;,，다요음함됨임]$/.test(x) && !/\d{4}/.test(x);
-    if (shortHead) { pre = !inArticles; out.push(head('h4', 'bl-sub', x)); continue; }
-    out.push(`<p class="${pre || !inArticles ? 'bl-pre' : ''}">${esc(x)}</p>`);
+  const out = [], toc = []; let n = 0, started = false, inArticles = false, pre = false, para = null;
+  const flush = () => { if (para) { out.push(`<p class="${para.cls}">${para.lab ? `<span class="art">${esc(para.lab)}</span>` : ''}${esc(para.txt)}</p>`); para = null; } };
+  const head = (lvl, cls, x) => { flush(); started = true; const id = 'bl-h' + (n++); toc.push({ id, cls, x }); out.push(`<div role="heading" aria-level="${lvl}" class="${cls}" id="${id}">${esc(x)}</div>`); };
+  const start = (cls, txt, lab) => { flush(); para = { cls, txt, lab }; };
+  const ends = x => /([.。!?」』)\]]|다|함|음|됨|임|요)$/.test(x);
+  const L = t.split('\n');
+  for (let li = 0; li < L.length; li++) { const raw = L[li];
+    const x = raw.trim(); if (!x) { flush(); continue; }
+    const indented = /^\s{2,}/.test(raw);
+    if (/^제\s*\d+\s*편/.test(x)) { pre = false; head(2, 'bl-part', x.replace(/\s{2,}/g, ' ')); continue; }
+    if (/^부\s*칙/.test(x)) { pre = false; const nx = L.slice(li + 1, li + 4).join(' '); const dm = nx.match(/(\d{4})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일/); head(3, 'bl-chap bl-addenda', '부칙' + (dm ? ` (${dm[1]}. ${dm[2]}. ${dm[3]}. 시행)` : '')); continue; }
+    if (/^제\s*\d+\s*장/.test(x)) { pre = false; head(3, 'bl-chap', x.replace(/\s{2,}/g, ' ')); continue; }
+    if (/^제\s*\d+\s*(절|관)/.test(x)) { pre = false; head(4, 'bl-sect', x.replace(/\s{2,}/g, ' ')); continue; }
+    let m = x.match(/^(제\s*\d+\s*조(?:\s*의\s*\d+)?\s*(?:[(（][^)）]*[)）])?)(.*)$/);
+    if (m) { pre = false; inArticles = true; started = true; start('bl-art', m[2], m[1]); continue; }
+    if (BL_SPECIAL.test(x) || /^[<〈《【\[「]\s*[^<>〈〉《》【】\[\]]{1,24}\s*[>〉》】\]」]$/.test(x)) { pre = true; head(3, 'bl-special', x.replace(/^[\[【<〈《(「]\s*|\s*[\]】>〉》)」]$/g, '')); continue; }
+    m = x.match(/^(제\s*\d+\s*항\s*(?:[(（][^)）]*[)）])?)(.*)$/);
+    if (m) { start('bl-cl1', m[2], m[1]); continue; }
+    if (/^([①-⑳])/.test(x)) { start('bl-cl1', x); continue; }
+    if (/^(\(\d+\)|（\d+）|\d+\s*[.)]|[가-하]\s*[.)])\s*/.test(x) && !/^\d{4}\s*[.년]/.test(x)) { start('bl-cl2' + (pre && !inArticles ? ' bl-pre' : ''), x); continue; }
+    if (/^[*※]/.test(x)) { start('bl-note', x); continue; }
+    if (para && (indented || !ends(para.txt))) { para.txt += (/[가-힣]$/.test(para.txt) && /^[가-힣]/.test(x) ? ' ' : ' ') + x; continue; }
+    if (!started && x.length <= 30) { flush(); out.push(`<div class="${out.some(o => o.includes('bl-title')) ? 'bl-subtitle' : 'bl-title'}">${esc(x.replace(/\s{2,}/g, ' '))}</div>`); continue; }
+    const shortHead = x.length <= 24 && !ends(x) && !/[,:;，]$/.test(x) && !/\d{4}/.test(x);
+    if (shortHead && !indented) { pre = !inArticles; head(4, 'bl-sub', x); continue; }
+    start(pre || !inArticles ? 'bl-pre' : '', x);
   }
-  const big = toc.filter(h => h.cls !== 'bl-sub' && h.cls !== 'bl-sect');
-  const tocHTML = big.length >= 4 ? `<nav class="bl-toc no-print"><b>차례</b>${big.map(h => `<a href="#${h.id}" class="t-${h.cls.slice(3)}" data-bltoc="${h.id}">${esc(h.x)}</a>`).join('')}</nav>` : '';
+  flush();
+  const adds = toc.filter(h => h.cls.includes('bl-addenda'));
+  const big = toc.filter(h => h.cls !== 'bl-sub' && h.cls !== 'bl-sect' && (!h.cls.includes('bl-addenda') || h === adds[0])).map(h => h === adds[0] && adds.length > 1 ? { ...h, x: `부칙 (${adds.length}개)` } : h);
+  const tocHTML = big.length >= 4 ? `<nav class="bl-toc no-print"><b>차례</b>${big.map(h => `<a href="#${h.id}" class="t-${h.cls.split(' ')[0].slice(3)}" data-bltoc="${h.id}">${esc(h.x)}</a>`).join('')}</nav>` : '';
   return tocHTML + out.join('');
 }
 VIEWS.bylaws = async () => {
