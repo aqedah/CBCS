@@ -2,7 +2,9 @@
 
 /* ───────────── 공통 ───────────── */
 const YEAR = window.CBCS_YEAR || new Date().getFullYear();
-const DEPTS = { kinder:'유치부', elem:'초등부', youth:'중고등부', young:'청년부' };
+const DEPTS = window.CBCS_DEPT_NAMES || { kinder:'영유치부', elem:'초등부', youth:'중고등부', young:'청년부' };
+const ACCOUNTS = window.CBCS_ACCOUNTS || { kinder:'kinder', elem:'elem', youth:'youth', young:'young', committee:'committee' };
+const deptOfAccount = local => Object.keys(ACCOUNTS).find(k => ACCOUNTS[k] === local) || null;
 const MOCK = new URLSearchParams(location.search).has('mock');
 const $ = s => document.querySelector(s);
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -33,12 +35,12 @@ async function firebaseBackend() {
   const app = initializeApp(window.CBCS_FIREBASE);
   const auth = getAuth(app); const db = getFirestore(app);
   fb = { auth, db };
-  const emailOf = d => `${d}@${window.CBCS_EMAIL_DOMAIN}`;
+  const emailOf = d => `${ACCOUNTS[d] || d}@${window.CBCS_EMAIL_DOMAIN}`;
   const ref = p => doc(db, ...p.split('/'));
   return {
     async login(d, pw) { await signInWithEmailAndPassword(auth, emailOf(d), pw); return d; },
     async logout() { await signOut(auth); },
-    onSession(cb) { onAuthStateChanged(auth, u => { if (!u) return cb(null); const d = (u.email || '').split('@')[0]; cb(d); }); },
+    onSession(cb) { onAuthStateChanged(auth, u => { if (!u) return cb(null); const d = deptOfAccount((u.email || '').split('@')[0]); if (!d) { signOut(auth); return cb(null); } cb(d); }); },
     async get(p) { const s = await getDoc(ref(p)); return s.exists() ? s.data() : null; },
     async set(p, data) { await setDoc(ref(p), data); },
     async del(p) { await deleteDoc(ref(p)); },

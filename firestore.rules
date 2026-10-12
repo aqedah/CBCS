@@ -1,12 +1,20 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // 계정 이메일 ↔ 부서 (Authentication 사용자와 config.js의 CBCS_ACCOUNTS와 같아야 함)
     function email() { return request.auth != null ? request.auth.token.email : ''; }
-    function isCommittee() { return email() == 'committee@cbcs.app'; }
-    function isDept(d) { return email() == d + '@cbcs.app'; }
-    function signedIn() { return request.auth != null; }
+    function signedIn() { return request.auth != null && email() != ''; }
+    function isCommittee() { return email() == 'admin@cbcs.app'; }
+    function deptEmail(d) {
+      return d == 'kinder' ? 'kid@cbcs.app'
+           : d == 'elem'   ? 'youth@cbcs.app'
+           : d == 'youth'  ? 'teen@cbcs.app'
+           : d == 'young'  ? 'flame@cbcs.app'
+           : '';
+    }
+    function isDept(d) { return signedIn() && email() == deptEmail(d); }
 
-    // 부서 자료: 그 부서 계정과 교육위원회만 읽고 씀
+    // 부서 자료: 그 부서 계정과 교육위원회(admin)만 읽고 씀
     match /depts/{d} { allow read, write: if isDept(d) || isCommittee(); }
     match /depts/{d}/{sub}/{docId} { allow read, write: if isDept(d) || isCommittee(); }
 

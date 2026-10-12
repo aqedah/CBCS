@@ -1,6 +1,6 @@
 # CBCS — 중앙성서교회 교육부 관리
 
-교육부 네 부서(유치부·초등부·중고등부·청년부)의 **주일 보고서 · 출결 · 회계 · 월간 보고서 · 연간 계획 · 장학**을 한곳에서 작성·보관·자동 집계하는 웹앱입니다.
+교육부 네 부서(영유치부·초등부·중고등부·청년부)의 **주일 보고서 · 출결 · 회계 · 월간 보고서 · 연간 계획 · 장학**을 한곳에서 작성·보관·자동 집계하는 웹앱입니다.
 주소: `https://aqedah.github.io/CBCS/` (GitHub Pages) · 데이터: Firebase Firestore · 로그인: 부서 비밀번호(부서별 계정)
 
 - **PC**: 작성·수정·출력(PDF) 전부
@@ -23,7 +23,8 @@
 ## 처음 설정 (한 번만)
 
 1. Firebase 콘솔 → Authentication → 이메일/비밀번호 사용 설정 → 사용자 5명 추가:
-   `kinder@cbcs.app`(유치부) `elem@cbcs.app`(초등부) `youth@cbcs.app`(중고등부) `young@cbcs.app`(청년부) `committee@cbcs.app`(교육위원회). 비밀번호가 곧 "부서 비밀번호".
+   `kid@cbcs.app`(영유치부) `youth@cbcs.app`(초등부) `teen@cbcs.app`(중고등부) `flame@cbcs.app`(청년부) `admin@cbcs.app`(교육위원회). 비밀번호가 곧 "부서 비밀번호".
+   계정 이름을 바꾸면 `config.js`의 `CBCS_ACCOUNTS`와 `firestore.rules`의 `deptEmail()`도 같이 바꿉니다.
 2. Authentication → 설정 → 승인된 도메인에 `aqedah.github.io` 추가.
 3. Firestore → 규칙 탭에 `firestore.rules` 내용을 붙여넣고 게시.
 4. 앱에 `교육위원회`로 로그인 → **데이터 가져오기** → 변환된 `import_data.json` 올리기.
