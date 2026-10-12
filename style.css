@@ -185,3 +185,18 @@ details.fold .tw{margin-top:10px}
 .paper .sign th,.paper .sign td{border:1px solid #b9b5ab;text-align:center;font-size:11px;padding:3px 8px;min-width:62px}
 .paper .sign td{height:46px;vertical-align:bottom;color:#5c584f}
 table.roster{min-width:1040px}
+
+.nav{display:flex;flex-direction:column;gap:2px;flex:1}
+.nav button.home{font-weight:700;font-size:15px;border:1px solid var(--accent);color:var(--accent);background:var(--panel)}
+.nav button.home.on{background:var(--accent);color:#fff}
+.nav button.home.on .k{color:#fff}
+.nav-sep{height:1px;background:var(--line);margin:8px 6px}
+.nav-bottom{margin-top:auto;padding-top:12px;border-top:1px solid var(--line-soft);display:flex;flex-direction:column;gap:2px}
+.side .foot{margin-top:12px}
+.foot{font-size:11px;color:var(--muted);line-height:1.5;padding:8px}
+.foot p{margin:0 0 4px}
+.main-foot{display:none;margin-top:28px;border-top:1px solid var(--line);padding-top:8px}
+.login .foot{border-top:1px dashed var(--line);margin-top:12px;padding:10px 0 0}
+.mobile-nav button[data-nav="home"]{font-weight:700;color:var(--accent)}
+@media(max-width:760px){.main-foot{display:block}}
+@media print{.main-foot,.foot{display:none !important}}

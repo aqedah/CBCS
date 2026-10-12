@@ -132,6 +132,7 @@ const NAV_MOBILE = [['home','메인'],['attend','출석 체크'],['reports','보
 const NAV_COMMITTEE = [['home','메인','⌂'],['monthly','월간 보고서','▤'],['reports','보고서 열람','✎'],['roster','교적부 열람','☰'],['scholarship','장학','★'],['archive','보관함','▣'],['import','데이터 가져오기','⇪'],['tutorial','사용 안내','?']];
 const NAV_COMMITTEE_MOBILE = [['home','메인'],['reports','보고서'],['monthly','월간'],['scholarship','장학'],['tutorial','안내']];
 const VIEWS = {}, BIND = {};
+const FOOTER = `<footer class="foot"><p>🔒 모든 자료는 교육부 전용 서버(데이터베이스)에만 보관되며, 부서 비밀번호로 로그인한 사람만 볼 수 있습니다. 외부에 공개하거나 제공하지 않습니다.</p><p>제작자: 이삭 목사 · 중앙성서교회</p></footer>`;
 
 async function render() {
   const root = $('#root');
@@ -145,10 +146,15 @@ async function render() {
     <aside class="side">
       <div class="brand">CBCS<small>중앙성서교회 교육부</small></div>
       <div class="dept-chip"><b>${esc(isCommittee() ? '교육위원회' : DEPTS[S.dept])}</b><button class="btn s" data-logout>나가기</button></div>
-      <nav class="nav">${nav.map(n => `<button data-nav="${n[0]}" class="${S.view === n[0] ? 'on' : ''}"><span class="k">${n[2] || ''}</span>${n[1]}</button>`).join('')}
-      <div class="sec">${MOCK ? '시험 모드 (로컬)' : 'cbcs · ' + YEAR}</div><button data-refresh>새로고침</button></nav>
+      <nav class="nav">${nav.filter(n => n[0] === 'home').map(n => `<button data-nav="home" class="home ${S.view === 'home' ? 'on' : ''}"><span class="k">${n[2] || '⌂'}</span>${n[1]}</button>`).join('')}
+      <div class="nav-sep"></div>
+      ${nav.filter(n => n[0] !== 'home' && n[0] !== 'import').map(n => `<button data-nav="${n[0]}" class="${S.view === n[0] ? 'on' : ''}"><span class="k">${n[2] || ''}</span>${n[1]}</button>`).join('')}
+      <div class="nav-bottom"><div class="sec">${MOCK ? '시험 모드 (로컬)' : 'CBCS · ' + YEAR}</div>
+      ${nav.filter(n => n[0] === 'import').map(n => `<button data-nav="import" class="${S.view === 'import' ? 'on' : ''}"><span class="k">⇪</span>${n[1]}</button>`).join('')}
+      <button data-refresh><span class="k">↻</span>새로고침</button></div></nav>
+      ${FOOTER}
     </aside>
-    <main class="main" id="main">${body}</main>
+    <main class="main" id="main">${body}<div class="main-foot">${FOOTER}</div></main>
     <nav class="mobile-nav">${nav.map(n => `<button data-nav="${n[0]}" class="${S.view === n[0] ? 'on' : ''}">${n[1]}</button>`).join('')}<button data-logout>나가기</button></nav>
   </div>`;
   root.querySelectorAll('[data-nav]').forEach(b => b.onclick = () => { S.view = b.dataset.nav; S.sub = {}; render(); });
@@ -171,6 +177,7 @@ function loginView() {
       <button class="btn p" id="lg-go">들어가기</button>
     </div>
     <p class="note" style="margin-top:14px">PC에서는 작성·수정·출력, 휴대폰에서는 열람과 출석 체크를 합니다. 비밀번호를 모르면 부서 부장이나 교육위원회에 문의하세요.${MOCK ? '<br><b>시험 모드</b>: 아무 비밀번호나 됩니다. 데이터는 이 브라우저에만 저장됩니다.' : ''}</p>
+    ${FOOTER}
   </div></div>`;
 }
 function bindLogin() {
