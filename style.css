@@ -332,3 +332,17 @@ table.fam td,table.fam th{white-space:normal;word-break:keep-all;overflow-wrap:a
 .kind-row>.pill{min-width:74px;text-align:center;flex:none}
 .kind-row>div{display:flex;flex-wrap:wrap;gap:4px}
 .kind-row .chip b{font-weight:600}
+/* 출석 기록 표 */
+.al-wrap{overflow:auto;max-height:75vh}
+table.attlog{border-collapse:separate;border-spacing:0;font-size:12px}
+table.attlog th,table.attlog td{padding:4px 5px;text-align:center;white-space:nowrap;border-bottom:1px solid var(--line-soft)}
+table.attlog thead th{position:sticky;top:0;background:var(--panel,#fff);z-index:2}
+table.attlog .al-name{position:sticky;left:0;background:var(--panel,#fff);text-align:left;z-index:1;min-width:120px}
+table.attlog thead .al-name{z-index:3}
+table.attlog .al-d{font-weight:500;color:var(--muted);font-size:11px}
+table.attlog .al-none{background:var(--line-soft)}
+table.attlog .al-p{color:var(--ok)}
+table.attlog .al-o{color:var(--warn)}
+table.attlog .al-x{color:var(--muted)}
+table.attlog .al-sum{font-weight:600}
+@media print{.al-wrap{max-height:none;overflow:visible}table.attlog{font-size:8px}table.attlog th,table.attlog td{padding:1px 2px}@page{size:A4 landscape}}

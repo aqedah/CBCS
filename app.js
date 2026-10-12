@@ -147,7 +147,7 @@ const VIEWS = {}, BIND = {};
 // 메뉴 묶음: 사이드 메뉴에서 누르면 아래로 펼쳐지는 하위 메뉴 (휴대폰은 화면 위 탭)
 const DOC_TABS = () => [[isCommittee() || isMobile() ? 'reports' : 'weekly', '주일 보고서'], ['monthly', '월간 보고서'], ['plan', '연간계획서']];
 const YOUNG_TABS = () => [['bylaws', '회칙'], ['assembly', '총회 자료'], ['minutes', '총회 회의록']];
-const ROSTER_TABS = () => [['roster', isCommittee() ? '출석부 열람' : '출석부'], ...(isCommittee() ? [] : [['stats', '출석 통계']]), ['dropouts', '제적 관리'], ...(isCommittee() ? [] : [['care', isCare() ? '♥ 심방 카드' : '🔒 심방 카드']])];
+const ROSTER_TABS = () => [['roster', isCommittee() ? '출석부 열람' : '출석부'], ['attlog', '출석 기록'], ...(isCommittee() ? [] : [['stats', '출석 통계']]), ['dropouts', '제적 관리'], ...(isCommittee() ? [] : [['care', isCare() ? '♥ 심방 카드' : '🔒 심방 카드']])];
 const NAV_GROUPS = () => isMobile() ? [{ id: 'docs', items: DOC_TABS() }] : [{ id: 'docs', items: DOC_TABS() }, { id: 'roster', items: ROSTER_TABS() }, { id: 'young', items: YOUNG_TABS() }];
 const groupOfView = v => NAV_GROUPS().find(g => g.items.some(t => t[0] === v));
 const navKeyOf = v => { const g = groupOfView(v); return g ? g.items[0][0] : v; };
@@ -445,6 +445,39 @@ VIEWS.roster = async () => {
         ${dd.doc.staff.some(t => t.status === 'left') ? `<div class="note" style="margin-top:8px">이전 교역자·교사: ${dd.doc.staff.filter(t => t.status === 'left').map(t => esc(t.name) + '(' + esc(t.role) + ')').join(', ')}</div>` : ''}</div>
     </div>
   </div>`;
+};
+/* ───────────── 출석 기록 (연도별 주일 × 학생 표) ───────────── */
+VIEWS.attlog = async () => {
+  let dd; if (isCommittee()) dd = await loadDept(S.sub.dept || 'kinder'); else dd = D();
+  const years = [...new Set(Object.keys(dd.reports).map(d => +d.slice(0, 4)))].sort((a, b) => b - a);
+  const year = S.sub.year || (years.includes(YEAR) ? YEAR : years[0] || YEAR);
+  const mon = S.sub.mon || 0;
+  const sundays = []; { const d = new Date(year, 0, 1); while (d.getDay() !== 0) d.setDate(d.getDate() + 1); while (d.getFullYear() === year) { const ds = `${year}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; if (ds <= today() && (!mon || d.getMonth() + 1 === mon)) sundays.push(ds); d.setDate(d.getDate() + 7); } }
+  const reps = sundays.map(ds => dd.reports[ds] || null);
+  const inYear = new Set(); Object.values(dd.reports).forEach(r => { if (r.date.startsWith(String(year))) Object.keys(r.att || {}).forEach(id => inYear.add(id)); });
+  const corder = s => { const i = dd.doc.classes.findIndex(c => c.id === s.classId); return i < 0 ? 999 : i; };
+  const list = dd.students.filter(s => s.status !== 'left' || inYear.has(s.id)).sort((a, b) => corder(a) - corder(b) || a.name.localeCompare(b.name, 'ko'));
+  const withRep = reps.filter(Boolean).length;
+  const unmatched = {}; reps.forEach(r => r && Object.keys(r.attUnmatched || {}).forEach(n => { unmatched[n] = (unmatched[n] || 0) + 1; }));
+  const pick = isCommittee() ? `<div class="row" style="margin-bottom:10px">${Object.entries(DEPTS).map(([k, v]) => `<button class="btn ${dd.id === k ? 'p' : ''}" data-dept="${k}">${v}</button>`).join('')}</div>` : '';
+  const cell = (r, s) => { if (!r) return '<td class="al-none" title="보고서 없음"></td>'; const a = (r.att || {})[s.id]; const why = (r.absent || {})[s.id]; return a === 'P' ? '<td class="al-p" title="출석">●</td>' : a === 'O' ? '<td class="al-o" title="온라인·본당">◐</td>' : `<td class="al-x"${why ? ` title="${esc(why)}"` : ''}>${why ? '·' : ''}</td>`; };
+  const head = sundays.map((ds, i) => `<th class="al-d ${reps[i] ? '' : 'al-none'}" title="${ds}${reps[i] ? '' : ' (보고서 없음)'}">${+ds.slice(5, 7)}/${+ds.slice(8)}</th>`).join('');
+  const rows = list.map(s => { const n = reps.filter(r => r && (r.att || {})[s.id]).length; return `<tr><th class="al-name"><b>${esc(s.name)}</b>${s.status === 'left' ? ' <span class="pill mute">제적</span>' : ''}<span class="note"> ${esc((classOf(dd, s) || {}).name || s.classId || '')}</span></th>${reps.map(r => cell(r, s)).join('')}<td class="n al-sum">${n}/${withRep}</td><td class="n al-sum">${withRep ? Math.round(n / withRep * 100) : 0}%</td></tr>`; }).join('');
+  const foot = `<tr class="sum"><th class="al-name">출석(명단)</th>${reps.map(r => `<td class="n">${r ? Object.keys(r.att || {}).length : ''}</td>`).join('')}<td></td><td></td></tr><tr class="sum"><th class="al-name">출석(보고서 숫자)</th>${reps.map(r => `<td class="n">${r ? reportStats(dd, r).p : ''}</td>`).join('')}<td></td><td></td></tr>`;
+  return `<div class="topbar"><div><h1>출석 기록 — ${esc(dd.doc.name)}</h1><div class="sub">${year}년${mon ? ` ${mon}월` : ''} · 주일 ${sundays.length}번 중 보고서 ${withRep}장 · ● 출석 ◐ 온라인·본당 · 결석 사유가 있으면 · (점에 마우스를 올리면 사유)</div></div>
+    <div class="row no-print"><select id="al-year" style="width:auto">${(years.length ? years : [YEAR]).map(y => `<option ${y === year ? 'selected' : ''}>${y}</option>`).join('')}</select>${canEdit() ? '<button class="btn" id="al-print">출력</button>' : ''}</div></div>
+  ${pick}
+  <div class="row no-print" style="gap:4px;margin-bottom:10px">${[0, ...Array.from({ length: 12 }, (_, i) => i + 1)].map(m => `<button class="btn s ${mon === m ? 'p' : ''}" data-mon="${m}">${m ? m + '월' : '1년 전체'}</button>`).join('')}</div>
+  <div class="card"><div class="tw al-wrap"><table class="attlog"><thead><tr><th class="al-name">이름</th>${head}<th class="n">출석</th><th class="n">출석률</th></tr></thead><tbody>${rows || `<tr><td class="note">학생이 없습니다.</td></tr>`}</tbody><tfoot>${foot}</tfoot></table></div>
+    <div class="note" style="margin-top:8px">회색 칸은 그 주일 보고서가 없는 날입니다. "출석(명단)"은 이름으로 체크된 수, "출석(보고서 숫자)"는 보고서에 적힌 숫자라 서로 다를 수 있습니다(새친구·다른 부서 출석 등).</div>
+    ${Object.keys(unmatched).length ? `<div class="hint" style="margin-top:8px">출석부와 연결되지 않은 출석 이름(다른 부서로 옮긴 학생 등): ${Object.entries(unmatched).sort((a, b) => b[1] - a[1]).map(([n, k]) => `${esc(n)} ${k}회`).join(', ')}</div>` : ''}</div>`;
+};
+BIND.attlog = () => {
+  const dd = isCommittee() ? S.data[S.sub.dept || 'kinder'] : D();
+  document.querySelectorAll('[data-dept]').forEach(b => b.onclick = () => { S.sub = { dept: b.dataset.dept }; render(); });
+  $('#al-year').onchange = e => { S.sub.year = +e.target.value; S.sub.mon = 0; render(); };
+  document.querySelectorAll('[data-mon]').forEach(b => b.onclick = () => { S.sub.mon = +b.dataset.mon; render(); });
+  const pr = $('#al-print'); if (pr) pr.onclick = () => window.print();
 };
 VIEWS.dropouts = async () => { S.sub.show = 'left'; return VIEWS.roster(); };
 function studentCard(dd, s) {
