@@ -200,3 +200,9 @@ table.roster{min-width:1040px}
 .mobile-nav button[data-nav="home"]{font-weight:700;color:var(--accent)}
 @media(max-width:760px){.main-foot{display:block}}
 @media print{.main-foot,.foot{display:none !important}}
+
+.plan-banner{border-top:4px solid var(--accent);background:linear-gradient(0deg,var(--panel),var(--panel))}
+.plan-banner .slogan{font-family:var(--display);font-size:22px;color:var(--accent);margin:4px 0 2px;text-wrap:balance}
+.plan-banner .verse{font-size:13.5px}
+.plan-banner .goals{margin:8px 0 0;padding-left:20px;font-size:13px}
+textarea[readonly],input[readonly]{background:var(--line-soft)}
