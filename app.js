@@ -88,7 +88,7 @@ async function loadDept(d, force) {
     young ? backend.list(`depts/${d}/officers`) : [], backend.list(`depts/${d}/timeline`), young ? backend.list(`depts/${d}/retreats`) : [],
     isCommittee() ? [] : backend.list(`depts/${d}/care`).catch(() => [])]);
   const dd = { id: d, doc: docu || { name: DEPTS[d], classLabel: '반', year: YEAR, classes: [], staff: [], ledgers: [], budgetPlan: [], monthlyPlans: {}, monthlyTexts: {}, notes: {} },
-    students, reports: Object.fromEntries(reports.map(r => [r.date, r])), expenses, incomes, events, notices, assets: assets.map(a => ({ ...a, id: a.id || a._id })), officers, timeline, retreats, careRaw: care, care: [] };
+    students, reports: Object.fromEntries(reports.map(r => [r.date, r])), expenses, incomes, events, notices, assets: assets.map(a => ({ ...a, id: a.id || a._id })), officers: officers.map(o => ({ ...o, role: canonRole(o.role) })), timeline, retreats, careRaw: care, care: [] };
   if (S.careKey && S.careDept === d) await decryptCare(dd);
   dd.doc.ledgers = dd.doc.ledgers || []; dd.doc.classes = dd.doc.classes || []; dd.doc.staff = dd.doc.staff || []; dd.doc.budgetPlan = dd.doc.budgetPlan || []; dd.doc.monthlyPlans = dd.doc.monthlyPlans || {}; dd.doc.monthlyTexts = dd.doc.monthlyTexts || {}; dd.doc.notes = dd.doc.notes || {};
   S.data[d] = dd; return dd;
@@ -1138,6 +1138,8 @@ const ASSEMBLY_POS = ['회장', '부회장', '총무', '회계', '서기'];
 const ASSEMBLY_POS_SUB = ['부총무', '부서기', '부회계']; // 부임원도 일단 임원으로 본다
 // 청년부 직책 구분: 임원(회장·부회장·총무·서기·회계, 부총무 등 부임원) / 팀장(사역팀) / 팸장 / 교역자·부장
 const OFFICER_CORE = ['회장', '부회장', '총무', '서기', '회계'];
+// 직책 이름 통일: 찬양리더·찬양팀 리더 → 기드온 리더, 찬양인도·인도자 → 기드온 인도자, 찬양부인도 → 기드온 부인도자, 미디어 팀장 → 미디어팀장
+function canonRole(r) { r = String(r || '').trim(); if (/^(찬양|기드온|찬양팀)?\s*(부인도자|부인도)$/.test(r)) return '기드온 부인도자'; if (/^(찬양|기드온|찬양팀)?\s*(인도자|인도)$/.test(r)) return '기드온 인도자'; if (/^(찬양|기드온|찬양팀)?\s*리더$/.test(r)) return '기드온 리더'; return r.replace(/^미디어\s*팀장$/, '미디어팀장'); }
 function roleKind(r) { r = String(r || '').trim(); if (!r) return ''; if (/^임원/.test(r) || OFFICER_CORE.includes(r) || (r.startsWith('부') && OFFICER_CORE.includes(r.slice(1)))) return '임원'; if (/팸장$/.test(r)) return '팸장'; if (/^(교역자|목사|전도사|부장|부감|교육디렉터|디렉터)$/.test(r)) return '교역자·부장'; return '팀장'; }
 const roleParts = role => String(role || '').split(/[,，\/]/).map(x => x.trim()).filter(Boolean);
 const ROLE_PILL = { 임원: 'ok', 팀장: 'info', 팸장: 'mute', '교역자·부장': 'warn' };
@@ -1778,10 +1780,10 @@ function nameMatches(dd, s, ev) { // 이름이 같고, 둘 다 생년이 있으�
   return true;
 }
 function officersOf(dd, s) { // 연도별 임원 이력 (과거 자료 + 올해 교사·임원 명단)
-  // '임원(직위 미상)'은 직위가 확인돼 더 쓰지 않음(예전 자료에 남아 있어도 무시). '기드온 리더'·'찬양팀 리더'는 찬양리더와 같은 직책
-  const canon = r => String(r || '').trim().replace(/^(기드온|찬양팀)\s*리더$/, '찬양리더').replace(/^미디어\s*팀장$/, '미디어팀장');
-  const rows = (dd.officers || []).filter(o => nameMatches(dd, s, o) && !/직위 미상/.test(o.role || '')).map(o => ({ year: +o.year, role: canon(o.role), source: o.source, flags: o.flags || [] }));
-  dd.doc.staff.filter(t => t.status !== 'left' && normName(t.name) === normName(s.name)).forEach(t => roleParts(t.role).forEach(r => { r = canon(r); if (!rows.some(x => x.year === YEAR && x.role === r)) rows.push({ year: YEAR, role: r, source: `${YEAR}년 교사·임원 명단`, flags: [] }); }));
+  // '임원(직위 미상)'은 직위가 확인돼 더 쓰지 않음(예전 자료에 남아 있어도 무시). 찬양팀 직책은 '기드온 리더·인도자·부인도자'로 통일
+  const rows = []; const add = (year, role, source, flags) => { role = canonRole(role); if (role && !rows.some(x => x.year === year && x.role === role)) rows.push({ year, role, source, flags }); };
+  (dd.officers || []).filter(o => nameMatches(dd, s, o) && !/직위 미상/.test(o.role || '')).forEach(o => add(+o.year, o.role, o.source, o.flags || []));
+  dd.doc.staff.filter(t => t.status !== 'left' && normName(t.name) === normName(s.name)).forEach(t => roleParts(t.role).forEach(r => add(YEAR, r, `${YEAR}년 교사·임원 명단`, [])));
   return rows.sort((a, b) => (+a.year - +b.year) || String(a.role).localeCompare(String(b.role), 'ko'));
 }
 function studentTimeline(dd, s) {
