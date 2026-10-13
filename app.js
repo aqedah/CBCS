@@ -1914,8 +1914,11 @@ BIND.scholarship = () => {
 /* ───────────── 데이터 가져오기 (교육위원회) ───────────── */
 VIEWS.import = async () => `<div class="topbar"><div><h1>데이터 가져오기</h1><div class="sub">변환된 초기 데이터(JSON)를 올립니다. 같은 id는 덮어쓰고, 앱에서 새로 만든 자료는 건드리지 않습니다.</div></div></div>
   <div class="stack"><div class="card"><input type="file" id="im-file" accept="application/json,.json"><div class="row" style="margin-top:10px"><button class="btn p" id="im-go" disabled>올리기</button><label class="row" style="font-size:12.5px"><input type="checkbox" id="im-reports" checked> 주일 보고서</label><label class="row" style="font-size:12.5px"><input type="checkbox" id="im-students" checked> 출석부</label><label class="row" style="font-size:12.5px"><input type="checkbox" id="im-money" checked> 회계</label><label class="row" style="font-size:12.5px"><input type="checkbox" id="im-plan" checked> 연간 계획·월간</label><label class="row" style="font-size:12.5px"><input type="checkbox" id="im-sch" checked> 장학</label><label class="row" style="font-size:12.5px"><input type="checkbox" id="im-arch" checked> 보관 색인</label></div><pre class="progress" id="im-log" style="margin-top:12px"></pre></div>
+  <div class="card"><h2>명부(신급·가족·연락처) 가져오기</h2><div class="note">tools/roster_xlsx.py로 교육부 명부 엑셀을 바꾼 <b>roster.json</b>을 올립니다. 부서마다 이름+생일로 기존 학생을 찾아 신급·신급연도·연락처·학교·부모·형제자매·주소·전도자·장학을 채웁니다. 신급은 명부 값으로 덮어쓰고(임시 "세례" 표기는 풀림), 나머지는 비어 있는 칸만 채웁니다. 명부에만 있는 사람은 새로 추가합니다.</div>
+    <input type="file" id="rs-file" accept="application/json,.json" style="margin-top:8px"><div class="row" style="margin-top:10px"><button class="btn p" id="rs-go" disabled>가져오기 시작</button></div><pre class="progress" id="rs-log" style="margin-top:10px"></pre></div>
   <div class="card"><h2>엑셀 가져오기 (앞으로)</h2><div class="note">출석부·회계 엑셀을 정해진 양식으로 올리면 바로 반영하는 기능은 전 부서 시행 후 양식을 정해 추가합니다.</div></div></div>`;
 BIND.import = () => {
+  bindRosterImport();
   let payload = null; const log = m => { $('#im-log').textContent += m + '\n'; };
   $('#im-file').onchange = async e => { const f = e.target.files[0]; if (!f) return; try { payload = JSON.parse(await f.text()); $('#im-go').disabled = false; if (payload.raw) log(`전체 자료 내려받기 파일입니다(${(payload.generated || '').slice(0, 10)} · ${payload.raw.length}건). 올리면 같은 자료를 그날 상태로 덮어씁니다.`); if (!payload.raw) log(`파일 확인: 부서 ${Object.keys(payload.depts || {}).join(', ')} · 장학 ${(payload.scholarship || []).length}건 · 보관 색인 ${(payload.archiveIndex || []).length}건`); } catch (err) { log('JSON을 읽지 못했습니다: ' + err.message); } };
   $('#im-go').onclick = async () => {
@@ -1927,6 +1930,44 @@ BIND.import = () => {
   };
 };
 
+// 명부 JSON(roster_xlsx.py) 가져오기 — 부서별로 학생을 찾아 합친다
+function bindRosterImport() {
+  let payload = null; const log = m => { $('#rs-log').textContent += m + '\n'; };
+  const fi = $('#rs-file'), go = $('#rs-go'); if (!fi || !go) return;
+  fi.onchange = async e => { const f = e.target.files[0]; if (!f) return; try { payload = JSON.parse(await f.text()); go.disabled = !(payload.rows || []).length; log(`${f.name}: ${(payload.rows || []).length}명 (${payload.year || ''}년 명부)`); (payload._review || []).forEach(r => log('※ ' + r)); } catch (err) { log('JSON을 읽지 못했습니다: ' + err.message); } };
+  go.onclick = async () => { go.disabled = true; try { await importRoster(payload, log); } catch (err) { log('실패: ' + (err.code || err.message)); } };
+}
+async function importRoster(payload, log) {
+  const md = b => (b || '').slice(5); const byDept = {};
+  for (const x of payload.rows || []) (byDept[x.dept] = byDept[x.dept] || []).push(x);
+  for (const [d, rows] of Object.entries(byDept)) {
+    if (!DEPTS[d]) { log(`${d}: 모르는 부서 — 건너뜀`); continue; }
+    if (!isCommittee() && S.dept !== d) { log(`${DEPTS[d]} ${rows.length}명: 다른 부서라 건너뜀 (교육위원회로 들어가면 전 부서 가능)`); continue; }
+    const dd = await loadDept(d); const items = []; let upd = 0, add = 0, lft = 0; const warn = [];
+    const findS = x => { const same = dd.students.filter(s => normName(s.name) === normName(x.name)); if (!same.length) return null; const exact = same.find(s => x.birth && s.birth && md(s.birth) === md(x.birth)); if (exact) return exact; const loose = same.filter(s => !x.birth || !s.birth); if (loose.length === 1) return loose[0]; if (same.length === 1) { if (x.birth && same[0].birth) warn.push(`${x.name}: 생일이 다름 (앱 ${same[0].birth} / 명부 ${x.birth}) — 같은 사람으로 봄`); return same[0]; } warn.push(`${x.name}: 같은 이름이 ${same.length}명이라 못 정함 — 건너뜀`); return undefined; };
+    for (const x of rows) {
+      let s = findS(x); if (s === undefined) continue;
+      if (!s) { s = { id: `${d}_${x.name}_${x.birth || uid()}`, name: x.name, sex: x.sex || '', birth: x.birth || '', dept: d, classId: '', status: x.left ? 'left' : 'active', faith: '', faithYear: '', faithHalf: '', phone: '', school: '', father: '', mother: '', siblings: [], address: '', evangelist: '', guardianPhone: '', guardianRel: '', scholarship: [], note: '', history: [], statusLog: [], flags: [`${payload.year || ''} 명부에서 추가`] }; dd.students.push(s); add++; } else upd++;
+      const fill = (k, v) => { if (v && !s[k]) s[k] = v; };
+      if (x.birth && s.birth && md(s.birth) !== md(x.birth)) s.flags = [...(s.flags || []), `생일이 다름: 앱 ${s.birth} / 명부 ${x.birth}`]; fill('birth', x.birth); fill('sex', x.sex);
+      // 신급: 명부 값으로 덮어쓴다. 임시 "세례" 표기는 푼다
+      if (s.faithPrev !== undefined) { s.faith = s.faithPrev; delete s.faithPrev; s.flags = (s.flags || []).filter(f => !/신급 임시/.test(f)); }
+      if (x.faithRaw) { s.faith = x.faithRaw; normalizeFaith(s); if (x.faithYear) { s.faithYear = x.faithYear; s.faithHalf = x.faithHalf || ''; } }
+      else if (x.faithYear && !s.faithYear) { s.faithYear = x.faithYear; s.faithHalf = x.faithHalf || ''; }
+      fill('phone', x.phone); fill('guardianPhone', x.guardianPhone); fill('guardianRel', x.guardianRel); fill('school', x.school); fill('father', x.father); fill('mother', x.mother); fill('address', x.address); fill('evangelist', x.evangelist); fill('joinDate', x.joinDate);
+      if (x.siblings && x.siblings.length) { const cur = Array.isArray(s.siblings) ? s.siblings : String(s.siblings || '').split(/[,，]\s*/).filter(Boolean); s.siblings = [...new Set([...cur, ...x.siblings])]; }
+      if (x.scholarship && x.scholarship.length) s.scholarship = [...new Set([...(s.scholarship || []).map(Number), ...x.scholarship])].sort();
+      if (x.note) { const parts = String(s.note || '').split(/\s*[,，]\s*/).filter(Boolean); for (const t of x.note.split(/\s*[,，/]\s*/).filter(Boolean)) if (!parts.includes(t) && !/제적$/.test(t)) parts.push(t); s.note = parts.join(', '); }
+      for (const f of x.flags || []) if (!(s.flags || []).includes(f)) s.flags = [...(s.flags || []), f];
+      if (x.left) { if (s.status !== 'left') { (s.statusLog = s.statusLog || []).push({ date: `${x.left}-12-31`, from: s.status, to: 'left', kind: '제적', reason: `${payload.year || ''} 명부 "${x.left}제적"` }); s.status = 'left'; } if (!s.leftDate) s.leftDate = `${x.left}-12-31`; s.leftKind = s.leftKind || '제적'; lft++; }
+      else if (x.longabsent && s.status === 'active') { (s.statusLog = s.statusLog || []).push({ date: today(), from: 'active', to: 'longabsent', reason: `${payload.year || ''} 명부 장결자` }); s.status = 'longabsent'; }
+      items.push({ path: `depts/${d}/students/${s.id}`, data: s });
+    }
+    await backend.batchSet(items, (a, b) => { $('#rs-log').textContent = $('#rs-log').textContent.replace(/\n진행.*$/, '') + `\n진행 ${DEPTS[d]} ${a}/${b}`; });
+    log(`${DEPTS[d]}: 기존 ${upd}명 채움 · 새로 ${add}명 · 제적 ${lft}명`); warn.forEach(w => log('※ ' + DEPTS[d] + ' ' + w));
+  }
+  log('완료. 새로고침하면 반영됩니다.'); S.data = {};
+}
 function payloadToItems(payload, on) {
   const items = [];
   for (const [d, dep] of Object.entries(payload.depts || {})) {
