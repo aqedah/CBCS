@@ -2249,7 +2249,7 @@ VIEWS.tutorial = async () => {
 };
 
 /* ───────────── 청년부: 교회생활(타임라인) ───────────── */
-const TL_KINDS = { 등록: 'info', 새가족교육: 'info', 신급: 'ok', 임원: 'ok', 팸: 'mute', 수련회: 'mute', 장학: 'ok', 제적: 'bad', 복귀: 'ok', 결혼: 'info', 군복무: 'warn', 유학: 'warn', 이사: 'warn', 심방: 'info', 기타: 'mute' };
+const TL_KINDS = { 등록: 'info', 새가족교육: 'info', 신급: 'ok', 임원: 'ok', 팸: 'mute', 반: 'mute', 수련회: 'mute', 장학: 'ok', 제적: 'bad', 복귀: 'ok', 결혼: 'info', 군복무: 'warn', 유학: 'warn', 이사: 'warn', 심방: 'info', 기타: 'mute' };
 const normName = n => String(n || '').replace(/\s/g, '').replace(/(권사|집사|목사|장로|전도사)$/, '');
 function nameMatches(dd, s, ev) { // 이름이 같고, 둘 다 생년이 있으면 생년도 같아야 함
   if (normName(ev.name) !== normName(s.name)) return false;
@@ -2272,7 +2272,9 @@ function studentTimeline(dd, s) {
   if (s.faith && s.faithYear) ev.push({ date: String(s.faithYear), kind: '신급', title: s.faith, note: s.faithHalf ? s.faithHalf + '반기' : '', auto: true, derived: true });
   if (s.married) ev.push({ date: s.marriedDate || '', kind: '결혼', title: '결혼', note: '청년부 회원 자격 종료 대상(회칙 4조) · 학생 카드의 "결혼"에서 고침', auto: true, derived: true });
   (s.statusLog || []).forEach(l => ev.push({ date: l.date || '', kind: l.to === 'left' ? '제적' : '복귀', title: l.to === 'left' ? `${l.kind || '제적'} 처리` : '복적', note: l.reason || '', auto: true, derived: true }));
-  (s.history || []).forEach(h => ev.push({ date: String(h.year), kind: '팸', title: `${DEPTS[h.dept] || h.dept} ${h.classId || ''}`.trim(), note: h.note || '', auto: true, derived: true }));
+  // 소속 표기: 청년부는 "팸", 나머지 부서(영유치·초등·중고등)는 "반" — 예) 중고등부 중1반
+  (s.history || []).forEach(h => { const yg = h.dept === 'young'; const c = String(h.classId || '').trim(); const cl = !c ? '' : yg ? c : /반$/.test(c) ? c : c + '반';
+    ev.push({ date: String(h.year), kind: yg ? '팸' : '반', title: `${DEPTS[h.dept] || h.dept} ${cl}`.trim(), note: h.note || '', auto: true, derived: true }); });
   (s.scholarship || []).forEach(y => ev.push({ date: String(y), kind: '장학', title: `${y}년 장학생`, note: '', auto: true, derived: true }));
   const byYear = {}; Object.values(dd.reports).forEach(r => { const y = r.date.slice(0, 4); byYear[y] = byYear[y] || { n: 0, p: 0 }; byYear[y].n++; if ((r.att || {})[s.id]) byYear[y].p++; });
   Object.entries(byYear).forEach(([y, v]) => ev.push({ date: y + '-12-31', kind: '기타', title: `${y}년 출석 ${v.p}/${v.n}회 (${v.n ? Math.round(v.p / v.n * 100) : 0}%)`, note: '', auto: true, derived: true, att: true }));
@@ -2351,7 +2353,7 @@ VIEWS.care = async () => {
     <div class="row">${['active', 'left', 'all'].map(k => `<button class="btn s ${show === k ? 'p' : ''}" data-show="${k}">${{ active: '재적·새친구', left: '제적', all: '전체' }[k]}</button>`).join('')}<button class="btn s ${S.sub.sort === 'visit' ? 'p' : ''}" id="cr-sort">심방 오래된 순</button>${canEdit() ? `<button class="btn s" id="cr-import">과거 자료 가져오기</button><button class="btn s" id="cr-pw">관리자 비밀번호 바꾸기</button>` : ''}</div></div>
   <div class="stack">
     ${careNeedsCard(dd)}
-    <div class="card"><div class="tw"><table class="rtab"><thead><tr><th>이름</th><th>나이</th><th>팸</th><th>직장·학교</th><th>최근 심방</th><th>최근 기록</th><th>명부</th><th></th></tr></thead><tbody>
+    <div class="card"><div class="tw"><table class="rtab"><thead><tr><th>이름</th><th>나이</th><th>${esc(dd.doc.classLabel || "반")}</th><th>직장·학교</th><th>최근 심방</th><th>최근 기록</th><th>명부</th><th></th></tr></thead><tbody>
     ${sorted.map(s => { const c = careOf(dd, s); const n = (c && c.notes || []).slice().sort((a, b) => a.date < b.date ? 1 : -1)[0]; const yr = Object.values(dd.reports).filter(r => r.date.startsWith(String(YEAR))); const p = yr.filter(r => (r.att || {})[s.id]).length;
       return `<tr class="click" data-care="${s.id}"><td>${esc(s.name)}</td><td>${s.birth ? '만 ' + ageAt(s.birth, today()) : '—'}</td><td class="note">${esc((classOf(dd, s) || {}).name || s.classId || '')}</td><td class="wrap note">${esc(c && c.job || s.school || '')}</td><td>${n ? fmtShort(n.date) : '<span class="pill warn">없음</span>'}</td><td class="wrap note">${esc(n ? n.text.slice(0, 50) : '')}</td><td>${c ? '<span class="pill ok">있음</span>' : '<span class="pill mute">없음</span>'}</td><td class="note">${YEAR} 출석 ${p}/${yr.length}</td></tr>`; }).join('')}
     </tbody></table></div></div>
