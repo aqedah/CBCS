@@ -2547,7 +2547,7 @@ async function syncSiblings(dd) {
   try { await backend.set(`siblings/${dd.id}`, doc); c.sib = [...c.sib.filter(x => x._id !== dd.id), { _id: dd.id, ...doc }]; } catch (e) { c.sibErr = e.code || e.message; }
 }
 function siblingLinks(dd, s) {
-  if (!s) return []; const names = new Setsibs(s); const out = []; const seen = new Set();
+  if (!s) return []; const names = new Set(sibs(s)); const out = []; const seen = new Set();
   dd.students.filter(x => x.id !== s.id && x.status !== 'left' && (names.has(x.name) || sibs(x).includes(s.name))).forEach(x => { seen.add(x.name); out.push({ name: x.name, where: (classOf(dd, x) || {}).name || x.classId || '', same: true }); });
   ((S.committee || {}).sib || []).filter(d => d._id !== dd.id).forEach(d => (d.list || []).forEach(x => { if (names.has(x.name) || sibs(x).includes(s.name)) { seen.add(x.name); out.push({ name: x.name, where: `${deptLabel(d._id)} ${x.classId || ''}`.trim(), same: false }); } }));
   [...names].filter(n => !seen.has(n)).forEach(n => out.push({ name: n, where: '', same: false }));
