@@ -228,6 +228,8 @@ function navButton(n) {
 }
 const FOOTER = `<footer class="foot"><p>🔒 모든 자료는 교육부 전용 서버(데이터베이스)에만 보관되며, 부서 비밀번호로 로그인한 사람만 볼 수 있습니다. 외부에 공개하거나 제공하지 않습니다.</p><p>제작자: 이삭 목사 · 중앙성서교회</p></footer>`;
 
+// 같은 화면에서 저장·복적처럼 고친 뒤 다시 그릴 때는 보던 위치를 그대로 둔다
+const renderHere = () => { S.keepScroll = window.scrollY; return render(); };
 async function render() {
   const root = $('#root');
   if (!S.user) { root.innerHTML = loginView(); bindLogin(); return; }
@@ -266,7 +268,7 @@ async function render() {
   if (BIND[S.view]) { try { BIND[S.view](); } catch (e) { console.error(e); } }
   root.querySelectorAll('[data-tour]').forEach(b => b.onclick = () => startTour());
   root.querySelectorAll('[data-demo-reset]').forEach(b => b.onclick = () => { backend.reset(); location.href = location.pathname + '?demo=1'; });
-  window.scrollTo(0, 0);
+  if (S.keepScroll != null) { const y = S.keepScroll; S.keepScroll = null; window.scrollTo(0, y); } else window.scrollTo(0, 0);
   if (window.CBCS_TOUR) window.CBCS_TOUR.afterRender();
 }
 // 튜토리얼: 체험 모드에서만 돈다(실제 자료 화면에서는 체험 모드를 새 창으로 연다)
@@ -476,8 +478,9 @@ function leftSection(dd, edit) {
       : `<div class="note">${namedReports(dd).length < 4 ? '출석 체크된 주일 보고서가 4장 이상 쌓이면 자동으로 찾습니다.' : '해당자가 없습니다.'}</div>`}
     <div class="note" style="margin-top:6px">${dd.id === 'young' ? '유학·군복무·온라인 출석 중인 사람은 학생 카드의 비고에 "유학", "군복무", "온라인"을 적어 두면 후보에서 빠집니다.' : '사정이 있는 학생은 학생 카드의 비고에 "유학", "군복무", "병가" 등을 적어 두면 후보에서 빠집니다.'}</div></div>
   <div class="card"><h2>제적 명단 <span class="r">${left.length}명 · ${Object.entries(kinds).map(([k, n]) => `${esc(k)} ${n}`).join(' · ')}</span></h2>
-    <div class="tw"><table><thead><tr><th class="n no">번호</th><th>이름</th><th>성별</th><th>생년월일</th><th>처리일</th><th>구분</th><th>사유</th><th>마지막 출석</th><th>연락처</th>${edit ? '<th></th>' : ''}</tr></thead><tbody>
-    ${left.map((s, i) => `<tr><td class="n no">${i + 1}</td><td><button class="chip" data-student="${s.id}">${esc(s.name)}</button></td><td>${esc(s.sex || '')}</td><td>${esc(s.birth || '')}</td><td>${esc(s.leftDate || '')}</td><td>${s.leftKind ? `<span class="pill mute">${esc(s.leftKind)}</span>` : ''}</td><td class="wrap note">${esc(s.leftReason || s.note || '')}</td><td>${lastAttended(dd, s) || ''}</td><td>${esc(phoneLabel(s))}</td>${edit ? `<td><button class="btn s" data-restore="${s.id}">복적</button></td>` : ''}</tr>`).join('') || `<tr><td colspan="9" class="note">제적한 학생이 없습니다.</td></tr>`}
+    ${edit && left.length ? `<div class="row" style="margin-bottom:8px;gap:8px"><button class="btn p" id="rs-batch" disabled>선택한 학생 복적</button><span class="note" id="rs-count">복적할 학생을 체크하세요</span></div>` : ''}
+    <div class="tw"><table><thead><tr>${edit ? '<th style="width:34px"><input type="checkbox" id="rs-all" title="모두 선택"></th>' : ''}<th class="n no">번호</th><th>이름</th><th>성별</th><th>생년월일</th><th>처리일</th><th>구분</th><th>사유</th><th>마지막 출석</th><th>연락처</th>${edit ? '<th></th>' : ''}</tr></thead><tbody>
+    ${left.map((s, i) => `<tr>${edit ? `<td><input type="checkbox" data-rs="${esc(s.id)}" aria-label="${esc(s.name)} 선택"></td>` : ''}<td class="n no">${i + 1}</td><td><button class="chip" data-student="${s.id}">${esc(s.name)}</button></td><td>${esc(s.sex || '')}</td><td>${esc(s.birth || '')}</td><td>${esc(s.leftDate || '')}</td><td>${s.leftKind ? `<span class="pill mute">${esc(s.leftKind)}</span>` : ''}</td><td class="wrap note">${esc(s.leftReason || s.note || '')}</td><td>${lastAttended(dd, s) || ''}</td><td>${esc(phoneLabel(s))}</td>${edit ? `<td><button class="btn s" data-restore="${s.id}">복적</button></td>` : ''}</tr>`).join('') || `<tr><td colspan="11" class="note">제적한 학생이 없습니다.</td></tr>`}
     </tbody></table></div>${canEdit() ? '<div class="row" style="margin-top:10px"><button class="btn" id="lf-print">제적 명단 출력</button></div>' : ''}</div>`;
 }
 const s_excused = s => /유학|군복무|군 복무|입대|병가|온라인/.test((s.note || '') + (s.leftReason || ''));
@@ -489,7 +492,7 @@ function leftPaper(dd) {
 }
 function studentRow(dd, s, edit, no) {
   const c = classOf(dd, s);
-  return `<tr class="click" data-student="${s.id}">${no ? `<td class="n no">${no}</td>` : ''}<td>${esc(s.name)}${s.flags && s.flags.length ? ' <span class="tag flag" title="${esc(s.flags.join(' / '))}">!</span>' : ''}</td><td>${esc(c ? c.name : s.classId)}</td><td>${esc(s.sex)}</td><td>${s.birth || ''}</td><td title="${esc(faithLabel(s))}">${s.faith ? esc(s.faith) : '<span class="note">모름</span>'}</td><td>${esc(phoneLabel(s))}</td><td class="wrap note">${esc(s.school || '')}</td><td class="wrap note">${esc(s.note || '')}</td><td>${statusPill(s)}</td></tr>`;
+  return `<tr class="click" data-student="${s.id}">${no ? `<td class="n no">${no}</td>` : ''}<td>${esc(s.name)}${s.flags && s.flags.length ? ` <span class="tag flag" title="${esc(s.flags.join(' / '))}">!</span>` : ''}</td><td>${esc(c ? c.name : s.classId)}</td><td>${esc(s.sex)}</td><td>${s.birth || ''}</td><td title="${esc(faithLabel(s))}">${s.faith ? esc(s.faith) : '<span class="note">모름</span>'}</td><td>${esc(phoneLabel(s))}</td><td class="wrap note">${esc(s.school || '')}</td><td class="wrap note">${esc(s.note || '')}</td><td>${statusPill(s)}</td></tr>`;
 }
 VIEWS.roster = async () => {
   let dd; if (isCommittee()) { const d = S.sub.dept || 'kinder'; dd = await loadDept(d); } else dd = D();
@@ -504,16 +507,16 @@ VIEWS.roster = async () => {
   const young = dd.id === 'young'; const grp = young ? (S.sub.group || '청년') : ''; const yr = S.sub.year || YEAR;
   const inGroup = s => !young ? true : grp === '라피끄' ? s.group === '라피끄' : s.group !== '라피끄';
   const years = [...new Set([...dd.students.flatMap(s => (s.history || []).map(h => +h.year)), ...Object.keys(dd.reports).map(d => +d.slice(0, 4)), YEAR])].filter(y => y >= 2015).sort((a, b) => b - a);
-  const yearBar = young || years.length > 1 ? `<div class="row" style="margin-bottom:10px;flex-wrap:wrap"><span class="note">연도</span>${years.map(y => `<button class="btn s ${yr === y ? 'p' : ''}" data-year="${y}">${y}</button>`).join('')}${young ? `<span class="note" style="margin-left:10px">구분</span>${[['청년', '청년'], ['라피끄', '라피끄']].map(([k, l]) => `<button class="btn s ${grp === k ? 'p' : ''}" data-group="${k}">${l}</button>`).join('')}` : ''}${young && canEdit() && !isCommittee() ? `<button class="btn s" id="ya-import" style="margin-left:auto">과거 출석부 가져오기</button>` : ''}</div>` : '';
+  const yearBar = young || years.length > 1 ? `<div class="row" style="margin-bottom:10px;flex-wrap:wrap"><span class="note">연도</span>${years.map(y => `<button class="btn s ${yr === y ? 'p' : ''}" data-year="${y}">${y}</button>`).join('')}${young ? `<span class="note" style="margin-left:10px">구분</span>${[['청년', '청년'], ['라피끄', '라피끄']].map(([k, l]) => `<button class="btn s ${grp === k && show !== 'away' ? 'p' : ''}" data-group="${k}">${l}</button>`).join('')}<button class="btn s ${show === 'away' ? 'p' : ''}" data-show="away" title="장기결석·군입대·학업·사업·직접 입력">장기결석 <span class="note">${dd.students.filter(x => AWAY.includes(x.status)).length}</span></button>` : ''}${young && canEdit() && !isCommittee() ? `<button class="btn s" id="ya-import" style="margin-left:auto">과거 출석부 가져오기</button>` : ''}</div>` : '';
   if (yr !== YEAR) return yearRoster(dd, yr, grp, yearBar);
-  const list = dd.students.filter(s => inGroup(s) && (show === 'all' ? true : show === 'active' ? inRoll(s) : s.status === show));
+  const list = dd.students.filter(s => show === 'away' ? AWAY.includes(s.status) : inGroup(s) && (show === 'all' ? true : show === 'active' ? inRoll(s) : s.status === show));
   const sort = S.sub.sort || 'name';
   const corder = s => { const i = dd.doc.classes.findIndex(c => c.id === s.classId); return i < 0 ? 999 : i; };
   const byName = (a, b) => a.name.localeCompare(b.name, 'ko');
   const sorted = list.slice().sort(sort === 'name' ? byName : sort === 'gradeDesc' ? ((a, b) => { const sa = /새친구|장기/.test(a.classId || '') ? 1 : 0, sb = /새친구|장기/.test(b.classId || '') ? 1 : 0; return sa - sb || corder(b) - corder(a) || byName(a, b); }) : ((a, b) => corder(a) - corder(b) || byName(a, b)));
   const deptPick = isCommittee() ? `<div class="row" style="margin-bottom:10px">${Object.entries(DEPTS).map(([k,v]) => `<button class="btn ${dd.id === k ? 'p' : ''}" data-dept="${k}">${v}</button>`).join('')}</div>` : '';
   return `<div class="topbar"><div><h1>${show === 'left' ? '제적 관리' : grp === '라피끄' ? '라피끄' : '출석부'} — ${esc(dd.doc.name)}</h1><div class="sub">${grp === '라피끄' ? `라피끄 ${dd.students.filter(s => s.group === '라피끄' && inRoll(s)).length}명 · 청년부 회원과 따로 관리 (총회 결의권·후보 판정에서 제외)` : `재적 ${activeStudents(dd).filter(inGroup).length}명 · 교사·임원 ${visibleStaff(dd).length}명`} · 이름을 누르면 학생 카드가 열립니다</div></div>
-    <div class="row">${['active','newcomer','left','all'].map(k => `<button class="btn s ${show === k ? 'p' : ''}" data-show="${k}">${{ active: '재적', newcomer: '새친구', left: '제적', all: '전체' }[k]}</button>`).join('')}${canEdit() ? `<button class="btn s" id="pp-open">진급자 명단 출력</button>` : ''}</div></div>
+    <div class="row">${['active', 'newcomer', ...(young ? [] : ['away']), 'left', 'all'].map(k => `<button class="btn s ${show === k ? 'p' : ''}" data-show="${k}">${{ active: '재적', newcomer: '새친구', away: '장기결석', left: '제적', all: '전체' }[k]}</button>`).join('')}${canEdit() ? `<button class="btn s" id="pp-open">진급자 명단 출력</button>` : ''}</div></div>
   ${deptPick}${yearBar}
   <div class="stack">
     ${incoming.length || plan.out.length ? `<div class="card"><h2>${nextYear}년 진급 예정 <span class="r">생년월일·학년으로 자동 계산 · 연초에 "출석부에 받기"를 누르면 재적으로 들어옵니다</span></h2>
@@ -659,14 +662,26 @@ BIND.roster = () => {
   document.querySelectorAll('[data-dept]').forEach(b => b.onclick = () => { S.sub.dept = b.dataset.dept; render(); });
   document.querySelectorAll('[data-show]').forEach(b => b.onclick = () => { S.sub.show = b.dataset.show; S.view = S.sub.show === 'left' ? 'dropouts' : 'roster'; render(); });
   document.querySelectorAll('[data-year]').forEach(b => b.onclick = () => { S.sub.year = +b.dataset.year; render(); });
-  document.querySelectorAll('[data-group]').forEach(b => b.onclick = () => { S.sub.group = b.dataset.group; render(); });
+  document.querySelectorAll('[data-group]').forEach(b => b.onclick = () => { S.sub.group = b.dataset.group; if (S.sub.show === 'away') S.sub.show = 'active'; render(); });
   const ya = $('#ya-import'); if (ya) ya.onclick = () => importYoungAttendance(dd);
   const lp = $('#lf-print'); if (lp) lp.onclick = () => { S.sub.leftPrint = true; render(); };
   const lb = $('#lf-back'); if (lb) { lb.onclick = () => { delete S.sub.leftPrint; render(); }; $('#lf-pr').onclick = () => window.print(); return; }
-  document.querySelectorAll('[data-restore]').forEach(b => b.onclick = async e => { e.stopPropagation(); const s = dd.students.find(x => x.id === b.dataset.restore); (s.statusLog = s.statusLog || []).push({ date: today(), from: 'left', to: 'active', reason: '복적' }); Object.assign(s, { status: 'active', leftDate: '', leftKind: '', leftReason: '' }); await backend.set(`depts/${dd.id}/students/${s.id}`, s); render(); toast(s.name + ' 복적 — 재적 명단으로 돌아갔습니다'); });
+  { const boxes = [...document.querySelectorAll('[data-rs]')]; const bt = $('#rs-batch'), cnt = $('#rs-count');
+    const upd = () => { const n = boxes.filter(x => x.checked).length; if (bt) bt.disabled = !n; if (cnt) cnt.textContent = n ? `${n}명 선택됨` : '복적할 학생을 체크하세요'; boxes.forEach(x => x.closest('tr').classList.toggle('sel', x.checked)); };
+    boxes.forEach(x => { x.onclick = e => e.stopPropagation(); x.onchange = upd; });
+    const all = $('#rs-all'); if (all) all.onchange = () => { boxes.forEach(x => { x.checked = all.checked; }); upd(); };
+    if (bt) bt.onclick = () => { const ids = boxes.filter(x => x.checked).map(x => x.dataset.rs); const ppl = ids.map(id => dd.students.find(x => x.id === id)).filter(Boolean); if (!ppl.length) return;
+      openModal(`<h2>${ppl.length}명 복적<button class="btn s" id="modal-close">닫기</button></h2><p>아래 학생을 재적으로 되돌릴까요?</p><div class="row" style="gap:4px;flex-wrap:wrap;margin:6px 0 12px">${ppl.map(x => `<span class="chip">${esc(x.name)}</span>`).join('')}</div><div class="row"><button class="btn p" id="rb-yes">${ppl.length}명 복적</button><button class="btn" id="rb-no">취소</button></div>`);
+      $('#rb-no').onclick = closeModal; $('#rb-yes').onclick = async () => { $('#rb-yes').disabled = true; $('#rb-yes').textContent = '처리 중…';
+        await Promise.all(ppl.map(st => { (st.statusLog = st.statusLog || []).push({ date: today(), from: 'left', to: 'active', reason: '복적' }); Object.assign(st, { status: 'active', leftDate: '', leftKind: '', leftReason: '' }); return backend.set(`depts/${dd.id}/students/${st.id}`, st); }));
+        closeModal(); renderHere(); toast(`${ppl.length}명 복적 — 재적 명단으로 돌아갔습니다`); }; }; }
+  document.querySelectorAll('[data-restore]').forEach(b => b.onclick = e => { e.stopPropagation(); const s = dd.students.find(x => x.id === b.dataset.restore); if (!s) return;
+    openModal(`<h2>복적 확인<button class="btn s" id="modal-close">닫기</button></h2><p><b>${esc(s.name)}</b>${s.birth ? ` (${esc(s.birth)})` : ''}을(를) 재적으로 되돌릴까요?</p><div class="row" style="margin-top:10px"><button class="btn p" id="rs-yes">복적</button><button class="btn" id="rs-no">취소</button></div>`);
+    $('#rs-no').onclick = closeModal; $('#rs-yes').onclick = async () => { $('#rs-yes').disabled = true; closeModal(); (s.statusLog = s.statusLog || []).push({ date: today(), from: 'left', to: 'active', reason: '복적' }); Object.assign(s, { status: 'active', leftDate: '', leftKind: '', leftReason: '' }); await backend.set(`depts/${dd.id}/students/${s.id}`, s); renderHere(); toast(s.name + ' 복적 — 재적 명단으로 돌아갔습니다');  };
+  });
   const lg = $('#lc-go'); if (lg) lg.onclick = () => { const ids = [...document.querySelectorAll('[data-lc]:checked')].map(x => x.dataset.lc); if (!ids.length) { toast('제적할 학생을 고르세요'); return; }
     openModal(`<h2>${ids.length}명 제적 처리<button class="btn s" id="modal-close">닫기</button></h2><p>${ids.map(id => esc(sName(dd, id))).join(', ')}</p><div class="fields"><label class="f"><span>처리일</span><input type="date" id="lm-date" value="${today()}"></label><label class="f"><span>구분</span><select id="lm-kind">${LEFT_KINDS.map(k => `<option>${k}</option>`).join('')}</select></label><label class="f" style="grid-column:span 2"><span>사유</span><input type="text" id="lm-reason" value="${esc(leftRule(dd).label.replace(/ \(.*\)/, ''))}"></label></div><div class="row" style="margin-top:10px"><button class="btn p" id="lm-yes">제적 처리</button><button class="btn" id="lm-no">취소</button></div>`);
-    $('#lm-no').onclick = closeModal; $('#lm-yes').onclick = async () => { for (const id of ids) { const s = dd.students.find(x => x.id === id); setLeft(s, $('#lm-date').value || today(), $('#lm-kind').value, $('#lm-reason').value.trim()); await backend.set(`depts/${dd.id}/students/${s.id}`, s); } closeModal(); render(); toast(ids.length + '명 제적 처리'); }; };
+    $('#lm-no').onclick = closeModal; $('#lm-yes').onclick = async () => { for (const id of ids) { const s = dd.students.find(x => x.id === id); setLeft(s, $('#lm-date').value || today(), $('#lm-kind').value, $('#lm-reason').value.trim()); await backend.set(`depts/${dd.id}/students/${s.id}`, s); } closeModal(); renderHere(); toast(ids.length + '명 제적 처리'); }; };
   document.querySelectorAll('[data-sort]').forEach(b => b.onclick = () => { S.sub.sort = b.dataset.sort; render(); });
   if (S.sub.open) { const id = S.sub.open; delete S.sub.open; setTimeout(() => { const tr = document.querySelector(`[data-student="${CSS.escape(id)}"]`); if (tr) tr.click(); }, 0); }
   document.querySelectorAll('[data-student]').forEach(tr => tr.onclick = () => {
@@ -680,7 +695,7 @@ BIND.roster = () => {
       else if (ns === 'left') Object.assign(s, { leftDate: ld, leftKind: lk, leftReason: lr });
       if ($('#sc-group')) s.group = $('#sc-group').value;
       Object.assign(s, { name: $('#sc-name').value.trim(), classId: $('#sc-class').value, sex: $('#sc-sex').value, status: ns, birth: $('#sc-birth').value, faith: $('#sc-faith').value, faithYear: +$('#sc-fyear').value || '', faithHalf: $('#sc-fhalf').value, school: $('#sc-school').value, phone: $('#sc-phone').value, guardianPhone: $('#sc-gphone').value, guardianRel: $('#sc-grel').value, father: $('#sc-father').value, mother: $('#sc-mother').value, address: $('#sc-address').value, note: $('#sc-note').value, statusText: ns === 'custom' ? ($('#sc-stext').value.trim() || '기타') : '' });
-      await backend.set(`depts/${dd.id}/students/${s.id}`, s); closeModal(); render(); toast('저장했습니다'); };
+      await backend.set(`depts/${dd.id}/students/${s.id}`, s); closeModal(); renderHere(); toast('저장했습니다'); };
     const cf = $('#sc-clear-flags'); if (cf) cf.onclick = async () => { s.flags = []; await backend.set(`depts/${dd.id}/students/${s.id}`, s); closeModal(); render(); };
     const dl = $('#sc-del'); if (dl) dl.onclick = () => { openModal(`<h2>삭제 확인<button class="btn s" id="modal-close">닫기</button></h2><p>${esc(s.name)} 학생을 출석부에서 완전히 삭제할까요? 출석 기록이 남아 있으면 "제적" 상태로 바꾸는 쪽을 권합니다.</p><div class="row"><button class="btn d" id="sc-del-yes">삭제</button><button class="btn" id="sc-del-no">취소</button></div>`); $('#sc-del-no').onclick = closeModal; $('#sc-del-yes').onclick = async () => { await backend.del(`depts/${dd.id}/students/${s.id}`); dd.students = dd.students.filter(x => x.id !== s.id); closeModal(); render(); }; };
   });
