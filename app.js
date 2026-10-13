@@ -156,8 +156,8 @@ function ledgerSummary(dd, ledgerId, m) {
 const STATUS_OPTS = [['active', '재적'], ['newcomer', '새친구'], ['longabsent', '장기결석'], ['military', '군입대'], ['study', '학업'], ['business', '사업'], ['custom', '직접 입력'], ['left', '제적']];
 const AWAY = ['longabsent', 'military', 'study', 'business', 'custom'];
 const inRoll = s => (s.status === 'active' || AWAY.includes(s.status)) && !isGrad(s) && !(isYoungStu(s) && s.group === '팸장');
-const statusName = s => isGrad(s) ? `자격 종료(${s.married ? '결혼' : s.churchRole ? '직분' : s.leftKind || '졸업'})` : isYoungStu(s) && s.group === '팸장' && s.status !== 'left' ? '팸장' : s.status === 'custom' ? (s.statusText || '기타') : (Object.fromEntries(STATUS_OPTS)[s.status] || s.status || '');
-const statusPill = s => `<span class="pill ${isGrad(s) || (isYoungStu(s) && s.group === '팸장') ? 'info' : s.status === 'active' ? 'ok' : s.status === 'newcomer' ? 'info' : AWAY.includes(s.status) ? 'warn' : 'mute'}">${esc(statusName(s))}</span>`;
+const statusName = s => (S.data && S.data.young && isYoungStu(s) && isFamStaff(S.data.young, s) && (isGrad(s) || s.status === 'left' || s.group === '팸장')) ? '팸장' : isGrad(s) ? `자격 종료(${s.married ? '결혼' : s.churchRole ? '직분' : s.leftKind || '졸업'})` : isYoungStu(s) && s.group === '팸장' && s.status !== 'left' ? '팸장' : s.status === 'custom' ? (s.statusText || '기타') : (Object.fromEntries(STATUS_OPTS)[s.status] || s.status || '');
+const statusPill = s => `<span class="pill ${isGrad(s) || (isYoungStu(s) && (s.group === '팸장' || statusName(s) === '팸장')) ? 'info' : s.status === 'active' ? 'ok' : s.status === 'newcomer' ? 'info' : AWAY.includes(s.status) ? 'warn' : 'mute'}">${esc(statusName(s))}</span>`;
 const activeStudents = dd => dd.students.filter(inRoll);
 // 교사·임원 표시 순서: 교역자 → 부장 → 부감 → 회장 → 부회장 → 총무 → 서기 → 회계 → 부총무 등 → 팀장 → 팸장 → 담임·보조 → 나머지 (같은 순위면 등록 순서)
 // 교사·임원 표시 순서(모든 화면, 표기상 순서일 뿐 — 교역자와 부장·부감은 협력 관계): 교역자 → 부장 → 부감 → 교사(팸장·담임·보조 등) → 임원(회장·부회장·총무·서기·회계, 부임원) → 팀장(사역팀) · 같은 자리면 등록 순서
@@ -645,8 +645,8 @@ BIND.attlog = () => {
   document.querySelectorAll('[data-alwho]').forEach(b => b.onclick = () => { const s = dd.students.find(x => x.id === b.dataset.alwho); if (!s) return; const yr = +($('#al-year') || {}).value || YEAR; openModal(attPersonModal(dd, s, yr)); const ac = $('#ap-card'); if (ac) ac.onclick = () => { closeModal(); S.view = 'roster'; S.sub = { ...(isCommittee() ? { dept: dd.id } : {}), show: s.status === 'left' ? 'all' : (s.status === 'newcomer' ? 'newcomer' : 'active'), open: s.id }; render(); }; });
   document.querySelectorAll('[data-dept]').forEach(b => b.onclick = () => { S.sub = { dept: b.dataset.dept }; render(); });
   $('#al-year').onchange = e => { S.sub.year = +e.target.value; S.sub.mon = 0; render(); };
-  document.querySelectorAll('[data-mon]').forEach(b => b.onclick = () => { S.sub.mon = +b.dataset.mon; render(); });
-  document.querySelectorAll('[data-alsort]').forEach(b => b.onclick = () => { S.sub.sort = b.dataset.alsort; render(); });
+  document.querySelectorAll('[data-mon]').forEach(b => b.onclick = () => { S.sub.mon = +b.dataset.mon; renderHere(); });
+  document.querySelectorAll('[data-alsort]').forEach(b => b.onclick = () => { S.sub.sort = b.dataset.alsort; renderHere(); });
   const pr = $('#al-print'); if (pr) pr.onclick = () => window.print();
 };
 VIEWS.dropouts = async () => { S.view = 'roster'; S.sub.show = 'left'; return VIEWS.roster(); };
@@ -732,7 +732,7 @@ BIND.roster = () => {
   const lg = $('#lc-go'); if (lg) lg.onclick = () => { const ids = [...document.querySelectorAll('[data-lc]:checked')].map(x => x.dataset.lc); if (!ids.length) { toast('제적할 학생을 고르세요'); return; }
     openModal(`<h2>${ids.length}명 제적 처리<button class="btn s" id="modal-close">닫기</button></h2><p>${ids.map(id => esc(sName(dd, id))).join(', ')}</p><div class="fields"><label class="f"><span>처리일</span><input type="date" id="lm-date" value="${today()}"></label><label class="f"><span>구분</span><select id="lm-kind">${LEFT_KINDS.map(k => `<option>${k}</option>`).join('')}</select></label><label class="f" style="grid-column:span 2"><span>사유</span><input type="text" id="lm-reason" value="${esc(leftRule(dd).label.replace(/ \(.*\)/, ''))}"></label></div><div class="row" style="margin-top:10px"><button class="btn p" id="lm-yes">제적 처리</button><button class="btn" id="lm-no">취소</button></div>`);
     $('#lm-no').onclick = closeModal; $('#lm-yes').onclick = async () => { for (const id of ids) { const s = dd.students.find(x => x.id === id); setLeft(s, $('#lm-date').value || today(), $('#lm-kind').value, $('#lm-reason').value.trim()); await backend.set(`depts/${dd.id}/students/${s.id}`, s); } closeModal(); renderHere(); toast(ids.length + '명 제적 처리'); }; };
-  document.querySelectorAll('[data-sort]').forEach(b => b.onclick = () => { S.sub.sort = b.dataset.sort; render(); });
+  document.querySelectorAll('[data-sort]').forEach(b => b.onclick = () => { S.sub.sort = b.dataset.sort; renderHere(); });
   if (S.sub.open) { const id = S.sub.open; delete S.sub.open; setTimeout(() => { const tr = document.querySelector(`[data-student="${CSS.escape(id)}"]`); if (tr) tr.click(); }, 0); }
   if (canEdit() && !isCommittee() && !isMobile()) document.querySelectorAll('table.roster td[data-ie]').forEach(td => { td.classList.add('ie-on'); td.title = (td.title ? td.title + ' · ' : '') + '눌러서 바로 고치기'; td.onclick = e => { e.stopPropagation(); const s = dd.students.find(x => x.id === td.closest('tr').dataset.student); if (s) inlineEditor(dd, s, td, td.dataset.ie, () => renderHere()); }; });
   document.querySelectorAll('[data-student]').forEach(tr => tr.onclick = () => {
@@ -1418,7 +1418,7 @@ function judge(dd, s, base, R) {
   if (s.group === '라피끄') { member = 'no'; why.push('라피끄 소속'); }
   if (age === null) { if (member === 'ok') member = 'check'; why.push('생년월일 없음'); }
   else if (age < R.ageMin || age > R.ageMax) { member = 'no'; why.push(`만 ${age}세`); }
-  if (s.married) { member = 'no'; why.push('기혼'); }
+  if (s.married) { const my = marriedYear(s), by = +String(base).slice(0, 4); if (my && my >= by) why.push(`${my}년 결혼 — 결혼한 해까지는 회원(관례)`); else { member = 'no'; why.push(my ? `${my}년 결혼(기혼)` : '기혼'); } }
   if (s.churchRole) { member = 'no'; why.push(`직분자(${s.churchRole})`); }
   if (s.otherCell) { member = 'no'; why.push('타 목장 소속'); }
   const memberWhy = why.slice();
@@ -1788,7 +1788,7 @@ BIND.assembly = () => {
   const dd = S.data.young; const { a } = pickAssembly(dd); bindAsmPicker(dd); bindAssemblyExport(dd, a);
   const pr = $('#as-print'); if (pr) pr.onclick = () => { S.sub = { ...S.sub, print: true }; render(); };
   const bk = $('#as-back'); if (bk) { bk.onclick = () => { delete S.sub.print; render(); }; $('#as-pr').onclick = () => window.print(); return; }
-  document.querySelectorAll('[data-vf]').forEach(b => b.onclick = () => { S.sub.vf = b.dataset.vf; render(); });
+  document.querySelectorAll('[data-vf]').forEach(b => b.onclick = () => { S.sub.vf = b.dataset.vf; renderHere(); });
   document.querySelectorAll('[data-attd]').forEach(b => b.onclick = e => { e.stopPropagation(); const s = dd.students.find(x => x.id === b.dataset.attd); openModal(attEvidencePaper(dd, s, a.date)); });
   const ba = $('#as-bapt-all'); if (ba) ba.onclick = async () => { const list = dd.students.filter(s => s.status !== 'left' && !isBaptized(s)); if (!list.length) return; ba.disabled = true; ba.textContent = '표기 중…'; for (const s of list) { s.faithPrev = s.faith || ''; s.faith = '세례'; s.flags = [...(s.flags || []).filter(f => !/신급 임시/.test(f)), `신급 임시 표기(세례) ${today()} — 신급 자료로 확인 필요${s.faithPrev ? ' (원래: ' + s.faithPrev + ')' : ''}`]; await backend.set(`depts/${dd.id}/students/${s.id}`, s); } render(); toast(`${list.length}명을 세례로 임시 표기했습니다`); };
   const read = () => { const d = $('#as-date'); if (!d) return; const nd = d.value || a.date; Object.assign(a, { kind: $('#as-kind').value, title: $('#as-title').value.trim(), place: $('#as-place').value.trim() }); if (nd !== a.date) { a.date = nd; if (a.unsaved) { a.id = nd; S.sub.newDate = nd; } } };
@@ -1889,7 +1889,7 @@ VIEWS.stats = async () => {
     </div>
   </div>`;
 };
-BIND.stats = () => { document.querySelectorAll('[data-range]').forEach(b => b.onclick = () => { S.sub.range = b.dataset.range; render(); });
+BIND.stats = () => { document.querySelectorAll('[data-range]').forEach(b => b.onclick = () => { S.sub.range = b.dataset.range; renderHere(); });
   const ap = $('#st-apply'); if (ap) ap.onclick = () => { let f = $('#st-from').value, t = $('#st-to').value; if (!f || !t) { toast('시작일과 끝날을 고르세요'); return; } if (f > t) [f, t] = [t, f]; S.sub.from = f; S.sub.to = t; render(); }; };
 function svgTrend(t) {
   const W = 640, H = 170, pl = 36, pr = 22, pt = 16, pb = 30; const max = Math.max(...t.map(x => x.s.total), 1);
@@ -2683,10 +2683,16 @@ function youngDiv(s, yr) { const h = (s.history || []).find(x => +x.year === +yr
 const YOUNG_GRAD_KINDS = ['결혼', '직분', '졸업', '상급 부서 진급'];
 const isYoungStu = s => s.dept === 'young' || String(s.id || '').startsWith('young_');
 // 청년부 졸업·자격 종료: 결혼·직분(회칙 4조) 또는 졸업 처리 — 출석부·출석 체크·통계에서 뺀다
-const isGrad = s => isYoungStu(s) && (!!s.married || !!s.churchRole || (s.status === 'left' && YOUNG_GRAD_KINDS.includes(s.leftKind)));
+const marriedYear = s => +String(s.marriedDate || '').slice(0, 4) || 0;
+// 결혼한 해까지는 청년부에 소속(관례): 결혼한 다음 해부터 자격 종료. 결혼 연도를 모르면 바로 종료
+const marriedOut = s => !!s.married && (!marriedYear(s) || marriedYear(s) < YEAR);
+const isGrad = s => isYoungStu(s) && (marriedOut(s) || !!s.churchRole || (s.status === 'left' && YOUNG_GRAD_KINDS.includes(s.leftKind) && !(s.leftKind === '결혼' && s.married && !marriedOut(s))));
+// 지금 교사·임원 명단에서 팸장·부팸장으로 임명된 사람 (결혼·직분으로 회원이 아니어도 팸장 탭에 둔다)
+const isFamStaff = (dd, s) => !!dd && dd.doc.staff.some(t => t.status !== 'left' && /팸장/.test(t.role || '') && normName(t.name) === normName(s.name));
 function rosterCats(dd) {
   const young = dd.id === 'young'; const c = { active: [], newcomer: [], away: [], left: [], grad: [] };
   for (const s of dd.students) {
+    if (young && isFamStaff(dd, s) && (isGrad(s) || s.status === 'left' || s.group === '팸장')) continue; // 팸장 탭에서 본다
     if (young && isGrad(s)) { c.grad.push(s); continue; }
     if (young && s.group === '팸장') continue; // 팸장 탭에서 본다
     if (s.status === 'left') { if (!(young && isStaffName(dd, s))) c.left.push(s); continue; }
@@ -2717,7 +2723,7 @@ function famLeaders(dd, yr) {
 function famLeaderBody(dd, yr) {
   const list = famLeaders(dd, yr);
   const reps = Object.values(dd.reports).filter(r => r.date.startsWith(String(yr)) && (Object.keys(r.att || {}).length || (r.teachersPresent || []).length)).sort((a, b) => a.date < b.date ? -1 : 1);
-  const yearsOf = n => [...new Set((dd.officers || []).filter(o => normName(o.name) === normName(n) && /팸장/.test(o.role || '')).map(o => +o.year))].sort();
+  const yearsOf = n => [...new Set([...(dd.officers || []).filter(o => normName(o.name) === normName(n) && /팸장/.test(o.role || '')).map(o => +o.year), ...(dd.doc.staff.some(t => t.status !== 'left' && /팸장/.test(t.role || '') && normName(t.name) === normName(n)) ? [YEAR] : [])])].sort();
   return `  <div class="card"><div class="tw"><table class="roster"><thead><tr><th class="n no">번호</th><th>이름</th><th>직책</th><th>맡은 팸</th><th>다른 직책</th><th>연락처</th><th class="n">${yr} 예배 참석</th><th>참석 띠</th><th>팸장 맡은 해</th></tr></thead><tbody>
   ${list.map((x, i) => { const who = x.stu || { id: '', name: x.name }; const ev = reps.map(r => attEvidence(r, who).v); const n = ev.filter(Boolean).length;
     return `<tr${x.stu ? ` class="click" data-student="${x.stu.id}"` : ''}><td class="n no">${i + 1}</td><td>${esc(x.name)}</td><td><span class="pill info">${esc(x.role)}</span></td><td>${esc(x.fam)}</td><td class="note">${esc(x.other)}</td><td>${esc(x.phone || (x.stu ? phoneLabel(x.stu) : ''))}</td><td class="n">${reps.length ? `${n}/${reps.length}` : '—'}</td><td><div class="ystrip">${ev.map((v, k) => `<span class="yw ${v === 'P' || v === 'T' || v === 'U' ? 'p' : v === 'O' ? 'o' : 'x'}" title="${reps[k].date}"></span>`).join('')}</div></td><td class="note">${yearsOf(x.name).join(', ')}</td></tr>`; }).join('') || `<tr><td colspan="9" class="note">${yr}년 팸장 기록이 없습니다.</td></tr>`}
