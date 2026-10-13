@@ -1554,7 +1554,10 @@ function bylawHTML(t, opt = {}) {
   const L = t.split('\n');
   for (let li = 0; li < L.length; li++) { const raw = L[li];
     const x = raw.trim(); if (!x) { flush(); continue; }
+    if (/^={3,}/.test(x)) continue; // 예전에 여러 파일을 합칠 때 넣은 "===== 파일이름" 구분 줄
     const indented = /^\s{2,}/.test(raw);
+    // 조문 바로 뒤 괄호 한 줄 "(…)"은 앞 문장에 딸린 덧붙임 — 판마다 줄을 바꿨다 붙였다 해서 비교가 어긋나므로 한 문단으로 잇는다
+    if (para && /^[(（][^()（）]*[)）]\.?$/.test(x)) { para.txt += ' ' + x; continue; }
     // 한글에서 Enter+스페이스로 줄을 맞춘 흔적: 끝나지 않은 문장 뒤의 "다." 같은 조각이나 "제 4장 14조에 의하여…"는 앞 문장에 잇는다
     if (para && !ends(para.txt) && (/^[가-힣]{1,2}[.)]?$/.test(x) || /^제\s*\d+\s*(장|조)\s*\d*\s*(조|항)?\s*(에|의|를|을|및|과|와)/.test(x))) { para.txt += blGlue(para.txt, x) + x; continue; }
     if (/^제\s*\d+\s*편/.test(x)) { pre = false; head(2, 'bl-part', x.replace(/\s{2,}/g, ' ')); continue; }
