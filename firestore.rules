@@ -3,7 +3,9 @@ service cloud.firestore {
   match /databases/{database}/documents {
     // 계정 이메일 ↔ 부서 (Authentication 사용자와 config.js의 CBCS_ACCOUNTS와 같아야 함)
     function email() { return request.auth != null ? request.auth.token.email : ''; }
-    function signedIn() { return request.auth != null && email() != ''; }
+    // 교육부 계정 5개(영유치·초등·중고등·청년·교육위원회)만 "로그인한 사람"으로 본다.
+    // 다른 계정이 어떻게든 만들어져 로그인해도 아무것도 읽지 못한다(새 가입 차단과 이중 잠금).
+    function signedIn() { return request.auth != null && email() in ['kid@cbcs.app', 'youth@cbcs.app', 'teen@cbcs.app', 'flame@cbcs.app', 'minist@cbcs.app']; }
     function isCommittee() { return email() == 'minist@cbcs.app'; }
     function deptEmail(d) {
       return d == 'kinder' ? 'kid@cbcs.app'

@@ -561,3 +561,12 @@ details.card.principle>summary:hover .pr-tg{border-color:var(--accent);color:var
 .sc-ov tbody tr:hover td,.sc-ov tbody tr:hover th{background:var(--line-soft)}
 .sc-ov .sc-g{font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:0 4px}
 .sc-ov .sc-rep{text-decoration:underline;text-decoration-color:var(--accent);text-underline-offset:3px}
+/* 메인 "오늘 할 일" */
+.todo-list{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.todo{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;border-left:4px solid var(--line)}
+.todo.warn{border-left-color:var(--warn,#c48a1a)}
+.todo.ok{border-left-color:var(--ok,#2e9d5b)}
+.todo .t{font-weight:700;font-size:14px}
+.todo .d{font-size:12px;color:var(--muted);margin-top:2px}
+.todo .btn{flex-shrink:0}
+@media(max-width:900px){.todo-list{grid-template-columns:1fr}}

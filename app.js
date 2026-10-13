@@ -358,6 +358,20 @@ function bindBoard() {
 }
 
 /* ───────────── 메인 ───────────── */
+/* 메인 맨 위 "오늘 할 일": 출석 체크 · 아직 끝내지 않은 주일 보고서 · 회계에 안 붙인 영수증 */
+async function todoCard(dd) {
+  const ls = lastSunday(); const isSun = new Date().getDay() === 0 && !DEMO;
+  const r = dd.reports[ls]; const att = r && r.att ? Object.values(r.att).filter(v => v === 'P' || v === 'O').length : 0; const reg = activeStudents(dd).length;
+  const suns = sundaysOfYear(+ls.slice(0, 4)).filter(d => d <= ls).slice(-8);
+  const todo = suns.filter(d => !(dd.reports[d] && dd.reports[d].status === 'done'));
+  try { await loadReceipts(dd); } catch (e) {} const pend = pendingReceipts(dd);
+  const item = (cls, title, desc, btn) => `<div class="todo ${cls}"><div><div class="t">${title}</div><div class="d">${desc}</div></div>${btn || ''}</div>`;
+  return `<div class="card todo-card"><h2>오늘 할 일 <span class="r">${fmtK(today())}</span></h2><div class="todo-list">
+    ${item(r ? 'ok' : 'warn', `${isSun ? '오늘' : '지난'} 주일 출석 ${r ? `${att}명 체크` : '아직 없음'}`, `${fmtK(ls)} · 재적 ${reg}명`, `<button class="btn s" data-goto="${isMobile() ? 'attend' : 'roster'}">출석 체크 ›</button>`)}
+    ${item(todo.length ? 'warn' : 'ok', todo.length ? `끝내지 않은 주일 보고서 ${todo.length}건` : '최근 8주 보고서 모두 작성 완료', todo.length ? todo.slice(-4).reverse().map(d => d.slice(5).replace('-', '/')).join(' · ') + (todo.length > 4 ? ' 외' : '') : '수고하셨습니다', todo.length && canEdit() ? `<button class="btn s" data-goto="report" data-date="${esc(todo[todo.length - 1])}">보고서 쓰기 ›</button>` : '')}
+    ${item(pend.length ? 'warn' : 'ok', pend.length ? `회계에 안 붙인 영수증 ${pend.length}장` : '처리할 영수증 없음', pend.length ? pend.slice(0, 3).map(x => `${(x.date || '').slice(5).replace('-', '/')} ${esc(x.vendor || x.memo || '')} ${x.amount ? won(x.amount) + '원' : ''}`.trim()).join(' · ') : '사진으로 올린 영수증은 회계 지출에 붙이면 사라집니다', pend.length ? `<button class="btn s" data-goto="ledger">회계로 ›</button>` : '')}
+  </div></div>`;
+}
 VIEWS.home = async () => {
   await loadCommittee();
   await loadShared(isCommittee() ? null : await loadDept(S.dept));
@@ -368,7 +382,6 @@ VIEWS.home = async () => {
     for (const d of Object.keys(DEPTS)) { const dd = await loadDept(d); const r = dd.reports[ls]; rows.push({ d, dd, r, s: r ? reportStats(dd, r) : null }); plans.push({ d, dd, cur: await loadPlan(dd, YEAR), next: await loadPlan(dd, YEAR + 1) }); }
     return `<div class="topbar"><div><h1>교육위원회</h1><div class="sub">전 부서 제출 현황과 공지</div></div><div class="row"><button class="btn s" data-tour>튜토리얼</button><input type="date" id="c-date" value="${esc(ls)}" style="width:auto"><button class="btn s" id="c-date-go">조회</button></div></div>
     <div class="stack">
-      ${patchBoard()}
       ${committeeExtras()}
       <div class="card"><h2>주일 보고서 제출 현황 <span class="r">${fmtK(ls)}</span></h2><div class="tw"><table><thead><tr><th>부서</th><th>상태</th><th class="n">재적</th><th class="n">출석</th><th class="n">출석률</th><th class="n">헌금</th><th>특이사항</th><th></th></tr></thead><tbody>
       ${rows.map(({ d, dd, r, s }) => r ? `<tr><td>${DEPTS[d]}</td><td><span class="pill ok">제출</span></td><td class="n">${s.total}</td><td class="n">${s.p}</td><td class="n">${s.rate}%</td><td class="n">${won(s.offSum)}</td><td class="wrap note">${isUnited(r) ? '<span class="pill info">세대통합</span> ' : ''}${esc((r.special||'').split('\n')[0]).slice(0,60)}</td><td><button class="btn s" data-go="reports" data-sub='${JSON.stringify({ dept: d, preview: ls })}'>보기</button></td></tr>`
@@ -390,7 +403,7 @@ VIEWS.home = async () => {
   const notices = [...C().notices.map(n => ({ ...n, from: '교육위원회', own: false })), ...dd.notices.map(n => ({ ...n, from: dd.doc.name, own: true }))].sort((a,b) => a.date < b.date ? 1 : -1);
   return `<div class="topbar"><div><h1>${esc(dd.doc.name)}</h1><div class="sub">${fmtK(today())}${dd.doc.notes && dd.doc.notes.merge ? ' · ' + esc(dd.doc.notes.merge) : ''}</div></div><div class="row"><button class="btn s" data-tour>튜토리얼</button>${canEdit() ? `<button class="btn p" data-go="weekly" data-sub='${JSON.stringify({ date: ls })}'>이번 주 보고서 작성</button>` : `<button class="btn p" data-go="attend">출석 체크</button>`}</div></div>
   <div class="stack">
-    ${patchBoard()}
+    ${await todoCard(dd)}
     ${planBanner(dd, nextPlan && nextPlan.status === 'confirmed' && new Date().getMonth() >= 10 ? nextPlan : curPlan)}
     ${nextPlan && nextPlan.status === 'confirmed' && new Date().getMonth() < 10 ? planBanner(dd, nextPlan, true) : ''}
     <div class="tiles">
@@ -2247,6 +2260,7 @@ function payloadToItems(payload, on) {
 VIEWS.tutorial = async () => {
   const c = isCommittee(); const mob = isMobile();
   return `<div class="topbar"><div><h1>사용 안내</h1><div class="sub">${c ? '교육위원회 화면' : '부서 화면'} · ${mob ? '휴대폰에서는 열람과 출석 체크만 됩니다' : '한 달 동안 이 순서대로 쓰면 됩니다'}</div></div><button class="btn p" data-go="home">시작하기</button></div>
+  <div style="margin-bottom:14px">${patchBoard()}</div>
   <div class="hint info" style="margin-bottom:14px">PC에서는 작성·수정·출력 전부, 휴대폰에서는 메인·일정·보고서 열람·통계·멤버 연락처·출석 체크. 2026년 보고서는 HWP에서 변환해 넣었고, 2027년 1월부터 앱에서 직접 작성합니다.</div>
   <div class="steps">
     ${c ? `
