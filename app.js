@@ -2800,7 +2800,8 @@ function importYoungAttendance(dd) {
         s.history.sort((a, b) => a.year - b.year);
         s.statusLog = s.statusLog || [];
         if (x.rejoin && !s.statusLog.some(q => q.from === 'left' && q.date === x.rejoin)) { s.statusLog.push({ date: x.rejoin, from: 'left', to: 'active', reason: '복적', source: '과거 출석부 변환(사용자 확인)' }); }
-        for (const l of x.left || []) { if (!s.statusLog.some(q => q.to === 'left' && String(q.date || '').startsWith(String(l.year)))) s.statusLog.push({ date: `${l.year}-12-31`, from: 'active', to: 'left', kind: l.kind || '제적', reason: l.reason || '', source: l.source }); if (s.status === 'left' && l.year === Math.max(...(x.left || []).map(q => q.year)) && (!s.leftDate || s.leftDate < `${l.year}-12-31`)) { s.leftDate = `${l.year}-12-31`; s.leftKind = l.kind || s.leftKind || '제적'; s.leftReason = l.reason || s.leftReason || ''; } }
+        for (const l of x.left || []) { if (!s.statusLog.some(q => q.to === 'left' && String(q.date || '').startsWith(String(l.year)))) s.statusLog.push({ date: `${l.year}-12-31`, from: 'active', to: 'left', kind: l.kind || '제적', reason: l.reason || '', source: l.source });
+          if (['결혼', '직분'].includes(l.kind) && s.status !== 'left' && !(s.statusLog || []).some(q => q.from === 'left' && q.date > `${l.year}-12-31`)) { s.status = 'left'; s.leftDate = `${l.year}-12-31`; s.leftKind = l.kind; s.leftReason = l.reason || ''; } /* 회칙 4조 자격 종료(사용자 확인)는 재적이어도 적용 */ if (s.status === 'left' && l.year === Math.max(...(x.left || []).map(q => q.year)) && (!s.leftDate || s.leftDate < `${l.year}-12-31`)) { s.leftDate = `${l.year}-12-31`; s.leftKind = l.kind || s.leftKind || '제적'; s.leftReason = l.reason || s.leftReason || ''; } }
         byKey[x.name + '|' + md(x.birth)] = s;
         items.push({ path: `depts/young/students/${s.id}`, data: s });
       }
@@ -2815,7 +2816,7 @@ function importYoungAttendance(dd) {
         for (const k of ['prayer', 'text', 'title', 'preacher', 'writer']) if (!doc[k] && r[k]) doc[k] = r[k];
         if (r.offering && !(doc.offering && (doc.offering.sunday || doc.offering.tithe))) doc.offering = { ...(doc.offering || {}), sunday: r.offering, tithe: 0, thanks: 0, other: 0, raw: r.offeringRaw || '' };
         if (r.meeting && !doc.meeting) doc.meeting = r.meeting;
-        if (r.teachersExact) { doc.teachersPresent = (r.teachersPresent || []).slice(); doc.teachersUnsure = []; doc.teachersExact = r.teachersExact; } // 출석부 교사 줄(결석 체크됨)이 정확하므로 덮어쓴다
+        if (r.teachersExact) { doc.teachersPresent = (r.teachersPresent || []).slice(); doc.teachersUnsure = []; doc.teachersExact = r.teachersExact; for (const n of r.teachersRoster || []) for (const s of dd.students.filter(s => normName(s.name) === normName(n))) delete doc.att[s.id]; } // 교사 줄 사람의 학생 출석 표시는 지워 교사 출석(파란색)으로만 // 출석부 교사 줄(결석 체크됨)이 정확하므로 덮어쓴다
         else if ((r.teachersPresent || []).length) { if (r.teachersAssumed) { doc.teachersPresent = [...new Set([...(doc.teachersPresent || []), ...r.teachersPresent])]; doc.teachersAssumed = r.teachersAssumed; } else if (!(doc.teachersPresent || []).length) doc.teachersPresent = r.teachersPresent.slice(); } // 유권해석(교사 전원 출석)은 기존 보고서에도 더한다
         if (r.teachersUnsure) doc.teachersUnsure = r.teachersUnsure.slice(); if (r.teacherCount) doc.teacherCount = r.teacherCount;
         items.push({ path: `depts/young/reports/${r.date}`, data: doc });
