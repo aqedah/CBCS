@@ -490,9 +490,9 @@ function leftPaper(dd) {
     <table><thead><tr><th class="n">번호</th><th>이름</th><th>성별</th><th>처리일</th><th>구분</th><th>사유</th><th>마지막 출석</th></tr></thead><tbody>${left.map((s, i) => `<tr><td class="n">${i + 1}</td><td>${esc(s.name)}</td><td>${esc(s.sex || '')}</td><td>${esc(s.leftDate || '')}</td><td>${esc(s.leftKind || '')}</td><td>${esc(s.leftReason || s.note || '')}</td><td>${lastAttended(dd, s)}</td></tr>`).join('')}</tbody></table>
     <div class="ft"><b>중앙성서교회 교육위원회</b><span>CBCS에서 생성 · ${esc(dd.doc.name)}-제적명단.pdf</span></div></section>`;
 }
-function studentRow(dd, s, edit, no) {
+function studentRow(dd, s, edit, no, div) {
   const c = classOf(dd, s);
-  return `<tr class="click" data-student="${s.id}">${no ? `<td class="n no">${no}</td>` : ''}<td>${esc(s.name)}${s.flags && s.flags.length ? ` <span class="tag flag" title="${esc(s.flags.join(' / '))}">!</span>` : ''}</td><td>${esc(c ? c.name : s.classId)}</td><td>${esc(s.sex)}</td><td>${s.birth || ''}</td><td title="${esc(faithLabel(s))}">${s.faith ? esc(s.faith) : '<span class="note">모름</span>'}</td><td>${esc(phoneLabel(s))}</td><td class="wrap note">${esc(s.school || '')}</td><td class="wrap note">${esc(s.note || '')}</td><td>${statusPill(s)}</td></tr>`;
+  return `<tr class="click" data-student="${s.id}">${no ? `<td class="n no">${no}</td>` : ''}${div ? `<td><span class="pill ${div === '라피끄' ? 'info' : 'mute'}">${div}</span></td>` : ''}<td>${esc(s.name)}${s.flags && s.flags.length ? ` <span class="tag flag" title="${esc(s.flags.join(' / '))}">!</span>` : ''}</td><td>${esc(c ? c.name : s.classId)}</td><td>${esc(s.sex)}</td><td>${s.birth || ''}</td><td title="${esc(faithLabel(s))}">${s.faith ? esc(s.faith) : '<span class="note">모름</span>'}</td><td>${esc(phoneLabel(s))}</td><td class="wrap note">${esc(s.school || '')}</td><td class="wrap note">${esc(s.note || '')}</td><td>${statusPill(s)}</td></tr>`;
 }
 VIEWS.roster = async () => {
   let dd; if (isCommittee()) { const d = S.sub.dept || 'kinder'; dd = await loadDept(d); } else dd = D();
@@ -504,16 +504,17 @@ VIEWS.roster = async () => {
   if (S.sub.promoPrint) return `<div class="topbar no-print"><div><h1>진급자 명단</h1><div class="sub">${nextYear}년 기준 · 인쇄하거나 PDF로 저장</div></div><div class="row"><button class="btn" id="pp-back">출석부로</button><button class="btn p" id="pp-print">PDF로 저장 / 인쇄</button></div></div>${promotionPaper(dd, nextYear, plan, incoming)}`;
   if (S.sub.leftPrint) return `<div class="topbar no-print"><div><h1>제적 명단 출력</h1></div><div class="row"><button class="btn" id="lf-back">출석부로</button><button class="btn p" id="lf-pr">PDF로 저장 / 인쇄</button></div></div>${leftPaper(dd)}`;
   const show = S.sub.show || 'active';
-  const young = dd.id === 'young'; const grp = young ? (S.sub.group || '청년') : ''; const yr = S.sub.year || YEAR;
-  const inGroup = s => !young ? true : grp === '라피끄' ? s.group === '라피끄' : s.group !== '라피끄';
+  const young = dd.id === 'young'; const grp = young ? '청년' : ''; const yr = S.sub.year || YEAR;
+  const inGroup = () => true; // 라피끄는 따로 거르지 않고 명단의 구분 칸으로 보인다
   const years = [...new Set([...dd.students.flatMap(s => (s.history || []).map(h => +h.year)), ...Object.keys(dd.reports).map(d => +d.slice(0, 4)), YEAR])].filter(y => y >= 2015).sort((a, b) => b - a);
-  const yearBar = young || years.length > 1 ? `<div class="row" style="margin-bottom:10px;flex-wrap:wrap"><span class="note">연도</span>${years.map(y => `<button class="btn s ${yr === y ? 'p' : ''}" data-year="${y}">${y}</button>`).join('')}${young ? `<span class="note" style="margin-left:10px">구분</span>${[['청년', '청년'], ['라피끄', '라피끄']].map(([k, l]) => `<button class="btn s ${grp === k && show !== 'away' && show !== 'married' ? 'p' : ''}" data-group="${k}">${l}</button>`).join('')}<button class="btn s ${show === 'away' ? 'p' : ''}" data-show="away" title="장기결석·군입대·학업·사업·직접 입력">장기결석 <span class="note">${dd.students.filter(x => AWAY.includes(x.status)).length}</span></button><button class="btn s ${show === 'married' ? 'p' : ''}" data-show="married" title="결혼으로 청년부 회원 자격이 끝난 사람(회칙 4조)">결혼 <span class="note">${dd.students.filter(x => x.married || x.leftKind === '결혼').length}</span></button>` : ''}${young && canEdit() && !isCommittee() ? `<button class="btn s" id="ya-import" style="margin-left:auto">과거 출석부 가져오기</button>` : ''}</div>` : '';
+  const yearBar = young || years.length > 1 ? `<div class="row" style="margin-bottom:10px;flex-wrap:wrap"><span class="note">연도</span>${years.map(y => `<button class="btn s ${yr === y ? 'p' : ''}" data-year="${y}">${y}</button>`).join('')}${young ? `<span class="note" style="margin-left:10px">구분</span><button class="btn s ${show === 'away' ? 'p' : ''}" data-show="away" title="장기결석·군입대·학업·사업·직접 입력">장기결석 <span class="note">${dd.students.filter(x => AWAY.includes(x.status)).length}</span></button><button class="btn s ${show === 'married' ? 'p' : ''}" data-show="married" title="결혼으로 청년부 회원 자격이 끝난 사람(회칙 4조)">결혼 <span class="note">${dd.students.filter(x => x.married || x.leftKind === '결혼').length}</span></button>` : ''}${young && canEdit() && !isCommittee() ? `<button class="btn s" id="ya-import" style="margin-left:auto">과거 출석부 가져오기</button>` : ''}</div>` : '';
   if (yr !== YEAR) return yearRoster(dd, yr, grp, yearBar);
   const isWed = s => s.married || s.leftKind === '결혼';
   const list = dd.students.filter(s => show === 'married' ? isWed(s) : show === 'away' ? AWAY.includes(s.status) : inGroup(s) && (show === 'all' ? true : show === 'active' ? inRoll(s) : s.status === show));
   const sort = S.sub.sort || 'name';
   const corder = s => { const i = dd.doc.classes.findIndex(c => c.id === s.classId); return i < 0 ? 999 : i; };
   const byName = (a, b) => a.name.localeCompare(b.name, 'ko');
+  const curDiv = young && list.some(s => youngDiv(s, YEAR) !== '1청년');
   const sorted = list.slice().sort(sort === 'name' ? byName : sort === 'gradeDesc' ? ((a, b) => { const sa = /새친구|장기/.test(a.classId || '') ? 1 : 0, sb = /새친구|장기/.test(b.classId || '') ? 1 : 0; return sa - sb || corder(b) - corder(a) || byName(a, b); }) : ((a, b) => corder(a) - corder(b) || byName(a, b)));
   const deptPick = isCommittee() ? `<div class="row" style="margin-bottom:10px">${Object.entries(DEPTS).map(([k,v]) => `<button class="btn ${dd.id === k ? 'p' : ''}" data-dept="${k}">${v}</button>`).join('')}</div>` : '';
   return `<div class="topbar"><div><h1>${show === 'left' ? '제적 관리' : grp === '라피끄' ? '라피끄' : '출석부'} — ${esc(dd.doc.name)}</h1><div class="sub">${grp === '라피끄' ? `라피끄 ${dd.students.filter(s => s.group === '라피끄' && inRoll(s)).length}명 · 청년부 회원과 따로 관리 (총회 결의권·후보 판정에서 제외)` : `재적 ${activeStudents(dd).filter(inGroup).length}명 · 교사·임원 ${visibleStaff(dd).length}명`} · 이름을 누르면 학생 카드가 열립니다</div></div>
@@ -527,8 +528,8 @@ VIEWS.roster = async () => {
     ${show === 'left' ? leftSection(dd, canEdit() && !isCommittee()) : ''}
     ${show === 'married' ? `<div class="hint">결혼으로 청년부 회원 자격이 끝난 사람(회칙 4조)입니다. 학생 카드의 <b>결혼</b>을 "기혼"으로 하거나, 제적할 때 구분을 "결혼"으로 고르면 여기 모입니다. 결혼한 때: ${list.map(x => `${esc(x.name)} ${esc(x.marriedDate || '모름')}`).join(' · ') || '없음'}</div>` : ''}
     ${show === 'left' ? '' : `<div class="card"><h2><span>학생 <span class="row" style="display:inline-flex;gap:4px;margin-left:8px">${[['name', '이름 가나다순'], ['gradeAsc', dd.doc.classLabel + ' 오름차순'], ['gradeDesc', dd.doc.classLabel + ' 내림차순']].map(([k, v]) => `<button class="btn s ${sort === k ? 'p' : ''}" data-sort="${k}">${esc(v)}</button>`).join('')}</span></span> <span class="r">생년월일·연락처·주소는 부서 안에서만 보이고 PDF에는 이름만 나갑니다</span></h2>
-      <div class="tw"><table class="roster"><colgroup><col style="width:46px"><col style="width:96px"><col style="width:130px"><col style="width:52px"><col style="width:108px"><col style="width:110px"><col style="width:170px"><col style="width:150px"><col><col style="width:84px"></colgroup><thead><tr><th class="n no">번호</th><th>이름</th><th>${esc(dd.doc.classLabel)}</th><th>성별</th><th>생년월일</th><th>신급</th><th>연락처</th><th>학교</th><th>비고</th><th>상태</th></tr></thead><tbody>
-      ${sorted.map((s, i) => studentRow(dd, s, false, i + 1)).join('')}
+      <div class="tw"><table class="roster"><colgroup><col style="width:46px">${curDiv ? '<col style="width:70px">' : ''}<col style="width:96px"><col style="width:130px"><col style="width:52px"><col style="width:108px"><col style="width:110px"><col style="width:170px"><col style="width:150px"><col><col style="width:84px"></colgroup><thead><tr><th class="n no">번호</th>${curDiv ? '<th>구분</th>' : ''}<th>이름</th><th>${esc(dd.doc.classLabel)}</th><th>성별</th><th>생년월일</th><th>신급</th><th>연락처</th><th>학교</th><th>비고</th><th>상태</th></tr></thead><tbody>
+      ${sorted.map((s, i) => studentRow(dd, s, false, i + 1, curDiv ? youngDiv(s, YEAR) : '')).join('')}
       </tbody></table></div>
       ${canEdit() && !isCommittee() ? `<div class="fields edit-only" style="margin-top:12px">
         <label class="f"><span>이름</span><input type="text" id="s-name"></label>
@@ -2563,24 +2564,26 @@ BIND.backup = () => {
 
 
 /* ───────────── 출석부 연도별 보기 · 라피끄 · 과거 출석부 가져오기 ───────────── */
+// 청년부 구분(그해 기준): 라피끄가 있던 해에는 1청년·2청년·라피끄로 나눠 보여 준다. 2청년은 그해 팸 이름에 "2청"이 있을 때
+function youngDiv(s, yr) { const h = (s.history || []).find(x => +x.year === +yr); const g = h && h.group ? h.group : (+yr === YEAR ? (s.group || '청년') : '청년'); if (g === '라피끄') return '라피끄'; return /2청/.test((h && h.classId) || '') ? '2청년' : '1청년'; }
 function yearRoster(dd, yr, grp, yearBar) {
   const reps = Object.values(dd.reports).filter(r => r.date.startsWith(String(yr)) && Object.keys(r.att || {}).length).sort((a, b) => a.date < b.date ? -1 : 1);
   const hist = s => (s.history || []).find(h => +h.year === yr);
-  const inGrp = s => { const h = hist(s); const g = h && h.group ? h.group : (s.group || '청년'); return grp === '라피끄' ? g === '라피끄' : g !== '라피끄'; };
-  const list = dd.students.filter(s => (hist(s) || reps.some(r => (r.att || {})[s.id])) && (dd.id !== 'young' || inGrp(s))).sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+  const list = dd.students.filter(s => hist(s) || reps.some(r => (r.att || {})[s.id])).sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+  const divOn = dd.id === 'young' && list.some(s => youngDiv(s, yr) !== '1청년'); const divs = divOn ? ['1청년', '2청년', '라피끄'].map(d => [d, list.filter(s => youngDiv(s, yr) === d).length]).filter(x => x[1]) : [];
   const famOf = s => { const h = hist(s); return h ? (h.classId || '') : ''; };
   const fams = [...new Set(list.map(famOf))].sort((a, b) => a.localeCompare(b, 'ko'));
   const sort = S.sub.sort || 'name';
   const sorted = sort === 'fam' ? list.slice().sort((a, b) => famOf(a).localeCompare(famOf(b), 'ko') || a.name.localeCompare(b.name, 'ko')) : list;
   const cnt = s => reps.filter(r => (r.att || {})[s.id]).length;
   const leftIn = s => (s.statusLog || []).find(l => l.to === 'left' && String(l.date || '').startsWith(String(yr)));
-  return `<div class="topbar"><div><h1>${grp === '라피끄' ? '라피끄' : '출석부'} ${yr}년 — ${esc(dd.doc.name)}</h1><div class="sub">그해 소속 ${list.length}명 · 출석 체크된 주일 ${reps.length}주 · 과거 출석부 엑셀에서 옮긴 기록입니다</div></div>
+  return `<div class="topbar"><div><h1>출석부 ${yr}년 — ${esc(dd.doc.name)}</h1><div class="sub">그해 소속 ${list.length}명 · 출석 체크된 주일 ${reps.length}주 · 과거 출석부 엑셀에서 옮긴 기록입니다</div></div>
     <div class="row">${[['name', '이름순'], ['fam', dd.doc.classLabel + '별']].map(([k, v]) => `<button class="btn s ${sort === k ? 'p' : ''}" data-sort="${k}">${v}</button>`).join('')}</div></div>
   ${yearBar}
   <div class="stack">
-    <div class="card"><h2>${yr}년 ${grp === '라피끄' ? '라피끄' : '청년'} 명단 <span class="r">${fams.filter(Boolean).length ? fams.filter(Boolean).map(f => `${esc(f)} ${list.filter(s => famOf(s) === f).length}`).join(' · ') : '팸 구성 기록 없음'}</span></h2>
-      <div class="tw"><table class="roster"><thead><tr><th class="n no">번호</th><th>이름</th><th>${esc(dd.doc.classLabel)} (${yr})</th><th>성별</th><th>생년월일</th><th class="n">${yr} 출석</th><th>출석 띠</th><th>그해 비고</th><th>지금 상태</th></tr></thead><tbody>
-      ${sorted.map((s, i) => { const h = hist(s) || {}; const l = leftIn(s); return `<tr class="click" data-student="${s.id}"><td class="n no">${i + 1}</td><td>${esc(s.name)}</td><td>${esc(h.classId || '')}</td><td>${esc(s.sex)}</td><td>${esc(s.birth || '')}</td><td class="n">${cnt(s)}/${reps.length}</td><td><div class="ystrip">${reps.map(r => { const v = (r.att || {})[s.id] || ''; return `<span class="yw ${v === 'P' ? 'p' : v === 'O' ? 'o' : 'x'}" title="${r.date}"></span>`; }).join('')}</div></td><td class="wrap note">${esc(h.note || '')}${l ? `${h.note ? ' · ' : ''}${esc(l.kind || '제적')}${l.reason ? '(' + esc(l.reason) + ')' : ''}` : ''}</td><td>${statusPill(s)}</td></tr>`; }).join('') || '<tr><td colspan="8" class="note">그해 기록이 없습니다. "과거 출석부 가져오기"로 엑셀을 넣으세요.</td></tr>'}
+    <div class="card"><h2>${yr}년 ${dd.id === 'young' ? '청년부' : ''} 명단 ${divs.length ? `<span class="note" style="margin-left:6px">${divs.map(([d, n]) => `${d} ${n}`).join(' · ')}</span>` : ''} <span class="r">${fams.filter(Boolean).length ? fams.filter(Boolean).map(f => `${esc(f)} ${list.filter(s => famOf(s) === f).length}`).join(' · ') : '팸 구성 기록 없음'}</span></h2>
+      <div class="tw"><table class="roster"><thead><tr><th class="n no">번호</th><th>이름</th>${divOn ? '<th>구분</th>' : ''}<th>${esc(dd.doc.classLabel)} (${yr})</th><th>성별</th><th>생년월일</th><th class="n">${yr} 출석</th><th>출석 띠</th><th>그해 비고</th><th>지금 상태</th></tr></thead><tbody>
+      ${sorted.map((s, i) => { const h = hist(s) || {}; const l = leftIn(s); return `<tr class="click" data-student="${s.id}"><td class="n no">${i + 1}</td><td>${esc(s.name)}</td>${divOn ? `<td><span class="pill ${youngDiv(s, yr) === '라피끄' ? 'info' : 'mute'}">${youngDiv(s, yr)}</span></td>` : ''}<td>${esc(h.classId || '')}</td><td>${esc(s.sex)}</td><td>${esc(s.birth || '')}</td><td class="n">${cnt(s)}/${reps.length}</td><td><div class="ystrip">${reps.map(r => { const v = (r.att || {})[s.id] || ''; return `<span class="yw ${v === 'P' ? 'p' : v === 'O' ? 'o' : 'x'}" title="${r.date}"></span>`; }).join('')}</div></td><td class="wrap note">${esc(h.note || '')}${l ? `${h.note ? ' · ' : ''}${esc(l.kind || '제적')}${l.reason ? '(' + esc(l.reason) + ')' : ''}` : ''}</td><td>${(() => { const t = s.status === 'left' && dd.doc.staff.find(x => x.status !== 'left' && normName(x.name) === normName(s.name)); return t ? `<span class="pill info">${esc(t.role)}</span>` : statusPill(s); })()}</td></tr>`; }).join('') || '<tr><td colspan="8" class="note">그해 기록이 없습니다. "과거 출석부 가져오기"로 엑셀을 넣으세요.</td></tr>'}
       </tbody></table></div></div>
     ${reps.length ? `<div class="card"><h2>${yr}년 주별 출석 <span class="r">출석부·주일보고서 엑셀 기준</span></h2>${svgTrend(reps.map(r => ({ date: r.date, s: reportStats(dd, r) })))}</div>` : ''}
   </div>`;
