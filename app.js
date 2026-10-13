@@ -493,9 +493,37 @@ function leftPaper(dd) {
     <table><thead><tr><th class="n">번호</th><th>이름</th><th>성별</th><th>처리일</th><th>구분</th><th>사유</th><th>마지막 출석</th></tr></thead><tbody>${left.map((s, i) => `<tr><td class="n">${i + 1}</td><td>${esc(s.name)}</td><td>${esc(s.sex || '')}</td><td>${esc(s.leftDate || '')}</td><td>${esc(s.leftKind || '')}</td><td>${esc(s.leftReason || s.note || '')}</td><td>${lastAttended(dd, s)}</td></tr>`).join('')}</tbody></table>
     <div class="ft"><b>중앙성서교회 교육위원회</b><span>CBCS에서 생성 · ${esc(dd.doc.name)}-제적명단.pdf</span></div></section>`;
 }
+// 출석부 표에서 신급·연락처·비고를 눌러 바로 고치기 (PC, 부서 계정)
+function inlineEditor(dd, s, td, kind, done) {
+  document.querySelectorAll('.ie-pop').forEach(x => x.remove());
+  const pop = document.createElement('div'); pop.className = 'ie-pop';
+  const hist = [s.faithRaw && s.faithRaw !== s.faith ? `처음 들어온 값: ${s.faithRaw}` : '', s.faithPrev !== undefined && s.faithPrev !== s.faith ? `임시 표기 전: ${s.faithPrev || '모름'}` : '', s.faith && s.faithYear ? `지금: ${faithLabel(s)}` : '', ...(s.flags || []).filter(f => /신급/.test(f))].filter(Boolean);
+  pop.innerHTML = kind === 'faith' ? `<b>신급 — ${esc(s.name)}</b>
+      <div class="ie-opts">${FAITH_OPTS.map(k => `<label><input type="radio" name="ie-f" value="${k}" ${(s.faith || '') === k ? 'checked' : ''}> ${k || '모름'}</label>`).join('')}</div>
+      <div class="row" style="gap:4px;margin-top:6px"><input type="number" id="ie-fy" placeholder="연도 (예: 2019)" value="${esc(s.faithYear || '')}" style="width:120px"><select id="ie-fh" style="width:auto"><option value="">반기</option><option ${s.faithHalf === '상' ? 'selected' : ''}>상</option><option ${s.faithHalf === '하' ? 'selected' : ''}>하</option></select></div>
+      ${hist.length ? `<details class="ie-hist" open><summary>기존 내역</summary>${hist.map(h => `<div>• ${esc(h)}</div>`).join('')}</details>` : '<div class="note" style="margin-top:6px">기존 내역 없음</div>'}`
+    : kind === 'phone' ? `<b>연락처 — ${esc(s.name)}</b><label class="f"><span>본인</span><input type="tel" id="ie-p" value="${esc(s.phone || '')}"></label><label class="f"><span>보호자</span><div class="row" style="gap:4px"><input type="tel" id="ie-gp" value="${esc(s.guardianPhone || '')}" style="flex:1"><select id="ie-gr" style="width:auto">${['모', '부', '보호자'].map(r => `<option ${(s.guardianRel || '보호자') === r ? 'selected' : ''}>${r}</option>`).join('')}</select></div></label>`
+    : `<b>비고 — ${esc(s.name)}</b><textarea id="ie-n" rows="3">${esc(s.note || '')}</textarea>`;
+  pop.innerHTML += `<div class="row" style="gap:6px;margin-top:8px"><button class="btn s p" id="ie-save">저장</button><button class="btn s" id="ie-cancel">취소</button><span class="note">Esc 닫기${kind === 'faith' ? '' : ' · Enter 저장'}</span></div>`;
+  document.body.appendChild(pop);
+  const r = td.getBoundingClientRect(); const w = Math.min(340, innerWidth - 16); pop.style.width = w + 'px'; pop.style.left = Math.max(8, Math.min(r.left, innerWidth - w - 8)) + 'px';
+  const top = r.bottom + 4; pop.style.top = (top + pop.offsetHeight > innerHeight - 8 ? Math.max(8, r.top - pop.offsetHeight - 4) : top) + 'px';
+  const close = () => { pop.remove(); document.removeEventListener('mousedown', outside, true); document.removeEventListener('keydown', key, true); };
+  const outside = e => { if (!pop.contains(e.target)) close(); };
+  const save = async () => {
+    if (kind === 'faith') { const v = (pop.querySelector('input[name=ie-f]:checked') || {}).value || ''; if (s.faith !== v && s.faith) s.faithPrev = s.faith; s.faith = v; s.faithYear = +$('#ie-fy').value || ''; s.faithHalf = $('#ie-fh').value; if (v) s.flags = (s.flags || []).filter(f => !/신급 임시/.test(f)); }
+    else if (kind === 'phone') Object.assign(s, { phone: $('#ie-p').value.trim(), guardianPhone: $('#ie-gp').value.trim(), guardianRel: $('#ie-gr').value });
+    else s.note = $('#ie-n').value.trim();
+    $('#ie-save').disabled = true; await backend.set(`depts/${dd.id}/students/${s.id}`, s); close(); done(); toast('저장했습니다');
+  };
+  const key = e => { if (e.key === 'Escape') { e.preventDefault(); close(); } else if (e.key === 'Enter' && kind !== 'faith' && !e.shiftKey) { e.preventDefault(); save(); } };
+  setTimeout(() => { document.addEventListener('mousedown', outside, true); document.addEventListener('keydown', key, true); }, 0);
+  $('#ie-cancel').onclick = close; $('#ie-save').onclick = save;
+  const first = pop.querySelector('input:checked, input, textarea'); if (first) first.focus();
+}
 function studentRow(dd, s, edit, no, div) {
   const c = classOf(dd, s);
-  return `<tr class="click" data-student="${s.id}">${no ? `<td class="n no">${no}</td>` : ''}${div ? `<td><span class="pill ${div === '라피끄' ? 'info' : 'mute'}">${div}</span></td>` : ''}<td>${esc(s.name)}${s.flags && s.flags.length ? ` <span class="tag flag" title="${esc(s.flags.join(' / '))}">!</span>` : ''}</td><td>${esc(c ? c.name : s.classId)}</td><td>${esc(s.sex)}</td><td>${s.birth || ''}</td><td title="${esc(faithLabel(s))}">${s.faith ? esc(s.faith) : '<span class="note">모름</span>'}</td><td>${esc(phoneLabel(s))}</td><td class="wrap note">${esc(s.school || '')}</td><td class="wrap note">${esc(s.note || '')}</td><td>${statusPill(s)}</td></tr>`;
+  return `<tr class="click" data-student="${s.id}">${no ? `<td class="n no">${no}</td>` : ''}${div ? `<td><span class="pill ${div === '라피끄' ? 'info' : 'mute'}">${div}</span></td>` : ''}<td>${esc(s.name)}${s.flags && s.flags.length ? ` <span class="tag flag" title="${esc(s.flags.join(' / '))}">!</span>` : ''}</td><td>${esc(c ? c.name : s.classId)}</td><td>${esc(s.sex)}</td><td>${s.birth || ''}</td><td class="ie" data-ie="faith" title="${esc(faithLabel(s))}">${s.faith ? esc(s.faith) : '<span class="note">모름</span>'}</td><td class="ie" data-ie="phone">${esc(phoneLabel(s)) || '<span class="note">—</span>'}</td><td class="wrap note">${esc(s.school || '')}</td><td class="wrap note ie" data-ie="note">${esc(s.note || '') || '<span class="note">—</span>'}</td><td>${statusPill(s)}</td></tr>`;
 }
 VIEWS.roster = async () => {
   let dd; if (isCommittee()) { const d = S.sub.dept || 'kinder'; dd = await loadDept(d); } else dd = D();
@@ -699,6 +727,7 @@ BIND.roster = () => {
     $('#lm-no').onclick = closeModal; $('#lm-yes').onclick = async () => { for (const id of ids) { const s = dd.students.find(x => x.id === id); setLeft(s, $('#lm-date').value || today(), $('#lm-kind').value, $('#lm-reason').value.trim()); await backend.set(`depts/${dd.id}/students/${s.id}`, s); } closeModal(); renderHere(); toast(ids.length + '명 제적 처리'); }; };
   document.querySelectorAll('[data-sort]').forEach(b => b.onclick = () => { S.sub.sort = b.dataset.sort; render(); });
   if (S.sub.open) { const id = S.sub.open; delete S.sub.open; setTimeout(() => { const tr = document.querySelector(`[data-student="${CSS.escape(id)}"]`); if (tr) tr.click(); }, 0); }
+  if (canEdit() && !isCommittee() && !isMobile()) document.querySelectorAll('table.roster td[data-ie]').forEach(td => { td.classList.add('ie-on'); td.title = (td.title ? td.title + ' · ' : '') + '눌러서 바로 고치기'; td.onclick = e => { e.stopPropagation(); const s = dd.students.find(x => x.id === td.closest('tr').dataset.student); if (s) inlineEditor(dd, s, td, td.dataset.ie, () => renderHere()); }; });
   document.querySelectorAll('[data-student]').forEach(tr => tr.onclick = () => {
     const s = dd.students.find(x => x.id === tr.dataset.student); openModal(studentCard(dd, s)); bindTimeline(dd, s); bindStudentExtras(dd, s);
     bindNoteTags();
