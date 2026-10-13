@@ -489,7 +489,7 @@ function leftPaper(dd) {
 }
 function studentRow(dd, s, edit, no) {
   const c = classOf(dd, s);
-  return `<tr class="click" data-student="${s.id}">${no ? `<td class="n no">${no}</td>` : ''}<td>${esc(s.name)}${s.flags && s.flags.length ? ' <span class="tag flag" title="확인 필요">!</span>' : ''}</td><td>${esc(c ? c.name : s.classId)}</td><td>${esc(s.sex)}</td><td>${s.birth || ''}</td><td title="${esc(faithLabel(s))}">${s.faith ? esc(s.faith) : '<span class="note">모름</span>'}</td><td>${esc(phoneLabel(s))}</td><td class="wrap note">${esc(s.school || '')}</td><td class="wrap note">${esc(s.note || '')}</td><td>${statusPill(s)}</td></tr>`;
+  return `<tr class="click" data-student="${s.id}">${no ? `<td class="n no">${no}</td>` : ''}<td>${esc(s.name)}${s.flags && s.flags.length ? ' <span class="tag flag" title="${esc(s.flags.join(' / '))}">!</span>' : ''}</td><td>${esc(c ? c.name : s.classId)}</td><td>${esc(s.sex)}</td><td>${s.birth || ''}</td><td title="${esc(faithLabel(s))}">${s.faith ? esc(s.faith) : '<span class="note">모름</span>'}</td><td>${esc(phoneLabel(s))}</td><td class="wrap note">${esc(s.school || '')}</td><td class="wrap note">${esc(s.note || '')}</td><td>${statusPill(s)}</td></tr>`;
 }
 VIEWS.roster = async () => {
   let dd; if (isCommittee()) { const d = S.sub.dept || 'kinder'; dd = await loadDept(d); } else dd = D();
@@ -560,7 +560,8 @@ VIEWS.attlog = async () => {
   const pick = isCommittee() ? `<div class="row" style="margin-bottom:10px">${Object.entries(DEPTS).map(([k, v]) => `<button class="btn ${dd.id === k ? 'p' : ''}" data-dept="${k}">${v}</button>`).join('')}</div>` : '';
   const cell = (r, s) => { if (!r) return '<td class="al-none" title="보고서 없음"></td>'; const a = (r.att || {})[s.id]; const why = (r.absent || {})[s.id]; return a === 'P' ? '<td class="al-p" title="출석">●</td>' : a === 'O' ? '<td class="al-o" title="온라인·본당">◐</td>' : `<td class="al-x"${why ? ` title="${esc(why)}"` : ''}>${why ? '·' : ''}</td>`; };
   const head = sundays.map((ds, i) => `<th class="al-d ${reps[i] ? '' : 'al-none'}" title="${ds}${reps[i] ? '' : ' (보고서 없음)'}">${+ds.slice(5, 7)}/${+ds.slice(8)}</th>`).join('');
-  const rows = list.map((s, i) => { const n = reps.filter(r => r && (r.att || {})[s.id]).length; return `<tr><th class="al-name"><span class="no-in">${i + 1}</span><b>${esc(s.name)}</b>${s.status === 'left' ? ' <span class="pill mute">제적</span>' : ''}<span class="note"> ${esc((classOf(dd, s) || {}).name || s.classId || '')}</span></th>${reps.map(r => cell(r, s)).join('')}<td class="n al-sum">${n}/${withRep}</td><td class="n al-sum">${withRep ? Math.round(n / withRep * 100) : 0}%</td></tr>`; }).join('');
+  const staffRole = s => { const t = dd.doc.staff.find(x => x.status !== 'left' && normName(x.name) === normName(s.name)); return t ? t.role : ''; };
+  const rows = list.map((s, i) => { const n = reps.filter(r => r && (r.att || {})[s.id]).length; const sr = s.status === 'left' ? staffRole(s) : ''; return `<tr><th class="al-name"><span class="no-in">${i + 1}</span><button class="al-who" data-alwho="${esc(s.id)}" title="세부 정보"><b>${esc(s.name)}</b></button>${s.flags && s.flags.length ? ' <span class="tag flag" title="' + esc(s.flags.join(' / ')) + '">!</span>' : ''}${sr ? ` <span class="pill info">${esc(sr)}</span>` : s.status === 'left' ? ' <span class="pill mute">제적</span>' : AWAY.includes(s.status) || s.status === 'newcomer' ? ' ' + statusPill(s) : ''}<span class="note"> ${esc((classOf(dd, s) || {}).name || s.classId || '')}</span></th>${reps.map(r => cell(r, s)).join('')}<td class="n al-sum">${n}/${withRep}</td><td class="n al-sum">${withRep ? Math.round(n / withRep * 100) : 0}%</td></tr>`; }).join('');
   const foot = `<tr class="sum"><th class="al-name">출석(명단)</th>${reps.map(r => `<td class="n">${r ? Object.keys(r.att || {}).length : ''}</td>`).join('')}<td></td><td></td></tr><tr class="sum"><th class="al-name">출석(보고서 숫자)</th>${reps.map(r => `<td class="n">${r ? reportStats(dd, r).p : ''}</td>`).join('')}<td></td><td></td></tr>`;
   return `<div class="topbar"><div><h1>출석 기록 — ${esc(dd.doc.name)}</h1><div class="sub">${year}년${mon ? ` ${mon}월` : ''} · 주일 ${sundays.length}번 중 보고서 ${withRep}장 · ● 출석 ◐ 온라인·본당 · 결석 사유가 있으면 · (점에 마우스를 올리면 사유)</div></div>
     <div class="row no-print"><select id="al-year" style="width:auto">${(years.length ? years : [YEAR]).map(y => `<option ${y === year ? 'selected' : ''}>${y}</option>`).join('')}</select>${canEdit() ? '<button class="btn" id="al-print">출력</button>' : ''}</div></div>
@@ -571,8 +572,29 @@ VIEWS.attlog = async () => {
     <div class="note" style="margin-top:8px">회색 칸은 그 주일 보고서가 없는 날입니다. "출석(명단)"은 이름으로 체크된 수, "출석(보고서 숫자)"는 보고서에 적힌 숫자라 서로 다를 수 있습니다(새친구·다른 부서 출석 등).</div>
     ${Object.keys(unmatched).length ? `<div class="hint" style="margin-top:8px">출석부와 연결되지 않은 출석 이름(다른 부서로 옮긴 학생 등): ${Object.entries(unmatched).sort((a, b) => b[1] - a[1]).map(([n, k]) => `${esc(n)} ${k}회`).join(', ')}</div>` : ''}</div>`;
 };
+// 출석 기록에서 이름을 누르면: 기본 정보와 그해 출석·결석 사유를 한눈에
+function attPersonModal(dd, s, year) {
+  const reps = Object.values(dd.reports).filter(r => r.date.startsWith(String(year))).sort((a, b) => a.date < b.date ? -1 : 1);
+  const named = reps.filter(r => Object.keys(r.att || {}).length);
+  const p = named.filter(r => (r.att || {})[s.id] === 'P').length, o = named.filter(r => (r.att || {})[s.id] === 'O').length;
+  const absences = named.filter(r => !(r.att || {})[s.id]); const why = absences.filter(r => (r.absent || {})[s.id]);
+  const months = Array.from({ length: 12 }, (_, i) => { const m = `${year}-${pad2(i + 1)}`; const rs = named.filter(r => r.date.startsWith(m)); const c = rs.filter(r => (r.att || {})[s.id]).length; return { m: i + 1, c, n: rs.length }; });
+  const t = dd.doc.staff.find(x => x.status !== 'left' && normName(x.name) === normName(s.name));
+  const c = classOf(dd, s); const last = lastAttended(dd, s);
+  const kv = [['상태', t && s.status === 'left' ? `${esc(t.role)} (교사·임원 명단)` : statusPill(s)], [dd.doc.classLabel, esc(c ? c.name : s.classId || '')], ['성별', esc(s.sex || '')], ['생년월일', esc(s.birth || '')], ['신급', esc(faithLabel(s) || '모름')], ['연락처', esc(phoneLabel(s) || (t && t.phone) || '')], ['마지막 출석', esc(last || '—')], ['비고', esc(s.note || '')]];
+  return `<h2>${esc(s.name)} <span class="note">${year}년 출석</span><button class="btn s" id="modal-close">닫기</button></h2>
+    ${s.flags && s.flags.length ? `<div class="hint" style="margin-bottom:10px"><b>확인할 점</b>${s.flags.map(f => `<div>• ${esc(f)}</div>`).join('')}</div>` : ''}
+    <div class="grid2 sc-grid"><dl class="kvl">${kv.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>
+    <div><div class="tiles" style="grid-template-columns:repeat(3,1fr);margin:0 0 10px"><div class="tile"><div class="v">${p + o}<small>/${named.length}</small></div><div class="l">출석 (온라인 ${o})</div></div><div class="tile"><div class="v">${named.length ? Math.round((p + o) / named.length * 100) : 0}%</div><div class="l">출석률</div></div><div class="tile"><div class="v">${absences.length}</div><div class="l">결석 (사유 ${why.length})</div></div></div>
+    <div class="al-months">${months.map(x => `<div class="${x.n ? '' : 'none'}"><b>${x.m}월</b><span>${x.n ? `${x.c}/${x.n}` : '—'}</span></div>`).join('')}</div>
+    <div class="ystrip" style="margin-top:8px">${named.map(r => { const v = (r.att || {})[s.id]; return `<span class="yw ${v === 'P' ? 'p' : v === 'O' ? 'o' : 'x'}" title="${r.date}${(r.absent || {})[s.id] ? ' ' + esc(r.absent[s.id]) : ''}"></span>`; }).join('')}</div></div></div>
+    <h3 style="margin:14px 0 6px">결석 사유 <span class="note">${why.length ? why.length + '건' : '적힌 사유 없음'}</span></h3>
+    ${why.length ? `<div class="tw" style="max-height:220px;overflow:auto"><table><tbody>${why.map(r => `<tr><td style="white-space:nowrap">${fmtK(r.date)}</td><td>${esc(r.absent[s.id])}</td></tr>`).join('')}</tbody></table></div>` : ''}
+    ${!isMobile() ? `<div class="row" style="margin-top:12px"><button class="btn" id="ap-card">출석부 학생 카드 열기</button></div>` : ''}`;
+}
 BIND.attlog = () => {
   const dd = isCommittee() ? S.data[S.sub.dept || 'kinder'] : D();
+  document.querySelectorAll('[data-alwho]').forEach(b => b.onclick = () => { const s = dd.students.find(x => x.id === b.dataset.alwho); if (!s) return; const yr = +($('#al-year') || {}).value || YEAR; openModal(attPersonModal(dd, s, yr)); const ac = $('#ap-card'); if (ac) ac.onclick = () => { closeModal(); S.view = 'roster'; S.sub = { ...(isCommittee() ? { dept: dd.id } : {}), show: s.status === 'left' ? 'all' : (s.status === 'newcomer' ? 'newcomer' : 'active'), open: s.id }; render(); }; });
   document.querySelectorAll('[data-dept]').forEach(b => b.onclick = () => { S.sub = { dept: b.dataset.dept }; render(); });
   $('#al-year').onchange = e => { S.sub.year = +e.target.value; S.sub.mon = 0; render(); };
   document.querySelectorAll('[data-mon]').forEach(b => b.onclick = () => { S.sub.mon = +b.dataset.mon; render(); });
@@ -2607,4 +2629,16 @@ backend.onSession(async d => {
   if (DEMO && QS.has('tour')) { history.replaceState(null, '', location.pathname + '?demo=1'); startTour(); return; }
   await render();
 });
+// "!" 표시: 마우스를 올리거나 누르면 확인할 내용을 바로 보여 준다(브라우저 기본 말풍선은 늦게 뜨고 잘림)
+(() => {
+  let tip = null, pinned = null;
+  const show = el => { if (el.title) { el.dataset.tip = el.title; el.removeAttribute('title'); } const t = el.dataset.tip || '확인 필요'; if (!tip) { tip = document.createElement('div'); tip.className = 'flag-tip'; document.body.appendChild(tip); }
+    tip.innerHTML = `<b>확인할 점</b>${t.split(/\s*\/\s*/).filter(Boolean).map(x => `<div>• ${esc(x)}</div>`).join('')}`; tip.hidden = false;
+    const r = el.getBoundingClientRect(); const w = Math.min(360, innerWidth - 16); tip.style.maxWidth = w + 'px'; const left = Math.max(8, Math.min(r.left, innerWidth - w - 8)); tip.style.left = left + 'px';
+    const below = r.bottom + 6; tip.style.top = (below + tip.offsetHeight > innerHeight ? r.top - tip.offsetHeight - 6 : below) + 'px'; };
+  const hide = () => { if (tip && !pinned) tip.hidden = true; };
+  document.addEventListener('mouseover', e => { const el = e.target.closest && e.target.closest('.tag.flag'); if (el) show(el); else if (!pinned) hide(); });
+  document.addEventListener('click', e => { const el = e.target.closest && e.target.closest('.tag.flag'); if (el) { e.stopPropagation(); e.preventDefault(); if (pinned === el) { pinned = null; hide(); } else { pinned = el; show(el); } } else if (pinned) { pinned = null; hide(); } }, true);
+  addEventListener('scroll', () => { pinned = null; hide(); }, true);
+})();
 window.addEventListener('error', e => { const t = $('#toast'); if (t) toast('오류: ' + e.message, 4000); });

@@ -408,3 +408,17 @@ button.tile.go{font:inherit;color:inherit;text-align:left;cursor:pointer;width:1
 button.tile.go:hover{border-color:var(--accent);background:var(--accent-soft)}
 button.tile.go:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 button.tile.go .l{color:var(--muted)}
+/* "!" 확인 표시 말풍선 */
+.tag.flag{cursor:help}
+.tag.flag:hover{background:var(--warn);color:#fff}
+.flag-tip{position:fixed;z-index:100;background:var(--panel);color:var(--fg);border:1px solid var(--warn);border-radius:6px;box-shadow:0 6px 18px rgba(0,0,0,.18);padding:8px 10px;font-size:12.5px;line-height:1.55;pointer-events:none}
+.flag-tip b{display:block;color:var(--warn);font-size:11.5px;margin-bottom:2px}
+/* 출석 기록: 이름 누르면 세부 정보 */
+.al-who{all:unset;cursor:pointer;border-bottom:1px dotted var(--muted)}
+.al-who:hover b{color:var(--accent)}
+.al-who:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.al-months{display:grid;grid-template-columns:repeat(auto-fill,minmax(70px,1fr));gap:4px}
+.al-months>div b{white-space:nowrap;margin-right:4px}
+.al-months>div{border:1px solid var(--line-soft);border-radius:5px;padding:4px 6px;font-size:12px;display:flex;justify-content:space-between}
+.al-months>div.none{color:var(--muted);background:var(--bg)}
+.tile .v small{font-size:13px;color:var(--muted);font-weight:400}
