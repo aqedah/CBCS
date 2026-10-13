@@ -113,6 +113,7 @@ async function loadDept(d, force) {
     isCommittee() ? [] : backend.list(`depts/${d}/care`).catch(() => [])]);
   const dd = { id: d, doc: docu || { name: DEPTS[d], classLabel: '반', year: YEAR, classes: [], staff: [], ledgers: [], budgetPlan: [], monthlyPlans: {}, monthlyTexts: {}, notes: {} },
     students, reports: Object.fromEntries(reports.map(r => [r.date, r])), expenses, incomes, events, notices, assets: assets.map(a => ({ ...a, id: a.id || a._id })), officers: officers.map(o => ({ ...o, role: canonRole(o.role) })), timeline, retreats, careRaw: care, care: [] };
+  if (d === 'young') dd.doc.classLabel = youngUnit(YEAR); // 청년부 소속 단위: 2026년까지 팸, 2027년부터 목장
   if (S.careKey && S.careDept === d) await decryptCare(dd);
   dd.doc.ledgers = dd.doc.ledgers || []; dd.doc.classes = dd.doc.classes || []; dd.doc.staff = dd.doc.staff || []; dd.doc.budgetPlan = dd.doc.budgetPlan || []; dd.doc.monthlyPlans = dd.doc.monthlyPlans || {}; dd.doc.monthlyTexts = dd.doc.monthlyTexts || {}; dd.doc.notes = dd.doc.notes || {};
   const fixed = dd.students.filter(normalizeFaith); // 화면에는 바로 정리된 값으로 보이고, 고칠 권한이 있으면 저장까지 한다
@@ -203,22 +204,24 @@ const noteTagsHTML = inputId => `<div class="tags" style="margin-top:4px">${NOTE
 const bindNoteTags = () => document.querySelectorAll('[data-notetag]').forEach(b => b.onclick = () => { const el = document.getElementById(b.dataset.notetag); if (!el) return; const parts = el.value.split(/[,，]\s*/).map(x => x.trim()).filter(Boolean); if (parts.includes(b.dataset.tag)) return; parts.push(b.dataset.tag); el.value = parts.join(', '); el.dispatchEvent(new Event('input')); });
 const faithLabel = s => { if (!s.faith) return ''; const y = s.faithYear ? String(s.faithYear).slice(-2) + (s.faithHalf || '') : ''; return y ? `${s.faith}(${y})` : s.faith; };
 const phoneLabel = s => s.phone ? `${s.phone} (본인)` : s.guardianPhone ? `${s.guardianPhone} (${s.guardianRel || '보호자'})` : '';
+const youngUnit = y => +y >= 2027 ? '목장' : '팸';
 const isUnited = r => !!(r.united || /세대통합/.test(r.type || ''));
 
 /* ───────────── 화면 뼈대 ───────────── */
-const NAV_PC = [['home','메인','⌂'],['weekly','보고서','✎'],['roster','출석부','☰'],['ledger','회계','₩'],['assets','물품대장','▢'],['vehicles','차량 신청','⇄'],['archive','보관함','▣'],['tutorial','사용 안내','?']];
+const NAV_PC = [['home','메인','⌂'],['weekly','보고서','✎'],['roster','출석부','☰'],['ledger','회계','₩'],['assets','물품대장','▢'],['outings','주말학습·차량','⇄'],['archive','보관함','▣'],['tutorial','사용 안내','?']];
 const NAV_MOBILE = [['home','홈'],['attend','출결'],['ledger','회계'],['reports','보고서'],['tutorial','안내']];
 // 휴대폰: 출석부(출석 체크·명단·통계), 회계(열람·영수증)는 위쪽 탭으로 나눈다
 const M_ROSTER_TABS = [['attend', '출석 체크'], ['members', '명단'], ['stats', '통계']];
 const M_MONEY_TABS = [['ledger', '회계 열람'], ['receipt', '영수증']];
-const NAV_COMMITTEE = [['home','메인','⌂'],['reports','보고서 열람','✎'],['assets','물품대장 열람','▢'],['roster','출석부 열람','☰'],['vehicles','차량 신청','⇄'],['scholarship','장학','★'],['archive','보관함','▣'],['backup','자료 내려받기','⇩'],['import','데이터 가져오기','⇪'],['tutorial','사용 안내','?']];
+const NAV_COMMITTEE = [['home','메인','⌂'],['reports','보고서 열람','✎'],['assets','물품대장 열람','▢'],['roster','출석부 열람','☰'],['outings','주말학습·차량','⇄'],['scholarship','장학','★'],['archive','보관함','▣'],['backup','자료 내려받기','⇩'],['import','데이터 가져오기','⇪'],['tutorial','사용 안내','?']];
 const NAV_COMMITTEE_MOBILE = [['home','메인'],['reports','보고서'],['scholarship','장학'],['tutorial','안내']];
 const VIEWS = {}, BIND = {};
 // 메뉴 묶음: 사이드 메뉴에서 누르면 아래로 펼쳐지는 하위 메뉴 (휴대폰은 화면 위 탭)
 const DOC_TABS = () => [[isCommittee() || isMobile() ? 'reports' : 'weekly', '주일 보고서'], ['monthly', '월간 보고서'], ['plan', '연간계획서']];
+const OUT_TABS = () => [['outings', '주말학습'], ['vehicles', '차량 신청']];
 const YOUNG_TABS = () => [['bylaws', '회칙·헌장'], ['assembly', '총회 자료'], ['minutes', '총회 회의록']];
 const ROSTER_TABS = () => [['roster', isCommittee() ? '출석부 열람' : '출석부'], ['attlog', '출석 기록'], ...(isCommittee() ? [] : [['stats', '출석 통계']]), ...(isCommittee() ? [] : [['care', isCare() ? '♥ 심방 카드' : '🔒 심방 카드']])];
-const NAV_GROUPS = () => isMobile() ? (isCommittee() ? [{ id: 'docs', items: DOC_TABS() }] : [{ id: 'docs', items: DOC_TABS() }, { id: 'mroster', items: M_ROSTER_TABS }, { id: 'mmoney', items: M_MONEY_TABS }]) : [{ id: 'docs', items: DOC_TABS() }, { id: 'roster', items: ROSTER_TABS() }, { id: 'young', items: YOUNG_TABS() }];
+const NAV_GROUPS = () => isMobile() ? (isCommittee() ? [{ id: 'docs', items: DOC_TABS() }] : [{ id: 'docs', items: DOC_TABS() }, { id: 'mroster', items: M_ROSTER_TABS }, { id: 'mmoney', items: M_MONEY_TABS }]) : [{ id: 'docs', items: DOC_TABS() }, { id: 'roster', items: ROSTER_TABS() }, { id: 'out', items: OUT_TABS() }, { id: 'young', items: YOUNG_TABS() }];
 const groupOfView = v => NAV_GROUPS().find(g => g.items.some(t => t[0] === v));
 const navKeyOf = v => { const g = groupOfView(v); return g ? g.items[0][0] : v; };
 const docTabBar = () => { const g = groupOfView(S.view); return g ? `<div class="doc-tabs no-print">${g.items.map(([k, l]) => `<button data-doctab="${k}" class="${S.view === k ? 'on' : ''}">${l}</button>`).join('')}</div>` : ''; };
@@ -1085,7 +1088,13 @@ const ASSET_CATS = ['기자재','교재·도서','교구·놀이','가구·비�
 const ASSET_STATUS = ['사용 중','보관','수리 필요','대여 중','폐기','분실'];
 function isAssetLike(desc, category) { const t = String(desc || ''); if (ASSET_EXCLUDE.test(t)) return false; return category === '비품' || ASSET_KW.test(t); }
 function guessAssetCat(t) { t = String(t || ''); if (/(교재|공과|워크북|성경|도서|책)/.test(t)) return '교재·도서'; if (/(스피커|마이크|앰프|믹서|피아노|악기|기타줄)/.test(t)) return '악기·음향'; if (/(프로젝터|빔|스크린|모니터|TV|티비|노트북|태블릿|아이패드|컴퓨터|카메라|삼각대|키보드|케이블|젠더|충전기|프린터|복합기)/.test(t)) return '기자재'; if (/(교구|블록|퍼즐|장난감|공놀이|공\b|매트|에어바운스)/.test(t)) return '교구·놀이'; if (/(의자|책상|테이블|선반|수납|정리함|보관함|캐비닛|사물함|화이트보드|칠판|이젤|분리수거함)/.test(t)) return '가구·비품'; if (/(토너|멀티탭)/.test(t)) return '소모품'; return '기타'; }
-function assetNo(dd) { const y = String(YEAR).slice(2); const nums = dd.assets.map(a => +(String(a.no || '').split('-')[2] || 0)); return `${dd.id.slice(0, 1).toUpperCase()}${y}-${pad2(new Date().getMonth() + 1)}-${String(Math.max(0, ...nums) + 1).padStart(3, '0')}`; }
+/* 물품 등록번호: {부서}{연도 2자리}-{구입 월}-{그 해 부서 순번 3자리}  예) 중26-10-001
+   부서 글자 — 영유치부 유, 초등부 초, 중고등부 중, 청년부 청 (예전엔 영문 첫 글자라 중고등부(youth)·청년부(young)가 둘 다 Y로 겹쳤음)
+   순번은 부서마다, 해마다 1부터 다시 센다. */
+const ASSET_CODE = { kinder: '유', elem: '초', youth: '중', young: '청' };
+function assetNo(dd, date) { const d = date || today(); const y = d.slice(2, 4); const code = ASSET_CODE[dd.id] || dd.id.slice(0, 1).toUpperCase();
+  const nums = dd.assets.filter(a => String(a.no || '').startsWith(code + y + '-')).map(a => +(String(a.no).split('-')[2] || 0));
+  return `${code}${y}-${d.slice(5, 7)}-${String(Math.max(0, ...nums) + 1).padStart(3, '0')}`; }
 function assetFromItem(dd, e, it, idx) {
   return { id: `as_${e.id}_${idx}`, no: '', name: it.desc || e.desc, category: guessAssetCat(it.desc || e.desc), spec: '', qty: +it.qty || 1, unit: '개', price: +it.price || (+it.qty ? Math.round((+it.amount || 0) / +it.qty) : +it.amount || 0), total: +it.amount || 0, purchaseDate: e.date || '', vendor: e.payTo || '', location: '', manager: e.requester || '', status: '사용 중', expenseId: e.id, ledgerId: e.ledgerId, source: 'auto', note: '', disposedAt: '', updated: today() };
 }
@@ -1096,7 +1105,7 @@ async function syncAssetsFromExpense(dd, e) { // 결의서 줄 중 "물품대장
     const it = items[i], id = `as_${e.id}_${i}`, cur = dd.assets.find(a => a.id === id);
     if (it.asset) {
       const base = assetFromItem(dd, e, it, i);
-      const rec = cur ? { ...cur, name: cur.nameEdited ? cur.name : base.name, qty: base.qty, price: base.price, total: base.total, purchaseDate: base.purchaseDate, vendor: cur.vendor || base.vendor, manager: cur.manager || base.manager, ledgerId: base.ledgerId, updated: today() } : { ...base, no: assetNo(dd) };
+      const rec = cur ? { ...cur, name: cur.nameEdited ? cur.name : base.name, qty: base.qty, price: base.price, total: base.total, purchaseDate: base.purchaseDate, vendor: cur.vendor || base.vendor, manager: cur.manager || base.manager, ledgerId: base.ledgerId, updated: today() } : { ...base, no: assetNo(dd, base.purchaseDate) };
       await backend.set(`depts/${dd.id}/assets/${id}`, rec); if (cur) Object.assign(cur, rec); else { dd.assets.push(rec); n++; }
     } else if (cur && cur.source === 'auto' && !cur.location && cur.status === '사용 중') { await backend.del(`depts/${dd.id}/assets/${id}`); dd.assets = dd.assets.filter(a => a.id !== id); }
   }
@@ -1166,7 +1175,7 @@ BIND.assets = () => {
   const cf = $('#as-cat-f'); if (cf) cf.onchange = () => { S.sub.cat = cf.value; render(); };
   document.querySelectorAll('[data-st]').forEach(b => b.onclick = () => { S.sub.st = b.dataset.st; render(); });
   const ca = $('#cand-all'); if (ca) ca.onclick = () => { S.sub.allCand = true; render(); };
-  const addFromExpense = async e => { const items = e.items && e.items.length ? e.items : [{ desc: e.desc, qty: '', price: '', amount: e.amount }]; let n = 0; for (let i = 0; i < items.length; i++) { const id = `as_${e.id}_${i}`; if (dd.assets.some(a => a.id === id)) continue; const rec = { ...assetFromItem(dd, e, items[i], i), no: assetNo(dd) }; await backend.set(`depts/${dd.id}/assets/${id}`, rec); dd.assets.push(rec); n++; } return n; };
+  const addFromExpense = async e => { const items = e.items && e.items.length ? e.items : [{ desc: e.desc, qty: '', price: '', amount: e.amount }]; let n = 0; for (let i = 0; i < items.length; i++) { const id = `as_${e.id}_${i}`; if (dd.assets.some(a => a.id === id)) continue; const rec0 = assetFromItem(dd, e, items[i], i); const rec = { ...rec0, no: assetNo(dd, rec0.purchaseDate) }; await backend.set(`depts/${dd.id}/assets/${id}`, rec); dd.assets.push(rec); n++; } return n; };
   document.querySelectorAll('[data-cand-add]').forEach(b => b.onclick = async () => { await addFromExpense(dd.expenses.find(e => e.id === b.dataset.candAdd)); render(); toast('물품대장에 등록 — 보관 장소를 넣어 주세요'); });
   document.querySelectorAll('[data-cand-skip]').forEach(b => b.onclick = async () => { dd.doc.assetSkip = [...(dd.doc.assetSkip || []), b.dataset.candSkip]; await saveDeptDoc(dd.id); render(); });
   const aa = $('#cand-add-all'); if (aa) aa.onclick = async () => { let n = 0; for (const e of assetCandidates(dd)) n += await addFromExpense(e); render(); toast(`${n}건 등록했습니다`); };
@@ -1849,13 +1858,13 @@ function assemblyPaper(dd, a, J) {
     <h2>1. 정족수 (회칙 13조)</h2><table class="kv"><tbody><tr><th>직전 ${J.q.rows.length}주 출석</th><td>${J.q.rows.map(r => `${r.date.slice(5).replace('-', '/')} ${r.p}명`).join(' · ')}</td></tr><tr><th>평균</th><td>${J.q.avg.toFixed(1)}명</td></tr><tr><th>정족수</th><td><b>${J.q.need}명</b> (평균의 ${J.R.quorumNum}/${J.R.quorumDen})</td></tr></tbody></table>
     ${bylawArtHTML(dd, [13], '정족수 기준 조항')}
     <h2>현 임원 구성</h2><table class="kv"><tbody>${(() => { const g = staffByKind(dd); return ['임원', '팀장', '팸장'].map(k => `<tr><th>${k}</th><td>${g[k].map(x => `${esc(x.role)} ${esc(x.name)}`).join(', ') || '—'}</td></tr>`).join(''); })()}</tbody></table>
-    <h2>2. 결의권 판정표 (회칙 5조)</h2><h3>결의권자 (${voters.length}명${voters.some(j => j.fam) ? ` · 그중 팸장 ${voters.filter(j => j.fam).length}명` : ''})</h3><table><thead><tr><th class="n">번호</th><th>이름</th><th>구분</th><th class="n">1년 출석률</th><th>임원 자격</th><th>사유</th></tr></thead><tbody>${voters.map((j, i) => { const o = officerSum(j); return `<tr><td class="n">${i + 1}</td><td>${esc(j.s.name)}</td><td>${j.fam ? '팸장' : '회원'}</td><td class="n">${j.rate ?? ''}%</td><td>${o.ok}</td><td style="font-size:11px">${esc(o.why)}</td></tr>`; }).join('')}</tbody></table>
+    <h2>2. 결의권 판정표 (회칙 5조)</h2><h3>결의권자 (${voters.length}명${voters.some(j => j.fam) ? ` · 그중 팸장 ${voters.filter(j => j.fam).length}명` : ''})</h3><table class="tight"><thead><tr><th class="n">번호</th><th>이름</th><th>구분</th><th class="n">1년 출석률</th><th>임원 자격</th><th>사유</th></tr></thead><tbody>${voters.map((j, i) => { const o = officerSum(j); return `<tr><td class="n">${i + 1}</td><td>${esc(j.s.name)}</td><td>${j.fam ? '팸장' : '회원'}</td><td class="n">${j.rate ?? ''}%</td><td>${o.ok}</td><td style="font-size:11px">${esc(o.why)}</td></tr>`; }).join('')}</tbody></table>
     ${(() => { const vr = j => ((j.rsn && j.rsn.voter) || j.why || []).map(x => String(x).replace(/\s+/g, ' ')).filter(Boolean).join(' · ');
       const ck = J.list.filter(j => j.voter === 'check'), no = J.list.filter(j => j.voter === 'no'), ex = J.excluded || [];
       const head = `<thead><tr><th class="n" style="width:6%">번호</th><th style="width:10%;white-space:nowrap">이름</th><th style="width:10%;white-space:nowrap">구분</th><th class="n" style="width:11%;white-space:nowrap">1년 출석률</th><th>사유</th></tr></thead>`;
       const row = (j, i) => `<tr><td class="n">${i + 1}</td><td>${esc(j.s.name)}</td><td>${j.fam ? '팸장' : '회원'}</td><td class="n">${j.rate != null ? j.rate + '%' : ''}</td><td style="font-size:11px">${esc(vr(j))}</td></tr>`;
-      return `<h3>확인 필요 (${ck.length}명)</h3><table>${head}<tbody>${ck.map(row).join('') || '<tr><td colspan="5">없음</td></tr>'}</tbody></table>
-      <h3>해당 아님 (${no.length + ex.length}명)</h3><table>${head}<tbody>${no.map(row).join('')}${ex.map((x, i) => `<tr><td class="n">${no.length + i + 1}</td><td>${esc(x.s.name)}</td><td>${AWAY.includes(x.s.status) ? '회원' : '회원 아님'}</td><td class="n"></td><td style="font-size:11px">${esc(x.why)}${AWAY.includes(x.s.status) ? ' — 회원 자격 일시 정지' : ''}</td></tr>`).join('') || (no.length ? '' : '<tr><td colspan="5">없음</td></tr>')}</tbody></table>`; })()}
+      return `<h3>확인 필요 (${ck.length}명)</h3><table class="tight">${head}<tbody>${ck.map(row).join('') || '<tr><td colspan="5">없음</td></tr>'}</tbody></table>
+      <h3>해당 아님 (${no.length + ex.length}명)</h3><table class="tight">${head}<tbody>${no.map(row).join('')}${ex.map((x, i) => `<tr><td class="n">${no.length + i + 1}</td><td>${esc(x.s.name)}</td><td>${AWAY.includes(x.s.status) ? '회원' : '회원 아님'}</td><td class="n"></td><td style="font-size:11px">${esc(x.why)}${AWAY.includes(x.s.status) ? ' — 회원 자격 일시 정지' : ''}</td></tr>`).join('') || (no.length ? '' : '<tr><td colspan="5">없음</td></tr>')}</tbody></table>`; })()}
     ${bylawArtHTML(dd, [4, 5, 6, 11], '판정 기준 조항 (회원 자격 4조 · 결의권 5조 · 결석과 제명 6조 · 임원 자격 11조)')}
     <h2>3. 후보자 명단 (회칙 11조)</h2><table><thead><tr><th>직위</th><th>후보</th><th>비고</th></tr></thead><tbody>${[...ASSEMBLY_POS, ...ASSEMBLY_POS_SUB].map(p => { const c = (a.candidates || []).filter(x => x.pos === p); return c.length ? c.map((x, i) => `<tr>${i ? '' : `<th rowspan="${c.length}">${p}</th>`}<td>${esc(x.name)}</td><td>${esc(x.note || '')}</td></tr>`).join('') : ''; }).join('') || '<tr><td colspan="3">후보 미정</td></tr>'}</tbody></table>
     <div class="ft"><b>중앙성서교회 청년부</b><span>CBCS에서 생성 · ${esc(a.date)}-총회자료.pdf</span></div></section>`;
@@ -1863,7 +1872,7 @@ function assemblyPaper(dd, a, J) {
 function assemblySignPaper(dd, a, J) {
   const voters = J.list.filter(j => j.voter === 'ok');
   return `<section class="paper"><div class="hd"><div><h1>${esc(a.title)} 출석 확인표</h1><div class="sub">중앙성서교회 청년부 · 결의권자 ${voters.length}명 · 정족수 ${J.q.need}명</div></div><div class="meta">${fmtK(a.date)}${a.place ? ' · ' + esc(a.place) : ''}</div></div>
-    <table><thead><tr><th class="n" style="width:8%">번호</th><th style="width:22%">이름</th><th style="width:14%">구분</th><th>출석 서명</th></tr></thead><tbody>${voters.map((j, i) => `<tr><td class="n">${i + 1}</td><td>${esc(j.s.name)}</td><td>${j.fam ? '팸장' : '회원'}</td><td class="sign" style="height:30px"></td></tr>`).join('')}</tbody></table>
+    <table class="tight"><thead><tr><th class="n" style="width:8%">번호</th><th style="width:22%">이름</th><th style="width:14%">구분</th><th>출석 서명</th></tr></thead><tbody>${voters.map((j, i) => `<tr><td class="n">${i + 1}</td><td>${esc(j.s.name)}</td><td>${j.fam ? '팸장' : '회원'}</td><td class="sign" style="height:30px"></td></tr>`).join('')}</tbody></table>
     <table style="margin-top:16px"><tbody><tr><th style="width:25%">참석 인원</th><td style="width:25%">명</td><th style="width:25%">성원 여부 (${J.q.need}명 이상)</th><td>성원 / 미달</td></tr></tbody></table>
     <div class="ft"><b>중앙성서교회 청년부</b><span>CBCS에서 생성 · ${esc(a.date)}-총회-출석확인표.pdf</span></div></section>`;
 }
@@ -2123,6 +2132,18 @@ BIND.archive = () => { $('#ar-year').onchange = e => { S.sub.year = +e.target.va
 VIEWS.members = async () => { const dd = D(); return `<div class="topbar"><div><h1>멤버</h1><div class="sub">${esc(dd.doc.name)} 교사·임원과 반 편성</div></div></div><div class="stack"><div class="card"><h2>교사·임원</h2><div class="list">${visibleStaff(dd).map(t => `<div class="item"><div><div class="t">${esc(t.name)}</div><div class="d">${esc(t.role)}${t.classId ? ' · ' + esc(t.classId) : ''}</div></div>${t.phone ? `<a href="tel:${esc(t.phone)}" class="note">${esc(t.phone)}</a>` : ''}</div>`).join('')}</div></div><div class="card"><h2>${esc(dd.doc.classLabel)} 편성</h2><div class="list">${dd.doc.classes.map(c => `<div class="item"><div><div class="t">${esc(c.name)}</div><div class="d">담임 ${esc(c.teacher || '미정')} · ${classStudents(dd, c.id).map(s => esc(s.name)).join(', ')}</div></div></div>`).join('')}</div></div></div>`; };
 
 /* ───────────── 장학 (교육위원회) ───────────── */
+/* 장학 첫 화면: 최근 5개년 확정 대상자 한눈에 — 해마다 몇 명·얼마·누구, 여러 해 받은 사람 */
+function scholarshipOverview(all, cur) {
+  const ys = [...new Set(all.map(s => s.year))].sort((a, b) => b - a).slice(0, 5); if (!ys.length) return '';
+  const grp = s => { const t = (s.origDept || DEPTS[s.dept] || '') + ''; return /유치|초등|유아|유년|아동/.test(t) || ['kinder', 'elem'].includes(s.dept) ? '유·초' : /중|고/.test(t) || s.dept === 'youth' ? '중고' : /청년/.test(t) || s.dept === 'young' ? '청년' : '기타'; };
+  const G = ['유·초', '중고', '청년', '기타'];
+  const conf = y => all.filter(s => s.year === y && s.status === '확정').sort((a, b) => G.indexOf(grp(a)) - G.indexOf(grp(b)) || a.name.localeCompare(b.name, 'ko'));
+  const cnt = {}; ys.forEach(y => conf(y).forEach(s => { cnt[s.name] = (cnt[s.name] || 0) + 1; }));
+  const multi = Object.entries(cnt).filter(([, n]) => n >= 2).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'ko'));
+  return `<div class="card sc-ov"><h2>최근 ${ys.length}개년 장학 대상자 <span class="r">확정 기준 · 연도를 누르면 아래에 그 해 상세가 나옵니다</span></h2><div class="tw"><table><thead><tr><th>연도</th><th class="n">인원</th><th class="n">합계(원)</th>${G.map(g => `<th class="n">${g}</th>`).join('')}<th>명단</th></tr></thead><tbody>
+    ${ys.map(y => { const L = conf(y); return `<tr class="${y === cur ? 'on' : ''}" data-scy="${y}" style="cursor:pointer"><th>${y}</th><td class="n"><b>${L.length}</b></td><td class="n">${won(L.reduce((t, s) => t + (+s.amount || 0), 0))}</td>${G.map(g => `<td class="n">${L.filter(s => grp(s) === g).length || ''}</td>`).join('')}<td class="wrap">${G.map(g => { const n = L.filter(s => grp(s) === g); return n.length ? `<span class="sc-g">${g}</span> ${n.map(s => `<span class="${cnt[s.name] >= 2 ? 'sc-rep' : ''}">${esc(s.name)}</span>`).join(', ')}` : ''; }).filter(Boolean).join(' &nbsp; ')}</td></tr>`; }).join('')}
+    </tbody></table></div>${multi.length ? `<div class="note" style="margin-top:8px"><b>${ys.length}년 동안 두 번 이상 받은 사람</b> (명단에 밑줄): ${multi.map(([n, k]) => `${esc(n)} ${k}회`).join(', ')}</div>` : ''}</div>`;
+}
 VIEWS.scholarship = async () => {
   const all = S.scholarship || (S.scholarship = await backend.list('scholarship'));
   const years = [...new Set(all.map(s => s.year))].sort((a, b) => b - a); const year = S.sub.year || years[0] || YEAR;
@@ -2131,6 +2152,7 @@ VIEWS.scholarship = async () => {
   const show = S.sub.showAcct;
   return `<div class="topbar"><div><h1>장학</h1><div class="sub">교육위원회 전용 · 2018년부터의 장학생 명단과 지급 내역</div></div><div class="row"><select id="sc-year" style="width:auto">${years.map(y => `<option ${y === year ? 'selected' : ''}>${y}</option>`).join('')}</select>${canEdit() ? `<button class="btn s" id="sc-acct">${show ? '계좌 숨기기' : '계좌 보기'}</button><button class="btn p" id="sc-new">대상자 추가</button>` : ''}</div></div>
   <div class="stack">
+    ${scholarshipOverview(all, year)}
     <div class="tiles"><div class="tile"><div class="v">${list.filter(s => s.status === '확정').length}</div><div class="l">${year}년 확정</div></div><div class="tile"><div class="v">${list.filter(s => s.status !== '확정').length}</div><div class="l">후보·제외</div></div><div class="tile"><div class="v">${won(total)}</div><div class="l">확정 합계(원)</div></div></div>
     <div class="card"><div class="tw"><table><thead><tr><th>상태</th><th>이름</th><th>소속</th><th>학교·학년</th><th class="n">금액</th><th>사유·비고</th>${show ? '<th>계좌</th>' : ''}<th></th></tr></thead><tbody>
     ${list.map(s => `<tr><td><span class="pill ${s.status === '확정' ? 'ok' : s.status === '후보' ? 'info' : 'mute'}">${esc(s.status || '')}</span></td><td>${esc(s.name)}${s.flags && s.flags.length ? ` <span class="tag flag" title="${esc(s.flags.join(' / '))}">!</span>` : ''}</td><td>${esc(s.origDept || DEPTS[s.dept] || '')}</td><td class="wrap note">${esc([s.school, s.grade].filter(Boolean).join(' '))}</td><td class="n">${s.amount ? won(s.amount) : '—'}</td><td class="wrap note">${esc([s.reason, s.note].filter(Boolean).join(' · ')).slice(0, 90)}</td>${show ? `<td class="mask note">${esc([s.bank, s.account, s.holder].filter(Boolean).join(' '))}</td>` : ''}<td>${canEdit() ? `<button class="btn s" data-sc="${s._id}">수정</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="8" class="note">자료가 없습니다.</td></tr>'}
@@ -2141,6 +2163,7 @@ function scholarshipForm(s) { return `<div class="fields"><label class="f"><span
 function readScholarshipForm(s) { Object.assign(s, { year: +$('#sf-year').value, status: $('#sf-status').value, name: $('#sf-name').value.trim(), origDept: $('#sf-dept').value.trim(), school: $('#sf-school').value.trim(), grade: $('#sf-grade').value.trim(), amount: +$('#sf-amount').value || 0, birth: $('#sf-birth').value.trim(), bank: $('#sf-bank').value.trim(), account: $('#sf-account').value.trim(), holder: $('#sf-holder').value.trim(), ceremony: $('#sf-ceremony').value, reason: $('#sf-reason').value.trim(), note: $('#sf-note').value.trim(), flags: [] }); }
 BIND.scholarship = () => {
   $('#sc-year').onchange = e => { S.sub.year = +e.target.value; render(); };
+  document.querySelectorAll('[data-scy]').forEach(r => r.onclick = () => { S.sub.year = +r.dataset.scy; renderHere(); });
   const ac = $('#sc-acct'); if (ac) ac.onclick = () => { S.sub.showAcct = !S.sub.showAcct; render(); };
   const nw = $('#sc-new'); if (nw) nw.onclick = () => { const s = { id: 'sc_' + uid(), year: S.sub.year || YEAR, status: '후보', name: '', origDept: '', dept: '', sex: '', birth: '', school: '', grade: '', amount: 0, bank: '', account: '', holder: '', reason: '', note: '', ceremony: '', flags: [], source: ['앱 입력'] }; openModal(`<h2>장학 대상자 추가<button class="btn s" id="modal-close">닫기</button></h2>${scholarshipForm(s)}<div class="row" style="margin-top:10px"><button class="btn p" id="sf-save">저장</button></div>`); $('#sf-save').onclick = async () => { readScholarshipForm(s); if (!s.name) return; await backend.set(`scholarship/${s.id}`, s); S.scholarship.push({ _id: s.id, ...s }); closeModal(); render(); }; };
   document.querySelectorAll('[data-sc]').forEach(b => b.onclick = () => { const s = S.scholarship.find(x => x._id === b.dataset.sc); openModal(`<h2>${esc(s.name)} (${s.year})<button class="btn s" id="modal-close">닫기</button></h2>${s.flags && s.flags.length ? `<div class="flags">${s.flags.map(esc).join('<br>')}</div>` : ''}<div style="margin-top:8px">${scholarshipForm(s)}</div><div class="row" style="margin-top:10px"><button class="btn p" id="sf-save">저장</button><button class="btn d" id="sf-del">삭제</button></div>`); $('#sf-save').onclick = async () => { readScholarshipForm(s); const { _id, ...data } = s; await backend.set(`scholarship/${_id}`, data); closeModal(); render(); }; $('#sf-del').onclick = async () => { await backend.del(`scholarship/${s._id}`); S.scholarship = S.scholarship.filter(x => x._id !== s._id); closeModal(); render(); }; });
@@ -2249,7 +2272,7 @@ VIEWS.tutorial = async () => {
 };
 
 /* ───────────── 청년부: 교회생활(타임라인) ───────────── */
-const TL_KINDS = { 등록: 'info', 새가족교육: 'info', 신급: 'ok', 임원: 'ok', 팸: 'mute', 반: 'mute', 수련회: 'mute', 장학: 'ok', 제적: 'bad', 복귀: 'ok', 결혼: 'info', 군복무: 'warn', 유학: 'warn', 이사: 'warn', 심방: 'info', 기타: 'mute' };
+const TL_KINDS = { 등록: 'info', 새가족교육: 'info', 신급: 'ok', 임원: 'ok', 팸: 'mute', 목장: 'mute', 반: 'mute', 수련회: 'mute', 장학: 'ok', 제적: 'bad', 복귀: 'ok', 결혼: 'info', 군복무: 'warn', 유학: 'warn', 이사: 'warn', 심방: 'info', 기타: 'mute' };
 const normName = n => String(n || '').replace(/\s/g, '').replace(/(권사|집사|목사|장로|전도사)$/, '');
 function nameMatches(dd, s, ev) { // 이름이 같고, 둘 다 생년이 있으면 생년도 같아야 함
   if (normName(ev.name) !== normName(s.name)) return false;
@@ -2273,8 +2296,8 @@ function studentTimeline(dd, s) {
   if (s.married) ev.push({ date: s.marriedDate || '', kind: '결혼', title: '결혼', note: '청년부 회원 자격 종료 대상(회칙 4조) · 학생 카드의 "결혼"에서 고침', auto: true, derived: true });
   (s.statusLog || []).forEach(l => ev.push({ date: l.date || '', kind: l.to === 'left' ? '제적' : '복귀', title: l.to === 'left' ? `${l.kind || '제적'} 처리` : '복적', note: l.reason || '', auto: true, derived: true }));
   // 소속 표기: 청년부는 "팸", 나머지 부서(영유치·초등·중고등)는 "반" — 예) 중고등부 중1반
-  (s.history || []).forEach(h => { const yg = h.dept === 'young'; const c = String(h.classId || '').trim(); const cl = !c ? '' : yg ? c : /반$/.test(c) ? c : c + '반';
-    ev.push({ date: String(h.year), kind: yg ? '팸' : '반', title: `${DEPTS[h.dept] || h.dept} ${cl}`.trim(), note: h.note || '', auto: true, derived: true }); });
+  (s.history || []).forEach(h => { const yg = h.dept === 'young'; const c = String(h.classId || '').trim(); const cl = !c ? '' : yg ? (+h.year >= 2027 ? c.replace(/\s*팸$/, ' 목장') : c) : /반$/.test(c) ? c : c + '반';
+    ev.push({ date: String(h.year), kind: yg ? youngUnit(h.year) : '반', title: `${DEPTS[h.dept] || h.dept} ${cl}`.trim(), note: h.note || '', auto: true, derived: true }); });
   (s.scholarship || []).forEach(y => ev.push({ date: String(y), kind: '장학', title: `${y}년 장학생`, note: '', auto: true, derived: true }));
   const byYear = {}; Object.values(dd.reports).forEach(r => { const y = r.date.slice(0, 4); byYear[y] = byYear[y] || { n: 0, p: 0 }; byYear[y].n++; if ((r.att || {})[s.id]) byYear[y].p++; });
   Object.entries(byYear).forEach(([y, v]) => ev.push({ date: y + '-12-31', kind: '기타', title: `${y}년 출석 ${v.p}/${v.n}회 (${v.n ? Math.round(v.p / v.n * 100) : 0}%)`, note: '', auto: true, derived: true, att: true }));
@@ -2755,23 +2778,30 @@ function vehicleClashes(list) {
 const vehTime = v => v.start || v.end ? `${v.start || ''}~${v.end || ''}` : '종일';
 const vehicleEvents = () => (((S.committee || {}).vehicles) || []).filter(v => v.status !== '취소' && v.date).map(v => ({ date: v.date, end: v.dateEnd && v.dateEnd > v.date ? v.dateEnd : '', title: `차량 · ${deptLabel(v.dept)}${v.dest ? ' ' + v.dest : ''}`, note: [v.vehicle, vehTime(v)].filter(Boolean).join(' '), c: false }));
 const homeEvents = dd => [...allEvents(dd), ...vehicleEvents()];
+const CHURCH_CARS = ['8688(스타리아)', '4863(스타렉스)', '5309(레이)', '7908(버스)'];
+const VEH_RULES = ['교회차량은 개인적 용도로 사용할 수 없으며, 반드시 교회와 소속 기관의 공적인 용무로만 사용할 수 있습니다.', '반드시 안전운행 해주시고, 차량운행 중에는 과속이나 신호위반에 주의해 주시며, 혹시 과태료가 부과될 경우에는 사용기관 및 개인 운전자가 부담합니다.', '각 기관에서 차량사용 후에는 차량 내부를 깨끗하게 청소해 주시기 바랍니다.', '차량이 심하게 더러워진 경우에는 사용기관에서 실내뿐만 아니라 외부세차를 하셔서 차량청결을 유지해 주시기 바랍니다.', '차량열쇠는 교회 사무실에서 받아 가시고 사용하신 후에는 책임자에게 차량상태를 점검 받으신 후 열쇠를 반납해 주시기 바랍니다.', '늦어도 1주일 전에는 차량신청서를 제출하시고 승인을 받으신 후 차량을 이용해 주시기 바랍니다.'];
+/* 교회 양식 "차량 사용 신청서"(주말학습계획서 첨부 1)와 같은 칸 */
 function vehiclePaper(v) {
-  const dd = S.data[v.dept]; const head = dd ? dd.doc.staff.find(t => t.status !== 'left' && /부장|회장/.test(t.role)) : null;
-  return `<section class="paper voucher">
-    <div class="hd"><div><h1>차 량 운 행 신 청 서</h1><div class="sub">중앙성서교회 교육위원회 · ${esc(deptLabel(v.dept))}</div></div>
-      <table class="sign"><tr><th rowspan="2" style="width:22px">결<br>재</th><th>부장</th><th>교육디렉터</th><th>교육위원장</th><th>교장</th></tr><tr><td>${esc(head ? head.name : '')}</td><td></td><td></td><td></td></tr></table></div>
-    <table class="kv"><tbody>
-      <tr><th>신청 부서</th><td>${esc(deptLabel(v.dept))}</td><th>신청일</th><td>${esc(fmtK(v.created || today()))}</td></tr>
-      <tr><th>운행일</th><td>${esc(fmtK(v.date))}${vehEnd(v) !== v.date ? ' ~ ' + esc(fmtK(vehEnd(v))) : ''}</td><th>시간</th><td>${esc(vehTime(v))}</td></tr>
-      <tr><th>차량</th><td>${esc(v.vehicle || '')}</td><th>탑승 인원</th><td>${v.people ? esc(v.people) + '명' : ''}</td></tr>
-      <tr><th>행선지</th><td colspan="3">${esc(v.dest || '')}</td></tr>
-      <tr><th>목적</th><td colspan="3" style="height:70px;vertical-align:top">${esc(v.purpose || '')}</td></tr>
-      <tr><th>운전자</th><td>${esc(v.driver || '')}</td><th>연락처</th><td>${esc(v.driverPhone || '')}</td></tr>
-      <tr><th>비고</th><td colspan="3" style="height:50px;vertical-align:top">${esc(v.note || '')}</td></tr>
+  const dt = (d, t) => d ? `${d.slice(0, 4)}년 ${+d.slice(5, 7)}월 ${+d.slice(8, 10)}일${t ? ' ' + t : ''}` : '20&nbsp;&nbsp;&nbsp;년&nbsp;&nbsp;&nbsp;월&nbsp;&nbsp;&nbsp;일&nbsp;&nbsp;&nbsp;시';
+  const known = CHURCH_CARS.includes(v.vehicle);
+  return `<section class="paper voucher vehform">
+    <div class="att">첨부 1) 차량신청서</div>
+    <h1 class="ttl">차 량 사 용 신 청 서</h1><div class="ttl-sub">※ 1종 보통 반드시 확인</div>
+    <table class="kv vk"><tbody>
+      <tr><th>신 청 기 관 명</th><td>중앙성서교회 ${esc(deptLabel(v.dept))}</td></tr>
+      <tr><th>사 용 일 시</th><td>${dt(v.date, v.start)} ~ ${dt(vehEnd(v), v.end)} 까지</td></tr>
+      <tr><th>행 선 지</th><td>${esc(v.dest || '')}</td></tr>
+      <tr><th>예 상 주 행 거 리</th><td>왕복 ${v.km ? esc(v.km) : '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'} Km</td></tr>
+      <tr><th>신 청 차 량</th><td>${CHURCH_CARS.map(c => `${v.vehicle === c ? '☑' : '□'}${esc(c)}`).join('&nbsp;&nbsp;')}${!known && v.vehicle ? ` &nbsp;☑${esc(v.vehicle)}` : ''}</td></tr>
+      <tr><th>차 량 사 용 목 적</th><td style="height:46px">${esc(v.purpose || '')}</td></tr>
+      <tr><th>탑 승 인 원</th><td>${v.people ? esc(v.people) + '명' : ''}</td></tr>
+      <tr><th>운 전 자 (연락처)</th><td>성명 : ${esc(v.driver || '')}<span class="gap"></span>연락처 : ${esc(v.driverPhone || '')}</td></tr>
+      <tr><th>신 청 자 (연락처)</th><td>성명 : ${esc(v.requester || '')}<span class="gap"></span>연락처 : ${esc(v.requesterPhone || '')}</td></tr>
+      <tr><td colspan="2" class="ask"><p>위와 같이 신청하오니 승인하여 주시기를 바랍니다.</p><p class="r">${esc(fmtK(v.created || today()))}</p><p class="r">신 청 인 &nbsp; ${esc(v.requester || '')} &nbsp;(인)</p>
+        <div class="rules"><b>※ 교회차량 신청 시 유의사항</b><ol>${VEH_RULES.map(r => `<li>${esc(r)}</li>`).join('')}</ol></div></td></tr>
     </tbody></table>
-    <div class="lines" style="margin-top:12px"><p>위와 같이 차량 운행을 신청합니다.</p><p style="text-align:right">${esc(fmtK(v.created || today()))} &nbsp; 신청인 ${esc(v.requester || '')} (인)</p></div>
-    <div class="merge">운전자는 출발 전 차량 상태와 보험 적용 범위를 확인합니다. 운행 뒤 주유·이상 여부를 비고에 적어 제출합니다.</div>
-    <div class="ft"><b>중앙성서교회 교육위원회</b><span>CBCS에서 생성 · 차량운행신청서 ${esc(v.date || '')}</span></div>
+    ${v.note ? `<div class="note" style="margin-top:6px">비고: ${esc(v.note)}</div>` : ''}
+    <div class="ft"><b>중앙성서교회 교육부</b><span>CBCS에서 생성 · 차량사용신청서 ${esc(v.date || '')}</span></div>
   </section>`;
 }
 VIEWS.vehicles = async () => {
@@ -2792,9 +2822,9 @@ VIEWS.vehicles = async () => {
     </tbody></table></div></div>
     ${canEdit() ? `<div class="card" id="vh-form"><h2>${editing ? '신청 수정' : '차량 신청하기'} <span class="r">${esc(deptLabel(editing ? editing.dept : me))}</span></h2>
       <div class="fields"><label class="f"><span>운행일</span><input type="date" id="vh-date" value="${esc(cur.date || '')}"></label><label class="f"><span>끝나는 날 (수련회 등)</span><input type="date" id="vh-date-end" value="${esc(cur.dateEnd || '')}"></label><label class="f"><span>출발 시각</span><input type="time" id="vh-start" value="${esc(cur.start || '')}"></label><label class="f"><span>돌아오는 시각</span><input type="time" id="vh-end" value="${esc(cur.end || '')}"></label>
-        <label class="f"><span>차량</span><input type="text" id="vh-vehicle" list="vh-names" value="${esc(cur.vehicle || '')}" placeholder="예: 교회 승합차(12인승)"><datalist id="vh-names">${names.map(n => `<option value="${esc(n)}">`).join('')}</datalist></label><label class="f"><span>탑승 인원</span><input type="number" id="vh-people" value="${esc(cur.people || '')}"></label><label class="f"><span>운전자</span><input type="text" id="vh-driver" value="${esc(cur.driver || '')}"></label><label class="f"><span>운전자 연락처</span><input type="tel" id="vh-phone" value="${esc(cur.driverPhone || '')}"></label>
+        <label class="f"><span>신청 차량</span><select id="vh-vehicle">${['', ...CHURCH_CARS, ...names.filter(n => !CHURCH_CARS.includes(n))].map(n => `<option value="${esc(n)}" ${(cur.vehicle || '') === n ? 'selected' : ''}>${n ? esc(n) : '— 고르기 —'}</option>`).join('')}<option value="__etc">기타 (직접 적기)</option></select><input type="text" id="vh-vehicle-etc" placeholder="차량 이름" style="margin-top:4px" hidden></label><label class="f"><span>예상 주행거리 (왕복 km)</span><input type="number" id="vh-km" value="${esc(cur.km || '')}"></label><label class="f"><span>탑승 인원</span><input type="number" id="vh-people" value="${esc(cur.people || '')}"></label><label class="f"><span>운전자</span><input type="text" id="vh-driver" value="${esc(cur.driver || '')}"></label><label class="f"><span>운전자 연락처</span><input type="tel" id="vh-phone" value="${esc(cur.driverPhone || '')}"></label>
         <label class="f" style="grid-column:span 2"><span>행선지</span><input type="text" id="vh-dest" value="${esc(cur.dest || '')}"></label><label class="f" style="grid-column:span 2"><span>목적</span><input type="text" id="vh-purpose" value="${esc(cur.purpose || '')}" placeholder="예: 가을 현장학습"></label>
-        <label class="f"><span>신청인</span><input type="text" id="vh-req" value="${esc(cur.requester || '')}"></label><label class="f"><span>상태</span><select id="vh-status">${VEH_STATUS.map(k => `<option ${(cur.status || '신청') === k ? 'selected' : ''}>${k}</option>`).join('')}</select></label><label class="f" style="grid-column:span 2"><span>비고</span><input type="text" id="vh-note" value="${esc(cur.note || '')}"></label></div>
+        <label class="f"><span>신청인</span><input type="text" id="vh-req" value="${esc(cur.requester || '')}"></label><label class="f"><span>신청인 연락처</span><input type="tel" id="vh-req-phone" value="${esc(cur.requesterPhone || '')}"></label><label class="f"><span>상태</span><select id="vh-status">${VEH_STATUS.map(k => `<option ${(cur.status || '신청') === k ? 'selected' : ''}>${k}</option>`).join('')}</select></label><label class="f" style="grid-column:span 2"><span>비고</span><input type="text" id="vh-note" value="${esc(cur.note || '')}"></label></div>
       <div class="row" style="margin-top:10px"><button class="btn p" id="vh-save">${editing ? '수정 저장' : '신청 저장'}</button>${editing ? '<button class="btn" id="vh-cancel">취소</button>' : ''}<span class="note">차량 이름을 똑같이 적어야 겹침을 찾습니다(목록에서 고르면 편합니다). 종이 결재가 끝나면 상태를 "확정"으로 바꿉니다.</span></div></div>` : ''}
   </div>`;
 };
@@ -2808,16 +2838,117 @@ BIND.vehicles = () => {
   const sv = $('#vh-save'); if (sv) sv.onclick = async () => {
     const date = $('#vh-date').value; if (!date) { toast('운행일을 넣어 주세요'); return; }
     const old = S.sub.vehEdit ? c.vehicles.find(x => x.id === S.sub.vehEdit) : null;
-    const v = Object.assign(old || { id: 'vh_' + uid(), dept: me, created: today() }, { date, dateEnd: $('#vh-date-end').value > date ? $('#vh-date-end').value : '', start: $('#vh-start').value, end: $('#vh-end').value, vehicle: $('#vh-vehicle').value.trim(), people: $('#vh-people').value.trim(), driver: $('#vh-driver').value.trim(), driverPhone: $('#vh-phone').value.trim(), dest: $('#vh-dest').value.trim(), purpose: $('#vh-purpose').value.trim(), requester: $('#vh-req').value.trim(), status: $('#vh-status').value, note: $('#vh-note').value.trim() });
+    const v = Object.assign(old || { id: 'vh_' + uid(), dept: me, created: today() }, { date, dateEnd: $('#vh-date-end').value > date ? $('#vh-date-end').value : '', start: $('#vh-start').value, end: $('#vh-end').value, vehicle: $('#vh-vehicle').value === '__etc' ? $('#vh-vehicle-etc').value.trim() : $('#vh-vehicle').value.trim(), people: $('#vh-people').value.trim(), driver: $('#vh-driver').value.trim(), driverPhone: $('#vh-phone').value.trim(), dest: $('#vh-dest').value.trim(), purpose: $('#vh-purpose').value.trim(), requester: $('#vh-req').value.trim(), requesterPhone: $('#vh-req-phone').value.trim(), km: $('#vh-km').value.trim(), status: $('#vh-status').value, note: $('#vh-note').value.trim() });
     try { const { _id, ...data } = v; await backend.set(`vehicles/${v.id}`, data); if (!old) c.vehicles.push(v); S.sub = { month: ym(date) }; await render(); const hit = vehicleClashes(vehiclesIn(ym(date))).has(v.id); toast(hit ? '저장했습니다 — 다른 신청과 겹칩니다. 표를 확인하세요.' : '저장했습니다', hit ? 4000 : 2200); }
     catch (e) { toast('저장 실패: ' + (e.code || e.message) + ' — 보안 규칙을 게시했는지 확인하세요', 5000); }
   };
   const vc = $('#vh-cancel'); if (vc) vc.onclick = () => { delete S.sub.vehEdit; render(); };
+  const vs = $('#vh-vehicle'); if (vs) vs.onchange = () => { $('#vh-vehicle-etc').hidden = vs.value !== '__etc'; };
 };
 
+
+/* ───────────── 주말학습 (교회 양식 "주말학습계획서" + 첨부 1 차량신청서 + 첨부 2 결과보고서) ─────────────
+   depts/{부서}/outings/{id} — 부서가 계획서를 쓰고 출력해 결재(부장·교육디렉터·교육위원장·교장)를 받는다.
+   상태: 작성 중 → 제출 → 승인 → 완료(결과보고). 차량이 필요하면 계획서에서 바로 차량 신청을 만든다. */
+const OUT_STATUS = ['작성 중', '제출', '승인', '완료'];
+const OUT_RULES = ['모든 주말학습 및 외부활동은 사전에 계획서를 제출하고 승인받은 후 진행합니다.', '늦어도 행사 1주 전까지 계획서를 제출해야 합니다.', '차량이 필요한 경우 차량신청서를 함께 제출해 주세요(첨부 1).', '주말학습 진행 후 반드시 1주일 이내 결과 보고서를 작성하여 제출하시기 바랍니다(첨부 2).', '승인 없이 진행한 행사에 대해서는 예산 집행이 제한될 수 있습니다.'];
+S.outings = {};
+async function loadOutings(d) { if (!S.outings[d]) { try { S.outings[d] = (await backend.list(`depts/${d}/outings`)).map(x => ({ ...x, id: x.id || x._id })); } catch (e) { S.outings[d] = []; S.outingsErr = e.code || e.message; } } return S.outings[d]; }
+const outDays = o => { const a = (o.start || '').slice(0, 10), b = (o.end || '').slice(0, 10); return a ? fmtK(a) + (b && b !== a ? ' ~ ' + fmtK(b) : '') : '날짜 미정'; };
+const outDT = x => x ? `${x.slice(0, 4)}년 ${+x.slice(5, 7)}월 ${+x.slice(8, 10)}일 ${x.length > 10 ? +x.slice(11, 13) + '시' + (+x.slice(14, 16) ? ' ' + +x.slice(14, 16) + '분' : '') : ''}`.trim() : '20&nbsp;&nbsp;&nbsp;년&nbsp;&nbsp;&nbsp;월&nbsp;&nbsp;&nbsp;일&nbsp;&nbsp;&nbsp;시';
+const outSum = rows => (rows || []).reduce((t, r) => t + (Number(String(r.amount || '').replace(/[^\d-]/g, '')) || 0), 0);
+function outSignBox() { return `<table class="sign"><tr><th rowspan="3" style="width:22px">확<br>인</th><th>부장</th><th>교육디렉터</th><th>교육위원장</th><th>교장</th></tr><tr><td></td><td></td><td></td><td></td></tr><tr class="dt"><td>2026.&nbsp;&nbsp;&nbsp;.&nbsp;&nbsp;&nbsp;.</td><td>2026.&nbsp;&nbsp;&nbsp;.&nbsp;&nbsp;&nbsp;.</td><td>2026.&nbsp;&nbsp;&nbsp;.&nbsp;&nbsp;&nbsp;.</td><td>2026.&nbsp;&nbsp;&nbsp;.&nbsp;&nbsp;&nbsp;.</td></tr></table>`; }
+function outHeadRows(o) {
+  return `<tr><th>부 서 명</th><td colspan="3" class="split"><span>${esc(DEPTS[o.dept] || '')}</span><b>담 당 자</b><span>${esc(o.manager || '')}</span><span>${esc(o.minister || '')} 전도사</span><b>연 락 처</b><span>${esc(o.phone || '')}</span></td></tr>
+    <tr><th>일 시</th><td colspan="3">${outDT(o.start)} ~ ${outDT(o.end)}</td></tr>
+    <tr><th>장 소</th><td colspan="3">${esc(o.place || '')}</td></tr>
+    <tr><th>목 적</th><td colspan="3">${esc(o.purpose || '')}</td></tr>`;
+}
+const outMoney = (rows, mid) => `<table class="inner"><thead><tr><th>항목</th><th>${mid}</th><th>금액</th></tr></thead><tbody>${[...(rows || []), ...Array(Math.max(0, 5 - (rows || []).length)).fill({})].map(r => `<tr><td>${esc(r.item || '')}</td><td>${esc(r.basis || r.desc || '')}</td><td class="n">${r.amount ? won(String(r.amount).replace(/[^\d-]/g, '')) : ''}</td></tr>`).join('')}${outSum(rows) ? `<tr><th colspan="2">합계</th><td class="n"><b>${won(outSum(rows))}</b></td></tr>` : ''}</tbody></table>`;
+function outingPlanPaper(o) {
+  return `<section class="paper outform">
+    <div class="ohd"><div><div class="org">중앙성서교회 교육부</div><h1>주말학습계획서</h1><div class="rep">보 고 일 &nbsp; ${o.reportDate ? esc(fmtK(o.reportDate)) : '2026년&nbsp;&nbsp;&nbsp;&nbsp;월&nbsp;&nbsp;&nbsp;&nbsp;일'}</div></div>${outSignBox()}</div>
+    <table class="kv ok"><tbody><tr><th>항 목</th><th colspan="3">내용</th></tr>${outHeadRows(o)}
+      <tr><th>인 원</th><td colspan="3">${esc(o.people || '')}</td></tr>
+      <tr><th>예 산</th><td colspan="3">${outMoney(o.budget, '산출 근거')}</td></tr>
+      <tr><th>요청사항</th><td colspan="3" style="height:90px;vertical-align:top;white-space:pre-wrap">${esc(o.requests || '')}${o.vehicleId ? '\n※ 차량신청서 첨부' : ''}</td></tr></tbody></table>
+    <ol class="orules">${OUT_RULES.map(r => `<li>${esc(r)}</li>`).join('')}</ol>
+    <div class="ft"><b>중앙성서교회 교육부</b><span>CBCS에서 생성 · 주말학습계획서 ${esc((o.start || '').slice(0, 10))}</span></div></section>`;
+}
+function outingResultPaper(o) { const r = o.result || {};
+  return `<section class="paper outform"><div class="att">첨부 2) 주말학습보고서</div><h1 class="ttl">주 말 학 습 결 과 보 고 서</h1>
+    <table class="kv ok"><tbody><tr><th>항 목</th><th colspan="3">내용</th></tr>${outHeadRows(o)}
+      <tr><th>참석인원</th><td colspan="3">${esc(r.attend || '')}</td></tr>
+      <tr><th>진행내용</th><td colspan="3" style="height:200px;vertical-align:top;white-space:pre-wrap">${esc(r.content || '')}</td></tr>
+      <tr><th>평 가</th><td colspan="3" style="height:90px;vertical-align:top;white-space:pre-wrap">${esc(r.eval || '')}</td></tr>
+      <tr><th>예산사용<br>내 역</th><td colspan="3">${outMoney(r.spend, '내용')}</td></tr></tbody></table>
+    <div class="ft"><b>중앙성서교회 교육부</b><span>CBCS에서 생성 · 주말학습결과보고서 ${esc((o.start || '').slice(0, 10))}</span></div></section>`;
+}
+const outRowsEditor = (id, rows, mid, key) => `<div class="out-rows" id="${id}">${[...(rows || []), {}].map(r => `<div class="row out-row"><input type="text" data-k="item" placeholder="항목" value="${esc(r.item || '')}"><input type="text" data-k="${key}" placeholder="${mid}" value="${esc(r[key] || '')}" style="flex:2"><input type="text" data-k="amount" placeholder="금액" inputmode="numeric" value="${esc(r.amount || '')}" style="max-width:120px"></div>`).join('')}</div><button class="btn s" data-addrow="${id}" data-mid="${mid}" data-key="${key}">줄 추가</button>`;
+const readRows = id => [...document.querySelectorAll(`#${id} .out-row`)].map(r => Object.fromEntries([...r.querySelectorAll('input')].map(i => [i.dataset.k, i.value.trim()]))).filter(r => r.item || r.amount || r.basis || r.desc);
+VIEWS.outings = async () => {
+  const depts = isCommittee() ? Object.keys(DEPTS) : [S.dept]; for (const d of depts) await loadOutings(d);
+  const all = depts.flatMap(d => S.outings[d].map(o => ({ ...o, dept: o.dept || d }))).sort((a, b) => (b.start || '') < (a.start || '') ? -1 : 1);
+  const pr = S.sub.outPrint && all.find(o => o.id === S.sub.outPrint.id);
+  if (pr) return `<div class="topbar no-print"><div><h1>${S.sub.outPrint.kind === 'result' ? '주말학습 결과보고서' : '주말학습계획서'}</h1></div><div class="row"><button class="btn" id="ot-back">돌아가기</button><button class="btn p" id="ot-pr">인쇄 / PDF로 저장</button></div></div>${S.sub.outPrint.kind === 'result' ? outingResultPaper(pr) : outingPlanPaper(pr)}${S.sub.outPrint.kind !== 'result' && pr.vehicleId && ((S.committee || {}).vehicles || []).find(v => v.id === pr.vehicleId) ? vehiclePaper(S.committee.vehicles.find(v => v.id === pr.vehicleId)) : ''}`;
+  const ed = S.sub.outEdit ? (S.sub.outEdit === 'new' ? { id: '', dept: S.dept, status: '작성 중', budget: [], result: {} } : all.find(o => o.id === S.sub.outEdit)) : null;
+  const dd = !isCommittee() ? D() : null; const staff = dd ? dd.doc.staff.filter(t => t.status !== 'left') : [];
+  const defMgr = (staff.find(t => /부장/.test(t.role || '')) || {}).name || ''; const defMin = ((staff.find(t => /전도사|교역자|목사/.test(t.role || '')) || {}).name || '').replace(/\s*전도사$/, '');
+  const mine = o => !isCommittee() && o.dept === S.dept;
+  const pill = st => `<span class="pill ${st === '승인' ? 'ok' : st === '완료' ? 'info' : st === '제출' ? 'warn' : 'mute'}">${esc(st || '작성 중')}</span>`;
+  return `<div class="topbar"><div><h1>주말학습</h1><div class="sub">교회 양식 "주말학습계획서"를 화면에서 쓰고 출력해 결재를 받습니다. 차량이 필요하면 계획서에서 바로 차량 신청(첨부 1)을 만들고, 다녀온 뒤 1주일 안에 결과보고서(첨부 2)를 씁니다.</div></div>${!isCommittee() && canEdit() && !ed ? '<div class="row"><button class="btn p" id="ot-new">새 계획서</button></div>' : ''}</div>
+  <div class="stack">
+    ${S.outingsErr ? `<div class="hint">불러오기 실패: ${esc(S.outingsErr)}</div>` : ''}
+    ${ed ? `<div class="card" id="ot-form"><h2>${ed.id ? '계획서 수정' : '새 주말학습계획서'} <span class="r">${esc(DEPTS[ed.dept] || '')}</span></h2>
+      <div class="fields">
+        <label class="f" style="grid-column:span 2"><span>행사 이름</span><input type="text" id="ot-title" value="${esc(ed.title || '')}" placeholder="예: 가을 현장학습"></label>
+        <label class="f"><span>보고일</span><input type="date" id="ot-rdate" value="${esc(ed.reportDate || today())}"></label>
+        <label class="f"><span>상태</span><select id="ot-status">${OUT_STATUS.map(k => `<option ${(ed.status || '작성 중') === k ? 'selected' : ''}>${k}</option>`).join('')}</select></label>
+        <label class="f"><span>담당자</span><input type="text" id="ot-mgr" value="${esc(ed.manager ?? defMgr)}"></label>
+        <label class="f"><span>전도사</span><input type="text" id="ot-min" value="${esc(ed.minister ?? defMin)}"></label>
+        <label class="f"><span>연락처</span><input type="tel" id="ot-phone" value="${esc(ed.phone || '')}" placeholder="010-"></label>
+        <label class="f"><span>인원</span><input type="text" id="ot-people" value="${esc(ed.people || '')}" placeholder="예: 학생 18명, 교사 4명"></label>
+        <label class="f"><span>시작</span><input type="datetime-local" id="ot-start" value="${esc(ed.start || '')}"></label>
+        <label class="f"><span>끝</span><input type="datetime-local" id="ot-end" value="${esc(ed.end || '')}"></label>
+        <label class="f" style="grid-column:span 2"><span>장소</span><input type="text" id="ot-place" value="${esc(ed.place || '')}"></label>
+        <label class="f" style="grid-column:1/-1"><span>목적</span><input type="text" id="ot-purpose" value="${esc(ed.purpose || '')}"></label>
+      </div>
+      <div class="note" style="margin:10px 0 4px">예산 (항목 · 산출 근거 · 금액)</div>${outRowsEditor('ot-budget', ed.budget, '산출 근거', 'basis')}
+      <label class="f" style="margin-top:10px"><span>요청사항</span><textarea id="ot-req" rows="3">${esc(ed.requests || '')}</textarea></label>
+      <details style="margin-top:12px" ${ed.status === '완료' || (ed.result && ed.result.content) ? 'open' : ''}><summary><b>결과보고서 (다녀온 뒤 1주일 안에)</b></summary>
+        <div class="fields" style="margin-top:8px"><label class="f" style="grid-column:1/-1"><span>참석인원</span><input type="text" id="ot-r-att" value="${esc((ed.result || {}).attend || '')}"></label></div>
+        <label class="f"><span>진행내용</span><textarea id="ot-r-content" rows="5">${esc((ed.result || {}).content || '')}</textarea></label>
+        <label class="f"><span>평가</span><textarea id="ot-r-eval" rows="3">${esc((ed.result || {}).eval || '')}</textarea></label>
+        <div class="note" style="margin:10px 0 4px">예산 사용 내역 (항목 · 내용 · 금액)</div>${outRowsEditor('ot-spend', (ed.result || {}).spend, '내용', 'desc')}</details>
+      <div class="row" style="margin-top:12px"><button class="btn p" id="ot-save">저장</button><button class="btn" id="ot-cancel">닫기</button>${ed.id ? `<button class="btn" id="ot-car">${ed.vehicleId ? '연결된 차량 신청 열기' : '이 행사로 차량 신청 만들기'}</button><button class="btn d" id="ot-del">삭제</button>` : ''}</div></div>` : ''}
+    <div class="card"><h2>${isCommittee() ? '전 부서 주말학습' : '우리 부서 주말학습'} <span class="r">${all.length}건</span></h2>${all.length ? `<div class="tw"><table><thead><tr><th>일시</th>${isCommittee() ? '<th>부서</th>' : ''}<th>행사</th><th>장소</th><th class="n">예산</th><th>차량</th><th>상태</th><th></th></tr></thead><tbody>
+      ${all.map(o => `<tr><td>${esc(outDays(o))}</td>${isCommittee() ? `<td>${esc(DEPTS[o.dept] || '')}</td>` : ''}<td>${esc(o.title || o.purpose || '')}</td><td class="wrap">${esc(o.place || '')}</td><td class="n">${outSum(o.budget) ? won(outSum(o.budget)) : ''}</td><td>${o.vehicleId ? '신청함' : ''}</td><td>${isCommittee() && canEdit() ? `<select data-ot-st="${o.dept}|${o.id}">${OUT_STATUS.map(k => `<option ${(o.status || '작성 중') === k ? 'selected' : ''}>${k}</option>`).join('')}</select>` : pill(o.status)}</td>
+        <td class="row" style="gap:4px;flex-wrap:nowrap">${mine(o) && canEdit() ? `<button class="btn s" data-ot-edit="${o.id}">수정</button>` : ''}<button class="btn s" data-ot-print="${o.id}|plan">계획서</button>${(o.result && (o.result.content || o.result.attend)) ? `<button class="btn s" data-ot-print="${o.id}|result">결과보고서</button>` : ''}</td></tr>`).join('')}</tbody></table></div>` : `<div class="note">아직 계획서가 없습니다.${!isCommittee() ? ' "새 계획서"로 시작하세요.' : ''}</div>`}</div>
+    <div class="card"><h2>제출 규칙 <span class="r">교회 양식 안내문</span></h2><ol style="margin:0;padding-left:1.3em;line-height:1.8">${OUT_RULES.map(r => `<li>${esc(r)}</li>`).join('')}</ol></div>
+  </div>`;
+};
+BIND.outings = () => {
+  const bk = $('#ot-back'); if (bk) { bk.onclick = () => { delete S.sub.outPrint; render(); }; const p = S.sub.outPrint; $('#ot-pr').onclick = () => printAsPDF(`${p.kind === 'result' ? '주말학습결과보고서' : '주말학습계획서'}.pdf`); return; }
+  const nw = $('#ot-new'); if (nw) nw.onclick = () => { S.sub.outEdit = 'new'; render(); };
+  document.querySelectorAll('[data-ot-edit]').forEach(b => b.onclick = () => { S.sub.outEdit = b.dataset.otEdit; render().then(() => { const f = $('#ot-form'); if (f) f.scrollIntoView({ block: 'start' }); }); });
+  document.querySelectorAll('[data-ot-print]').forEach(b => b.onclick = async () => { const [id, kind] = b.dataset.otPrint.split('|'); await loadShared(); S.sub.outPrint = { id, kind }; render(); });
+  document.querySelectorAll('[data-addrow]').forEach(b => b.onclick = () => { const box = $('#' + b.dataset.addrow); const k = b.dataset.key; box.insertAdjacentHTML('beforeend', `<div class="row out-row"><input type="text" data-k="item" placeholder="항목"><input type="text" data-k="${k}" placeholder="${b.dataset.mid}" style="flex:2"><input type="text" data-k="amount" placeholder="금액" inputmode="numeric" style="max-width:120px"></div>`); });
+  document.querySelectorAll('[data-ot-st]').forEach(sel => sel.onchange = async () => { const [d, id] = sel.dataset.otSt.split('|'); const o = S.outings[d].find(x => x.id === id); o.status = sel.value; try { await backend.set(`depts/${d}/outings/${id}`, (({ _id, ...x }) => x)(o)); toast('상태를 바꿨습니다'); } catch (e) { toast('저장 실패: ' + (e.code || e.message), 4000); } });
+  const cc = $('#ot-cancel'); if (cc) cc.onclick = () => { delete S.sub.outEdit; render(); };
+  const getEd = () => S.sub.outEdit === 'new' ? null : S.outings[S.dept].find(o => o.id === S.sub.outEdit);
+  const collect = () => { const old = getEd(); const o = Object.assign(old || { id: 'ot_' + uid(), dept: S.dept, created: today() }, { title: $('#ot-title').value.trim(), reportDate: $('#ot-rdate').value, status: $('#ot-status').value, manager: $('#ot-mgr').value.trim(), minister: $('#ot-min').value.trim(), phone: $('#ot-phone').value.trim(), people: $('#ot-people').value.trim(), start: $('#ot-start').value, end: $('#ot-end').value, place: $('#ot-place').value.trim(), purpose: $('#ot-purpose').value.trim(), budget: readRows('ot-budget'), requests: $('#ot-req').value.trim(),
+      result: { attend: $('#ot-r-att').value.trim(), content: $('#ot-r-content').value.trim(), eval: $('#ot-r-eval').value.trim(), spend: readRows('ot-spend') } }); return { o, isNew: !old }; };
+  const save = async () => { const { o, isNew } = collect(); if (!o.start) { toast('시작 일시를 넣어 주세요'); return null; } const { _id, ...data } = o; await backend.set(`depts/${S.dept}/outings/${o.id}`, data); if (isNew) S.outings[S.dept].push(o); S.sub.outEdit = o.id; return o; };
+  const sv = $('#ot-save'); if (sv) sv.onclick = async () => { try { if (await save()) { await renderHere(); toast('저장했습니다'); } } catch (e) { toast('저장 실패: ' + (e.code || e.message), 4000); } };
+  const dl = $('#ot-del'); if (dl) dl.onclick = () => { const o = getEd(); if (!o) return; openModal(`<h2>계획서 삭제<button class="btn s" id="modal-close">닫기</button></h2><p>"${esc(o.title || o.purpose || '주말학습')}" 계획서를 지울까요? 되돌릴 수 없습니다. 연결된 차량 신청은 차량 신청 화면에 그대로 남습니다.</p><div class="row"><button class="btn d" id="od-yes">삭제</button><button class="btn" id="od-no">취소</button></div>`); $('#modal-close').onclick = closeModal; $('#od-no').onclick = closeModal; $('#od-yes').onclick = async () => { await backend.del(`depts/${S.dept}/outings/${o.id}`); S.outings[S.dept] = S.outings[S.dept].filter(x => x.id !== o.id); delete S.sub.outEdit; closeModal(); render(); toast('삭제했습니다'); }; };
+  const car = $('#ot-car'); if (car) car.onclick = async () => { try { const o = await save(); if (!o) return; const c = await loadShared();
+      if (!o.vehicleId || !c.vehicles.find(v => v.id === o.vehicleId)) { const v = { id: 'vh_' + uid(), dept: S.dept, created: today(), date: o.start.slice(0, 10), dateEnd: (o.end || '').slice(0, 10) > o.start.slice(0, 10) ? o.end.slice(0, 10) : '', start: o.start.slice(11, 16), end: (o.end || '').slice(11, 16), vehicle: '', people: (o.people.match(/\d+/g) || []).reduce((t, n) => t + +n, 0) || '', dest: o.place, purpose: o.title || o.purpose, requester: o.manager, requesterPhone: o.phone, status: '신청', outingId: o.id };
+        const { id, ...data } = v; await backend.set(`vehicles/${v.id}`, { id, ...data }); c.vehicles.push(v); o.vehicleId = v.id; await backend.set(`depts/${S.dept}/outings/${o.id}`, (({ _id, ...x }) => x)(o)); }
+      const v = c.vehicles.find(x => x.id === o.vehicleId); S.view = 'vehicles'; S.sub = { month: ym(v.date), vehEdit: v.id }; await render(); const f = $('#vh-form'); if (f) f.scrollIntoView({ block: 'start' }); toast('차량 신청서를 만들었습니다 — 차량·운전자를 채워 저장하세요', 4000); } catch (e) { toast('차량 신청 실패: ' + (e.code || e.message), 4000); } };
+};
 /* ───────────── 자료 내려받기 · 영수증 사진 정리 (교육위원회) ─────────────
    새 자료 종류(하위 묶음)를 만들면 아래 두 목록에 이름을 추가해야 내려받기에 포함된다. */
-const BACKUP_DEPT_SUBS = ['bylawFiles', 'students', 'reports', 'expenses', 'incomes', 'events', 'notices', 'assets', 'plans', 'timeline', 'officers', 'retreats', 'receipts', 'receiptImgs', 'bylaws', 'assemblies']; // care(심방 카드)는 부서 관리자만 읽을 수 있어 넣지 못함
+const BACKUP_DEPT_SUBS = ['bylawFiles', 'students', 'reports', 'expenses', 'incomes', 'events', 'notices', 'assets', 'plans', 'timeline', 'officers', 'retreats', 'receipts', 'receiptImgs', 'bylaws', 'assemblies', 'outings']; // care(심방 카드)는 부서 관리자만 읽을 수 있어 넣지 못함
 const BACKUP_TOP = ['scholarship', 'archive', 'promotions', 'vehicles', 'siblings', 'meta'];
 async function collectAll(withImgs, say) {
   const raw = []; const miss = []; const put = (path, x) => { const { _id, ...data } = x; raw.push({ path, data }); };

@@ -528,3 +528,36 @@ details.card.principle[open]>summary{margin-bottom:10px}
 .pr-tg::after{content:'접기 ▴'}
 details.card.principle:not([open]) .pr-tg::after{content:'펼치기 ▾'}
 details.card.principle>summary:hover .pr-tg{border-color:var(--accent);color:var(--accent)}
+/* 교회 양식 신청서·계획서 공통 */
+.paper .att{font-size:10.5px;color:#555;margin-bottom:2px}
+.paper h1.ttl{text-align:center;font-size:24px;letter-spacing:.35em;margin:6px 0 2px}
+.paper .ttl-sub{text-align:center;font-size:11px;margin-bottom:10px}
+.paper table.vk th{width:150px;text-align:center;letter-spacing:.05em;background:#f6f4ef}
+.paper table.vk td{height:30px}
+.paper .gap{display:inline-block;width:110px}
+.paper td.ask{padding:12px 16px}
+.paper td.ask p{margin:4px 0;text-align:center}
+.paper td.ask p.r{text-align:right;padding-right:40px}
+.paper td.ask .rules{border-top:1px dashed #999;margin-top:12px;padding-top:6px;font-size:10.5px;line-height:1.6}
+.paper td.ask .rules ol{margin:2px 0 0;padding-left:18px}
+/* 총회 자료 표: 번호·이름·구분·출석률처럼 짧은 칸은 줄바꿈하지 않고, 긴 글(사유)만 줄바꿈 — 화면과 인쇄가 같은 모양 */
+.paper table.tight th:not(:last-child),.paper table.tight td:not(:last-child){white-space:nowrap}
+/* 주말학습계획서·결과보고서 (교회 양식) */
+.paper.outform .ohd{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;margin-bottom:8px}
+.paper.outform .org{font-weight:700;font-size:15px}
+.paper.outform .ohd h1{font-size:26px;margin:2px 0 6px;letter-spacing:.02em}
+.paper.outform .rep{font-weight:700;font-size:12.5px}
+.paper.outform table.sign tr.dt td{height:auto;font-size:10px;padding:2px 4px;vertical-align:middle}
+.paper.outform table.ok th{width:80px;text-align:center;background:#f6f4ef;letter-spacing:.1em}
+.paper.outform table.ok td.split{display:flex;gap:10px;align-items:center;flex-wrap:wrap;border:0}
+.paper.outform table.ok td.split b{background:#f6f4ef;padding:0 6px;font-weight:400;color:#5c584f}
+.paper.outform table.inner{width:100%;margin:2px 0}
+.paper.outform table.inner th{background:#f6f4ef;width:auto;letter-spacing:0}
+.paper.outform table.inner td{height:22px}
+.paper.outform .orules{margin:6px 0 0;padding-left:18px;font-size:11px;line-height:1.7}
+.out-row{gap:6px;margin-bottom:4px;flex-wrap:nowrap}
+.out-row input{flex:1;min-width:0}
+.sc-ov tr.on th,.sc-ov tr.on td{background:var(--accent-soft)}
+.sc-ov tbody tr:hover td,.sc-ov tbody tr:hover th{background:var(--line-soft)}
+.sc-ov .sc-g{font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:0 4px}
+.sc-ov .sc-rep{text-decoration:underline;text-decoration-color:var(--accent);text-underline-offset:3px}
