@@ -8,7 +8,7 @@ const STEPS = [
   { as: 'elem', view: 'ledger', sel: '.tiles', title: '회계', body: '지출을 한 건씩 적으면 월 합계·누계·잔액·집행률이 바로 계산됩니다. 지출결의서도 여기서 출력하고, 기자재·교재는 물품대장에 자동으로 올라갑니다.' },
   { as: 'elem', view: 'roster', sel: 'table.roster', title: '출석부', body: '학생 카드에는 반·생년월일·신급·연락처·소속 이력과 올해 출석이 모입니다. 이 정보는 우리 부서와 교육위원회만 볼 수 있습니다.' },
   { as: 'elem', view: 'stats', sel: '[data-range]', title: '출석 통계', body: '전체·6개월·3개월·1달을 골라 주별 추이와 학생별 출석률을 봅니다. 4주 연속 결석한 학생은 따로 표시되어 심방에 씁니다.' },
-  { as: 'elem', view: 'dropouts', sel: 'main .card', title: '제적 관리', body: '오래 결석한 학생이 자동으로 후보에 오릅니다. 제적은 날짜·구분·사유를 남기고, 언제든 복적할 수 있습니다.' },
+  { as: 'elem', view: 'roster', sub: { show: 'left' }, sel: 'main .card', title: '출석부 — 제적', body: '오래 결석한 학생이 자동으로 후보에 오릅니다. 제적은 날짜·구분·사유를 남기고, 언제든 복적할 수 있습니다.' },
   { as: 'committee', view: 'home', sel: 'main table', title: '교육위원회 화면', body: '교육위원회 계정으로 들어가면 전 부서의 이번 주 제출 현황이 한 표로 보이고, 공지와 공통 일정을 올리면 모든 부서 화면에 나타납니다.' },
   { as: 'committee', view: 'assembly', sel: '.quorum', title: '청년부 총회 자료', body: '청년부는 회칙에 따라 총회 정족수, 결의권자, 회장·부회장 후보 자격자를 자동으로 계산합니다. 회칙과 총회 회의록도 같은 메뉴에 있습니다.' },
   { as: 'elem', view: 'home', sel: null, title: '이제 직접 눌러 보세요', body: '튜토리얼은 여기까지입니다. 모든 이름과 숫자는 가상이고, 바꾼 내용은 이 브라우저에만 저장됩니다. 왼쪽 아래 "체험 자료 초기화"로 처음 상태로 돌릴 수 있습니다.' }
