@@ -1518,17 +1518,45 @@ const asmPicker = (list, a) => `<select id="as-pick" style="width:auto">${list.m
 /* 회칙 */
 // 회칙·헌장 본문 보기: 편 > 장 > 절·관 > 조 > 항(①) > 호(1. 가.)와, 장·조에 속하지 않는 머리말·전문·소제목을 구분해 보여 준다
 const BL_SPECIAL = /^[\[【<〈《(「]?\s*(머\s*리\s*말|전\s*문|서\s*문|前\s*文|서\s*언|총\s*강|강\s*령|신앙\s*고백|신\s*조|선\s*언(?:\s*문)?|선\s*서(?:\s*문)?|목\s*적|이\s*념|정\s*신|비\s*전|사\s*명(?:\s*선언)?|맺\s*음\s*말|부\s*록|별\s*표|별\s*지)(?:\s*[:：].*)?\s*[\]】>〉》)」]?$/;
-function bylawHTML(t) {
-  if (!t.trim()) return '';
-  const out = [], toc = []; let n = 0, started = false, inArticles = false, pre = false, para = null;
-  const flush = () => { if (para) { out.push(`<p class="${para.cls}">${para.lab ? `<span class="art">${esc(para.lab)}</span>` : ''}${esc(para.txt)}</p>`); para = null; } };
-  const head = (lvl, cls, x) => { flush(); started = true; const id = 'bl-h' + (n++); toc.push({ id, cls, x }); out.push(`<div role="heading" aria-level="${lvl}" class="${cls}" id="${id}">${esc(x)}</div>`); };
+/* 회칙 판 비교 — 조(條)·항(項) 단위로 짝을 맞춰 바뀐 낱말만 색으로 표시 */
+const blNorm = x => String(x || '').replace(/\s+/g, '');
+function wordDiffHTML(oldT, newT, known = '') {
+  const A = String(oldT).split(/\s+/).filter(Boolean), B = String(newT).split(/\s+/).filter(Boolean);
+  if (A.length * B.length > 250000) return `<span class="bl-add">${esc(newT)}</span>`;
+  const L = Array.from({ length: A.length + 1 }, () => new Uint16Array(B.length + 1));
+  for (let i = A.length - 1; i >= 0; i--) for (let j = B.length - 1; j >= 0; j--) L[i][j] = A[i] === B[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+  const out = []; let i = 0, j = 0; const push = (k, w) => { const l = out[out.length - 1]; if (l && l.k === k) l.w.push(w); else out.push({ k, w: [w] }); };
+  while (i < A.length && j < B.length) { if (A[i] === B[j]) { push('=', B[j]); i++; j++; } else if (L[i + 1][j] >= L[i][j + 1]) push('-', A[i++]); else push('+', B[j++]); }
+  while (i < A.length) push('-', A[i++]); while (j < B.length) push('+', B[j++]);
+  // 예전 판에서 다른 줄에 있던 글이 이번 판에서 한 줄로 합쳐진 것은 바뀐 것이 아님
+  out.forEach(x => { if (x.k === '+' && known && known.includes(blNorm(x.w.join('')))) x.k = '='; });
+  out.forEach((x, i) => { if (x.k !== '-') return; const nb = [out[i - 1], out[i + 1]].filter(Boolean); if (nb.some(y => y.k === '=' && blNorm(y.w.join('')).includes(blNorm(x.w.join(''))))) x.k = 'x'; });
+  const res = out.filter(x => x.k !== 'x'); res.changed = res.some(x => x.k !== '=');
+  const html = res.map(x => x.k === '=' ? esc(x.w.join(' ')) : x.k === '+' ? `<ins class="bl-add">${esc(x.w.join(' '))}</ins>` : `<del class="bl-del">${esc(x.w.join(' '))}</del>`).join(' ');
+  return res.changed ? html : null;
+}
+function bylawParas(t) { const c = []; bylawHTML(t, { collect: c }); return c; }
+function bylawHTML(t, opt = {}) {
+  if (!String(t || '').trim()) return '';
+  const out = [], toc = []; let n = 0, started = false, inArticles = false, pre = false, para = null, art = 'pre', pi = 0;
+  const P = opt.prev, seen = opt.seenKeys;
+  const keyOf = q => { const tok = q.lab ? (/조/.test(q.lab) ? 'art' : blNorm(q.lab)) : ((q.txt.match(/^(\(\d+\)|（\d+）|\d+\s*항|\d+\s*[.)]|[가-하]\s*[.)]|[①-⑳])/) || [])[0] ? blNorm(q.txt.match(/^(\(\d+\)|（\d+）|\d+\s*항|\d+\s*[.)]|[가-하]\s*[.)]|[①-⑳])/)[0]) : 'p' + (pi++)); return art + '|' + tok; };
+  const body = (q, key) => { const full = (q.lab || '') + ' ' + q.txt; if (!P) return esc(q.txt);
+    if (P.all.has(blNorm(full)) || P.text.includes(blNorm(q.txt))) return esc(q.txt); const o = P.byKey.get(key);
+    if (o) { const h = wordDiffHTML(o.txt, q.txt, P.text); if (h == null) return esc(q.txt); q.chg = 1; return h; }
+    const h = wordDiffHTML('', q.txt, P.text); if (h == null) return esc(q.txt); q.chg = 2; return h; };
+  const flush = () => { if (para) { if (para.lab) { const m = para.lab.match(/제\s*(\d+)\s*조(?:\s*의\s*(\d+))?/); if (m) art = 'A' + m[1] + (m[2] ? '-' + m[2] : ''), pi = 0; } const key = keyOf(para);
+      const html = body(para, key); if (seen) seen.add(key);
+      if (opt.collect) opt.collect.push({ key, lab: para.lab || '', txt: para.txt, full: (para.lab || '') + ' ' + para.txt, chg: para.chg || 0 }); out.push(`<p class="${para.cls}${para.chg ? ' bl-chg' : ''}">${para.lab ? `<span class="art">${esc(para.lab)}</span>` : ''}${html}</p>`); para = null; } };
+  const head = (lvl, cls, x) => { flush(); started = true; const id = 'bl-h' + (n++); toc.push({ id, cls, x }); const nw = P && !P.heads.has(blNorm(x)); out.push(`<div role="heading" aria-level="${lvl}" class="${cls}${nw ? ' bl-chg' : ''}" id="${id}">${nw ? `<ins class="bl-add">${esc(x)}</ins>` : esc(x)}</div>`); if (opt.collect) opt.collect.push({ head: blNorm(x) }); };
   const start = (cls, txt, lab) => { flush(); para = { cls, txt, lab }; };
   const ends = x => /([.。!?」』)\]]|다|함|음|됨|임|요)$/.test(x);
   const L = t.split('\n');
   for (let li = 0; li < L.length; li++) { const raw = L[li];
     const x = raw.trim(); if (!x) { flush(); continue; }
     const indented = /^\s{2,}/.test(raw);
+    // 한글에서 Enter+스페이스로 줄을 맞춘 흔적: 끝나지 않은 문장 뒤의 "다." 같은 조각이나 "제 4장 14조에 의하여…"는 앞 문장에 잇는다
+    if (para && !ends(para.txt) && (/^[가-힣]{1,2}[.)]?$/.test(x) || /^제\s*\d+\s*(장|조)\s*\d*\s*(조|항)?\s*(에|의|를|을|및|과|와)/.test(x))) { para.txt += blGlue(para.txt, x) + x; continue; }
     if (/^제\s*\d+\s*편/.test(x)) { pre = false; head(2, 'bl-part', x.replace(/\s{2,}/g, ' ')); continue; }
     if (/^부\s*칙/.test(x)) { pre = false; const nx = L.slice(li + 1, li + 4).join(' '); const dm = nx.match(/(\d{4})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일/); head(3, 'bl-chap bl-addenda', '부칙' + (dm ? ` (${dm[1]}. ${dm[2]}. ${dm[3]}. 시행)` : '')); continue; }
     if (/^제\s*\d+\s*장/.test(x)) { pre = false; head(3, 'bl-chap', x.replace(/\s{2,}/g, ' ')); continue; }
@@ -1553,6 +1581,31 @@ function bylawHTML(t) {
   const tocHTML = big.length >= 4 ? `<nav class="bl-toc no-print"><b>차례</b>${big.map(h => `<a href="#${h.id}" class="t-${h.cls.split(' ')[0].slice(3)}" data-bltoc="${h.id}">${esc(h.x)}</a>`).join('')}</nav>` : '';
   return tocHTML + out.join('');
 }
+/* 바로 앞 판 찾기: 개정안은 현행과, 나머지는 날짜가 앞선 판 중 가장 최근 것과 비교 */
+function bylawPrev(b, vs) {
+  const c = vs.filter(x => x.id !== b.id && String(x.text || '').trim());
+  if (b.status === 'draft') return c.find(x => x.status === 'current') || null;
+  return c.filter(x => x.status !== 'draft' && (x.date || '') < (b.date || '')).sort((x, y) => (x.date < y.date ? 1 : -1))[0] || null;
+}
+const _blDiff = {};
+function bylawDiffOpt(b, vs) {
+  const pv = bylawPrev(b, vs); if (!pv) return {};
+  const ck = b.id + '|' + pv.id + '|' + blNorm(b.text).length + '|' + blNorm(pv.text).length; if (_blDiff.k === ck) return _blDiff.opt;
+  const ps = bylawParas(pv.text); const P = { all: new Set(), byKey: new Map(), heads: new Set() };
+  ps.forEach(q => { if (q.head) P.heads.add(q.head); else { P.all.add(blNorm(q.full)); if (!P.byKey.has(q.key)) P.byKey.set(q.key, q); } }); P.text = ps.filter(q => !q.head).map(q => blNorm(q.full)).join('');
+  const seenKeys = new Set(); const cur = []; bylawHTML(b.text, { prev: P, seenKeys, collect: cur });
+  const curText = cur.filter(q => !q.head).map(q => blNorm(q.full)).join('');
+  const removed = ps.filter(q => !q.head && !/^=+/.test(q.full.trim()) && !seenKeys.has(q.key) && !curText.includes(blNorm(q.txt)));
+  const opt = { prev: P, pv, removed, nChg: cur.filter(q => q.chg === 1).length, nNew: cur.filter(q => q.chg === 2).length };
+  _blDiff.k = ck; _blDiff.opt = opt; return opt;
+}
+function bylawDiffBlock(b, vs) {
+  const o = bylawDiffOpt(b, vs); if (!o.pv) return '<div class="bl-diffbar note">비교할 이전 판이 없습니다 (가장 오래된 판).</div>';
+  const on = !S.sub.nodiff;
+  return `<div class="bl-diffbar no-print"><b>${esc(o.pv.revision || '이전 판')}${o.pv.date ? ' (' + esc(o.pv.date) + ')' : ''}</b>과 비교 — 바뀐 곳 ${o.nChg} · 새로 생긴 곳 ${o.nNew} · 빠진 곳 ${o.removed.length}
+    <span class="lg"><ins class="bl-add">새로 들어간 글</ins> <del class="bl-del">빠진 글</del></span><button class="btn s" id="bl-difft">${on ? '표시 끄기' : '달라진 점 표시'}</button>
+    ${on && o.removed.length ? `<details style="margin-top:6px"><summary>빠진 조문 ${o.removed.length}개 보기</summary>${o.removed.map(q => `<p class="bl-gone"><del class="bl-del">${esc(q.full.trim())}</del></p>`).join('')}</details>` : ''}</div>`;
+}
 VIEWS.bylaws = async () => {
   const dd = await loadYoung();
   const order = { current: 0, draft: 1, old: 2 };
@@ -1569,7 +1622,7 @@ VIEWS.bylaws = async () => {
   return `<div class="topbar"><div><h1>${esc(DOC.name)}</h1><div class="sub">${b.status === 'current' ? '<span class="pill ok">현행</span>' : b.status === 'draft' ? '<span class="pill warn">개정안 · 총회 통과 전</span>' : '<span class="pill mute">이전 판</span>'} ${esc(b.revision)}${b.date ? ' · ' + esc(b.date) : ''}${b.status === 'current' && isYoung ? ' · 총회 자료의 자동 판정이 이 판을 따릅니다' : ''}</div></div>
     <div class="row">${canEdit() ? `<button class="btn" id="bl-print">${kind === 'charter' ? '헌장' : '회칙'} 출력</button>` : ''}${edit ? `<button class="btn p" id="bl-upload">파일 올리기 (HWP·PDF·Word)</button><button class="btn" id="bl-edit">본문 수정</button><button class="btn d" id="bl-del">이 판 삭제</button>${b.status !== 'current' ? '<button class="btn p" id="bl-current">현행으로 지정</button>' : ''}` : ''}</div></div>${docTabs}${isYoung ? principleHTML() : ''}
   <div class="grid2 bylaw-grid">
-    <div class="card"><h2>${esc(b.title)}</h2>${b.text.trim() ? `<div class="bylaw-text">${bylawHTML(b.text)}</div>` : `<div class="hint">아직 본문이 없습니다. ${edit ? '"파일 올리기"로 HWP·HWPX·PDF·Word(DOCX) 원본을 올리면 본문을 자동으로 읽어 넣습니다. "본문 수정"으로 직접 붙여넣어도 됩니다.' : ''}</div>`}
+    <div class="card"><h2>${esc(b.title)}</h2>${b.text.trim() ? bylawDiffBlock(b, vs) : ''}${b.text.trim() ? `<div class="bylaw-text">${bylawHTML(b.text, S.sub.nodiff ? {} : bylawDiffOpt(b, vs))}</div>` : `<div class="hint">아직 본문이 없습니다. ${edit ? '"파일 올리기"로 HWP·HWPX·PDF·Word(DOCX) 원본을 올리면 본문을 자동으로 읽어 넣습니다. "본문 수정"으로 직접 붙여넣어도 됩니다.' : ''}</div>`}
       ${b.file ? `<div class="note" style="margin-top:10px">원본 파일: ${esc(b.file.name)} (${Math.round((b.file.size || 0) / 1024)}KB, ${esc(b.file.at || '')})${b.file.stored ? ' <button class="btn s" id="bl-down">원본 내려받기</button>' : ' — 파일이 커서 원본은 저장하지 않고 본문만 넣음'}</div>` : ''}
       ${b.notes ? `<div class="note" style="margin-top:10px">${esc(b.notes)}</div>` : ''}</div>
     <div class="stack">
@@ -1640,6 +1693,48 @@ async function fileToRuleText(file, buf) {
   if (ext === 'doc') throw new Error('옛 Word(.doc) 파일은 읽을 수 없습니다. Word에서 .docx로 저장하거나 PDF로 저장해 올려 주세요');
   throw new Error('HWP·HWPX·PDF·DOCX·ODT·TXT 파일만 읽을 수 있습니다');
 }
+/* @@UNWRAP-START — 한글에서 Tab(정렬) 대신 "Enter + 스페이스 여러 번"이나 "스페이스 여러 번"으로 다음 줄에 맞춘 글을
+   원래 문장으로 되돌린다. 끊긴 자리에서 띄어 쓸지 붙여 쓸지는 아래 규칙으로 정한다.
+   ① 뒤쪽이 조사·어미 한 덩어리(에, 를, 으로, 다. 등)면 붙인다 — "자격 에" → "자격에", "맡는 다." → "맡는다."
+   ② 앞쪽이 한 글자(흔한 낱말 제외)이고, 그 글자+뒷말 첫 글자가 다른 판·다른 줄에서 붙어 쓰인 적이 있으면 붙인다 — "미 만자로" → "미만자로"
+   ③ "가. 회  장 -"처럼 줄 맞추려고 띄운 두 글자 직함은 붙인다 — "회장", "총무"
+   그 밖에는 원래대로 한 칸 띄운다. */
+const BL_PART = new Set(['에', '를', '을', '로', '으로', '과', '와', '는', '은', '다', '도', '에서', '에게', '까지', '부터']);
+const BL_COMMON = new Set('본 각 및 등 시 후 중 그 전 구 정 수 타 또 더 잘 꼭 할 될 한 된 두 세 네 첫 매 현 약 즉 곧 단 총 회 서 부 새 안 내 외 저 줄 때 것 자 곳'.split(' '));
+const blTokSet = corpus => { const set = new Set(); String(corpus || '').split(/\s+/).forEach(w => { const h = w.replace(/[^가-힣]/g, ''); for (let i = 0; i + 1 < h.length; i++) set.add(h.slice(i, i + 2)); }); return set; };
+function blGlue(L, R, pairs) {
+  R = String(R).trim().split(/\s+/)[0] || ''; L = String(L).trim().split(/\s+/).pop() || '';
+  const l = (L.match(/[가-힣]+$/) || [''])[0], r0 = R.replace(/[.,)」』:;·\]]+$/, ''), r = (R.match(/^[가-힣]+/) || [''])[0];
+  if (!l || !r) return ' ';
+  if (BL_PART.has(r0)) return '';
+  if (/으$/.test(l) && /^로/.test(r)) return '';
+  if (L === l && l.length === 1 && !BL_COMMON.has(l) && !BL_PART.has(l) && !/^(의|가|이)$/.test(l) && pairs && pairs.has(l + r[0])) return '';
+  return ' ';
+}
+function blJoinTitles(x) { return x.replace(/^(\s*[가-하]\s*[.)]\s*)([가-힣])\s+([가-힣])(\s*[-:：])/, '$1$2$3$4'); }
+function unwrapHwpText(t, corpus = '') {
+  const NEW = /^(제\s*\d+\s*(편|장|절|관|조)|[가-하]\s*[.)]\s*\S|\d+\s*항|[①-⑳]|\(\d+\)|（\d+）|\d+\s*[.)]\s*\S|[*※]|부\s*칙|[<〈《【\[「])/;
+  const ends = x => /([.。!?」』)\]]|다|함|음|됨|임|요)$/.test(x);
+  const BR = '\u0001'; const out = [];
+  String(t).replace(/\r/g, '').split('\n').forEach(raw => {
+    const x = raw.replace(/\s+$/, ''); const ind = /^\s{2,}/.test(x); const body = x.replace(/(\S)\s{4,}(?=\S)/g, '$1' + BR).trim();
+    const prev = out[out.length - 1];
+    const frag = body.length <= 3 && /^[가-힣]{1,2}[.)]?$/.test(body);
+    if (prev && body && ((ind && !ends(prev.replace(/\u0001/g, ' ')) && (!NEW.test(body) || frag || /^제\s*\d+\s*(장|조)\s*\d*\s*(조|항)?\s*(에|의|를|을|및|과|와)/.test(body))) || (ind && /^\(/.test(body) && prev.trim()))) out[out.length - 1] = prev + BR + body;
+    else out.push(body);
+  });
+  const pairs = blTokSet(corpus + '\n' + out.join('\n').replace(/\u0001/g, ' '));
+  const joined = out.map(l => blJoinTitles(l.split(BR).reduce((a, b) => a + blGlue(a, b, pairs) + b)).replace(/(\S) {2,}/g, '$1 ')).join('\n');
+  return tidyBylawSpaces(joined, corpus + '\n' + joined);
+}
+/* 이미 저장된 본문(줄 맞춤 띄어쓰기가 한 칸으로 남은 것)에 같은 규칙을 조심스럽게 적용 */
+function tidyBylawSpaces(t, corpus = '') {
+  const pairs = blTokSet(corpus);
+  return String(t).split('\n').map(line => { const w = line.split(' '); let res = w[0];
+    for (let i = 1; i < w.length; i++) { const L = res.split(' ').pop(); res += (L && w[i] ? blGlue(L, w[i], pairs) : ' ') + w[i]; }
+    return blJoinTitles(res); }).join('\n');
+}
+/* @@UNWRAP-END */
 function cleanBylawText(t) { return t.replace(/\r/g, '').split('\n').map(l => l.replace(/[\u0000-\u0008-]/g, '').replace(/\s+$/, '')).join('\n').replace(/\n{3,}/g, '\n\n').trim(); }
 function bylawUploadDialog(dd, b) {
   const kind = bylawKind(b); const DOC = RULE_DOCS[kind];
@@ -1658,7 +1753,8 @@ function bylawUploadDialog(dd, b) {
     file = e.target.files[0]; if (!file) return; const msg = $('#bu-msg'); msg.textContent = '읽는 중…'; $('#bu-save').disabled = true;
     try {
       buf = await file.arrayBuffer();
-      const raw = await fileToRuleText(file, buf);
+      const raw0 = await fileToRuleText(file, buf); const ext = (file.name.split('.').pop() || '').toLowerCase();
+      const raw = /^(hwp|hwpx|docx|odt|txt)$/.test(ext) ? unwrapHwpText(raw0, (S.data.young && S.data.young.bylaws || []).map(x => x.text || '').join('\n')) : raw0;
       const txt = cleanBylawText(raw); $('#bu-text').value = txt;
       const arts = (txt.match(/^제\s*\d+\s*조/gm) || []).length;
       msg.textContent = `${file.name} — ${txt.length.toLocaleString()}자, 조문 ${arts}개를 찾았습니다.${arts ? '' : ' 조문 제목을 찾지 못했으니 내용을 확인해 주세요.'}`;
@@ -1686,8 +1782,9 @@ function bylawUploadDialog(dd, b) {
 BIND.bylaws = () => {
   const dd = S.data.young; const kind = (dd.bylaws.find(x => x.id === S.sub.bylaw) ? bylawKind(dd.bylaws.find(x => x.id === S.sub.bylaw)) : (S.sub.rdoc || 'young')); const b = dd.bylaws.find(x => x.id === S.sub.bylaw) || currentOf(dd, kind);
   document.querySelectorAll('[data-bltoc]').forEach(a => a.onclick = e => { e.preventDefault(); const h = document.getElementById(a.dataset.bltoc); if (h) h.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
-  document.querySelectorAll('[data-rdoc]').forEach(x => x.onclick = () => { S.sub = { rdoc: x.dataset.rdoc }; render(); });
-  document.querySelectorAll('[data-bylaw]').forEach(x => x.onclick = () => { S.sub = { bylaw: x.dataset.bylaw }; render(); });
+  document.querySelectorAll('[data-rdoc]').forEach(x => x.onclick = () => { S.sub = { rdoc: x.dataset.rdoc }; renderHere(); });
+  document.querySelectorAll('[data-bylaw]').forEach(x => x.onclick = () => { S.sub = { bylaw: x.dataset.bylaw, nodiff: S.sub.nodiff }; renderHere(); });
+  const dt = $('#bl-difft'); if (dt) dt.onclick = () => { S.sub.nodiff = !S.sub.nodiff; renderHere(); };
   const pr = $('#bl-print'); if (pr) pr.onclick = () => { S.sub.print = true; render(); };
   const up = $('#bl-upload'); if (up) up.onclick = () => bylawUploadDialog(dd, b);
   const dn = $('#bl-down'); if (dn) dn.onclick = async () => { const f = await backend.get(`depts/young/bylawFiles/${b.id}`); if (!f || !f.data) { toast('원본 파일을 찾지 못했습니다'); return; } const bin = atob(f.data); const u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([u8], { type: f.type || 'application/octet-stream' })); a.download = f.name || 'bylaw'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); };

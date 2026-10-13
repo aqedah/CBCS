@@ -498,3 +498,14 @@ td.ie-on:hover{outline:2px dashed var(--accent);outline-offset:-3px;background:v
   .paper .ft{margin-top:8px;break-before:avoid;page-break-before:avoid}
   .bl-basis{font-size:10px;line-height:1.5}
 }
+/* 회칙 판 비교 */
+.bylaw-text ins.bl-add,.bl-diffbar ins.bl-add{text-decoration:none;color:#0b6b3a;background:#e3f4ea;border-radius:2px;padding:0 2px;font-weight:600}
+.bylaw-text del.bl-del,.bl-diffbar del.bl-del{color:#b42318;background:#fdecea;text-decoration:line-through;border-radius:2px;padding:0 2px}
+.bylaw-text .bl-chg{border-left:3px solid #2e9d5b;padding-left:8px;margin-left:-11px}
+.bl-diffbar{font-size:12.5px;line-height:1.6;padding:8px 10px;margin:0 0 12px;border:1px dashed var(--line);border-radius:6px;background:var(--bg)}
+.bl-diffbar .lg{margin:0 8px;font-size:12px}
+.bl-diffbar .btn{margin-left:4px}
+.bl-gone{margin:4px 0;font-size:13px}
+[data-theme="dark"] .bylaw-text ins.bl-add,[data-theme="dark"] .bl-diffbar ins.bl-add{color:#7fe0a6;background:#123a24}
+[data-theme="dark"] .bylaw-text del.bl-del,[data-theme="dark"] .bl-diffbar del.bl-del{color:#ff9b91;background:#3d1714}
+@media print{.bylaw-text .bl-chg{border-left:0;padding-left:0;margin-left:0}.bylaw-text ins.bl-add{color:inherit;background:none;font-weight:inherit}.bylaw-text del.bl-del{display:none}}
