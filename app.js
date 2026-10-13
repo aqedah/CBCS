@@ -1481,7 +1481,7 @@ function assemblyJudge(dd, a) {
   const inPool = s => isFamP(s) || (s.status === 'active' && !outWhy(s));
   const pool = dd.students.filter(inPool);
   fam.filter(x => !x.stu).forEach(x => { const t = dd.doc.staff.find(y => y.status !== 'left' && normName(y.name) === normName(x.name)) || {}; pool.push({ id: 'fam_' + normName(x.name), name: x.name, sex: t.sex || '', birth: t.birth || '', faith: t.faith || '', status: 'active', group: '', history: [], pseudo: true }); });
-  const list = pool.map(s => { const j = judge(dd, s, a.date, R); if (isFamP(s)) { j.voter = 'ok'; j.rsn = j.rsn || {}; j.rsn.voter = ['팸장 — 결의권자']; j.why.unshift('팸장 — 결의권자'); j.fam = true; } return applyOverride(a, j); }).sort((x, y) => x.s.name.localeCompare(y.s.name, 'ko'));
+  const list = pool.map(s => { const j = judge(dd, s, a.date, R); if (isFamP(s)) { j.voter = 'ok'; j.rsn = j.rsn || {}; j.rsn.voter = ['팸장 — 결의권자']; j.why.unshift('팸장 — 결의권자'); j.fam = true; } return applyOverride(a, j); }).sort((x, y) => (x.fam ? 1 : 0) - (y.fam ? 1 : 0) || x.s.name.localeCompare(y.s.name, 'ko'));
   const excluded = dd.students.filter(s => s.status !== 'left' && !inPool(s)).map(s => ({ s, why: outWhy(s) })).sort((x, y) => x.why.localeCompare(y.why, 'ko') || x.s.name.localeCompare(y.s.name, 'ko'));
   return { R, list, q: quorumOf(dd, a.date, R, a.quorumBasis || 'check'), excluded }; // 기준 기본값: 출석부 체크 수 (2026 임원회의 결정)
 }
@@ -1719,14 +1719,28 @@ function memberInfoForm(s) {
     <label class="f"><span>타 목장·전도회 소속</span><select id="mi-cell"><option value="">아니오</option><option value="1" ${s.otherCell ? 'selected' : ''}>예</option></select></label><label class="f"><span>제명 이력</span><input type="text" id="mi-exp" value="${esc(s.expelled || '')}" placeholder="예: 2022 제명"></label></div>`;
 }
 function readMemberInfo(s) { if ($('#mi-origin')) s.origin = $('#mi-origin').value; Object.assign(s, { joinDate: $('#mi-join').value, churchJoin: $('#mi-cjoin').value, newcomerDone: $('#mi-new').value, birth: $('#mi-birth').value, faith: $('#mi-faith').value, married: !!$('#mi-married').value, churchRole: $('#mi-role').value, otherRole: $('#mi-other').value.trim(), otherCell: !!$('#mi-cell').value, expelled: $('#mi-exp').value.trim() }); }
+// 임원 자격 한 줄 요약: 될 수 있는 자리, 안 되면 첫 사유
+function officerSum(j) {
+  const P = [['pres', '회장'], ['vp', '부회장'], ['appt', '임명직']]; const ok = P.filter(([k]) => j[k] === 'ok').map(x => x[1]); const ck = P.filter(([k]) => j[k] === 'check').map(x => x[1]);
+  if (j.fam && !ok.length && !ck.length) return { ok: '불가', why: '팸장 — 청년부 회원이 아님', cls: 'mute' };
+  const why = (P.map(([k]) => (j.rsn && j.rsn[k] || [])[0]).find(Boolean) || '').replace(/\s+/g, ' ');
+  return { ok: ok.length ? ok.join('·') + ' 가능' : ck.length ? ck.join('·') + ' 확인 필요' : '불가', why: ok.length === 3 ? '' : why, cls: ok.length ? 'ok' : ck.length ? 'warn' : 'mute' };
+}
 function assemblyPaper(dd, a, J) {
   const voters = J.list.filter(j => j.voter === 'ok');
   return `<section class="paper"><div class="hd"><div><h1>${esc(a.title)} 자료</h1><div class="sub">중앙성서교회 청년부 · 회칙 ${esc((currentBylaw(dd) || {}).revision || '')} 기준</div></div><div class="meta">${fmtK(a.date)}${a.place ? ' · ' + esc(a.place) : ''}</div></div>
     <h2>1. 정족수 (회칙 13조)</h2><table class="kv"><tbody><tr><th>직전 ${J.q.rows.length}주 출석</th><td>${J.q.rows.map(r => `${r.date.slice(5).replace('-', '/')} ${r.p}명`).join(' · ')}</td></tr><tr><th>평균</th><td>${J.q.avg.toFixed(1)}명</td></tr><tr><th>정족수</th><td><b>${J.q.need}명</b> (평균의 ${J.R.quorumNum}/${J.R.quorumDen})</td></tr></tbody></table>
     <h2>현 임원 구성</h2><table class="kv"><tbody>${(() => { const g = staffByKind(dd); return ['임원', '팀장', '팸장'].map(k => `<tr><th>${k}</th><td>${g[k].map(x => `${esc(x.role)} ${esc(x.name)}`).join(', ') || '—'}</td></tr>`).join(''); })()}</tbody></table>
-    <h2>2. 결의권자 명단 (회칙 5조 · ${voters.length}명)</h2><table><thead><tr><th class="n">번호</th><th>이름</th><th>팸</th><th class="n">1년 출석률</th><th>출석 서명</th></tr></thead><tbody>${voters.map((j, i) => `<tr><td class="n">${i + 1}</td><td>${esc(j.s.name)}</td><td>${esc((classOf(dd, j.s) || {}).name || '')}</td><td class="n">${j.rate ?? ''}%</td><td class="sign"></td></tr>`).join('')}</tbody></table>
+    <h2>2. 결의권자 명단 (회칙 5조 · ${voters.length}명${voters.some(j => j.fam) ? ` · 그중 팸장 ${voters.filter(j => j.fam).length}명` : ''})</h2><table><thead><tr><th class="n">번호</th><th>이름</th><th>구분</th><th class="n">1년 출석률</th><th>임원 자격</th><th>사유</th></tr></thead><tbody>${voters.map((j, i) => { const o = officerSum(j); return `<tr><td class="n">${i + 1}</td><td>${esc(j.s.name)}</td><td>${j.fam ? '팸장' : '회원'}</td><td class="n">${j.rate ?? ''}%</td><td>${o.ok}</td><td style="font-size:11px">${esc(o.why)}</td></tr>`; }).join('')}</tbody></table>
     <h2>3. 후보자 명단 (회칙 11조)</h2><table><thead><tr><th>직위</th><th>후보</th><th>비고</th></tr></thead><tbody>${[...ASSEMBLY_POS, ...ASSEMBLY_POS_SUB].map(p => { const c = (a.candidates || []).filter(x => x.pos === p); return c.length ? c.map((x, i) => `<tr>${i ? '' : `<th rowspan="${c.length}">${p}</th>`}<td>${esc(x.name)}</td><td>${esc(x.note || '')}</td></tr>`).join('') : ''; }).join('') || '<tr><td colspan="3">후보 미정</td></tr>'}</tbody></table>
     <div class="ft"><b>중앙성서교회 청년부</b><span>CBCS에서 생성 · ${esc(a.date)}-총회자료.pdf</span></div></section>`;
+}
+function assemblySignPaper(dd, a, J) {
+  const voters = J.list.filter(j => j.voter === 'ok');
+  return `<section class="paper"><div class="hd"><div><h1>${esc(a.title)} 출석 확인표</h1><div class="sub">중앙성서교회 청년부 · 결의권자 ${voters.length}명 · 정족수 ${J.q.need}명</div></div><div class="meta">${fmtK(a.date)}${a.place ? ' · ' + esc(a.place) : ''}</div></div>
+    <table><thead><tr><th class="n" style="width:8%">번호</th><th style="width:22%">이름</th><th style="width:14%">구분</th><th>출석 서명</th></tr></thead><tbody>${voters.map((j, i) => `<tr><td class="n">${i + 1}</td><td>${esc(j.s.name)}</td><td>${j.fam ? '팸장' : '회원'}</td><td class="sign" style="height:30px"></td></tr>`).join('')}</tbody></table>
+    <table style="margin-top:16px"><tbody><tr><th style="width:25%">참석 인원</th><td style="width:25%">명</td><th style="width:25%">성원 여부 (${J.q.need}명 이상)</th><td>성원 / 미달</td></tr></tbody></table>
+    <div class="ft"><b>중앙성서교회 청년부</b><span>CBCS에서 생성 · ${esc(a.date)}-총회-출석확인표.pdf</span></div></section>`;
 }
 /* 총회 자료 내보내기 — 엑셀(시트 5개)·PDF 파일로 바로 받기 */
 function saveBlob(blob, name) { const url = URL.createObjectURL(blob); const el = document.createElement('a'); el.href = url; el.download = name; document.body.appendChild(el); el.click(); el.remove(); setTimeout(() => URL.revokeObjectURL(url), 4000); }
@@ -1754,18 +1768,21 @@ async function exportAssemblyXLSX(dd, a, J) {
     ['결의권자 (회칙 5조)', cnt('ok')], ['확인 필요', cnt('check')], ['해당 아님', cnt('no')], [],
     ['현 임원 구성'], ...['임원', '팀장', '팸장'].map(k => [k, g[k].map(x => `${x.role} ${x.name}`).join(', ')]), [],
     ['만든 날', today(), 'CBCS에서 생성']], [18, 14, 60]), '요약');
-  X.utils.book_append_sheet(wb, sheet([['번호', '이름', '팸', '나이', '1년 출석', '출석 체크 주일', '출석률(%)', '출석 서명'],
-    ...voters.map((j, i) => [i + 1, j.s.name, fam(j.s), j.age ?? '', j.cnt ?? '', j.of ?? '', j.rate ?? '', ''])], [6, 10, 16, 6, 9, 13, 10, 16]), '결의권자 명단');
+  const kindOf = j => j.fam ? '팸장' : '회원';
+  X.utils.book_append_sheet(wb, sheet([['번호', '이름', '구분', '나이', '1년 출석', '출석 체크 주일', '출석률(%)', '임원 자격', '사유'],
+    ...voters.map((j, i) => { const o = officerSum(j); return [i + 1, j.s.name, kindOf(j), j.age ?? '', j.cnt ?? '', j.of ?? '', j.rate ?? '', o.ok, o.why]; })], [6, 10, 8, 6, 9, 13, 10, 22, 40]), '결의권자 명단');
+  X.utils.book_append_sheet(wb, sheet([['번호', '이름', '구분', '출석 서명'],
+    ...voters.map((j, i) => [i + 1, j.s.name, kindOf(j), ''])], [6, 12, 8, 24]), '출석 확인표');
   X.utils.book_append_sheet(wb, sheet([['No.', '직위', '이름', '자격 판정', '비고'],
     ...[...ASSEMBLY_POS, ...ASSEMBLY_POS_SUB].flatMap(pos => (a.candidates || []).filter(c => c.pos === pos).map(c => { const j = J.list.find(x => x.s.id === c.sid); const k = pos === '회장' ? 'pres' : pos === '부회장' ? 'vp' : 'appt'; return [pos, c.name, j ? pill(j[k]) : '', c.note || '']; })).map((r, i) => [i + 1, ...r])], [5, 10, 10, 10, 40]), '후보자 명단');
-  X.utils.book_append_sheet(wb, sheet([['No.', '이름', '팸', '나이', '신급', '청년부 출석 시작', '추정', '1년 출석', '출석 체크 주일', '출석률(%)', '선거권', '회장', '부회장', '임명직', '이력', '판정 사유', '직접 지정'],
-    ...J.list.map((j, i) => { const o = (a.overrides || {})[j.s.id]; return [i + 1, j.s.name, fam(j.s), j.age ?? '', j.s.faith || '', j.ys ? j.ys.date : '', j.ys && j.ys.est ? '추정' : '', j.cnt ?? '', j.of ?? '', j.rate ?? '', pill(j.voter), pill(j.pres), pill(j.vp), pill(j.appt), (j.histList || []).join(', '), (j.why || []).filter(w => !/^임원 이력/.test(w)).join(', '), o ? [o.voter === 'ok' ? '결의권자로 넣음' : o.voter === 'no' ? '결의권자에서 뺌' : '', o.note || ''].filter(Boolean).join(' · ') : '']; })],
-    [5, 10, 14, 6, 8, 14, 6, 9, 13, 10, 8, 8, 8, 8, 40, 40, 24]), '판정표');
+  X.utils.book_append_sheet(wb, sheet([['No.', '이름', '구분', '나이', '신급', '청년부 출석 시작', '추정', '1년 출석', '출석 체크 주일', '출석률(%)', '선거권', '회장', '부회장', '임명직', '이력', '판정 사유', '직접 지정'],
+    ...J.list.map((j, i) => { const o = (a.overrides || {})[j.s.id]; return [i + 1, j.s.name, kindOf(j), j.age ?? '', j.s.faith || '', j.ys ? j.ys.date : '', j.ys && j.ys.est ? '추정' : '', j.cnt ?? '', j.of ?? '', j.rate ?? '', pill(j.voter), pill(j.pres), pill(j.vp), pill(j.appt), (j.histList || []).join(', '), (j.why || []).filter(w => !/^임원 이력/.test(w)).join(', '), o ? [o.voter === 'ok' ? '결의권자로 넣음' : o.voter === 'no' ? '결의권자에서 뺌' : '', o.note || ''].filter(Boolean).join(' · ') : '']; })],
+    [5, 10, 8, 6, 8, 14, 6, 9, 13, 10, 8, 8, 8, 8, 40, 40, 24]), '판정표');
   const yrFrom = addMonths(a.date, -12); const reps = namedReports(dd).filter(r => r.date < a.date && r.date >= yrFrom);
   const mark = v => v === 'P' ? '●' : v === 'O' ? '◐' : v ? '○' : '';
-  X.utils.book_append_sheet(wb, sheet([['No.', '이름', '팸', ...reps.map(r => r.date.slice(5).replace('-', '/')), '출석'],
-    ...J.list.map((j, i) => { const ms = reps.map(r => mark(attEvidence(r, j.s).v)); return [i + 1, j.s.name, fam(j.s), ...ms, ms.filter(Boolean).length]; }),
-    [], ['● 출석  ◐ 온라인  ○ 이름만·교사 명단  (빈칸) 기록 없음']], [5, 10, 14, ...reps.map(() => 5.5), 6]), '직전 1년 주별 출석');
+  X.utils.book_append_sheet(wb, sheet([['No.', '이름', '구분', ...reps.map(r => r.date.slice(5).replace('-', '/')), '출석'],
+    ...J.list.map((j, i) => { const ms = reps.map(r => mark(attEvidence(r, j.s).v)); return [i + 1, j.s.name, kindOf(j), ...ms, ms.filter(Boolean).length]; }),
+    [], ['● 출석  ◐ 온라인  ○ 이름만·교사 명단  (빈칸) 기록 없음']], [5, 10, 8, ...reps.map(() => 5.5), 6]), '직전 1년 주별 출석');
   saveBlob(new Blob([X.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `${a.date}-청년부-총회자료.xlsx`);
 }
 function bindAssemblyExport(dd, a) {
@@ -1776,6 +1793,7 @@ function bindAssemblyExport(dd, a) {
 const asmExportBtns = () => '<button class="btn" data-asx>엑셀로 받기</button><button class="btn" data-asp>PDF로 받기</button>';
 VIEWS.assembly = async () => {
   const dd = await loadYoung(); const { a, list } = pickAssembly(dd); const J = assemblyJudge(dd, a); const edit = canYoung();
+  if (S.sub.print === 'sign') return `<div class="topbar no-print"><div><h1>총회 출석 확인표</h1><div class="sub">결의권자 명단과 서명란 — 총회 당일 출결 확인용</div></div><div class="row"><button class="btn" id="as-back">돌아가기</button><button class="btn p" id="as-pr">인쇄 / PDF 저장</button></div></div>${assemblySignPaper(dd, a, J)}`;
   if (S.sub.print) return `<div class="topbar no-print"><div><h1>총회 자료 출력</h1></div><div class="row"><button class="btn" id="as-back">돌아가기</button>${asmExportBtns()}<button class="btn p" id="as-pr">인쇄</button></div></div>${assemblyPaper(dd, a, J)}`;
   const cnt = k => J.list.filter(j => j.voter === k).length;
   const filter = S.sub.vf || 'ok';
@@ -1787,7 +1805,7 @@ VIEWS.assembly = async () => {
   const col = (k, label) => { const ok = J.list.filter(j => j[k] === 'ok'), ck = J.list.filter(j => j[k] === 'check'); return `<div class="cand-col"><h3>${label} <span class="note">${ok.length}명${ck.length ? ` · 확인 ${ck.length}` : ''}</span></h3><div class="row" style="gap:4px">${ok.map(j => `<button class="chip" data-mi="${j.s.id}">${esc(j.s.name)}</button>`).join('') || '<span class="note">없음</span>'}</div>${ck.length ? `<div class="note" style="margin-top:6px">확인 필요: ${ck.map(j => `<a href="#" data-mi="${j.s.id}">${esc(j.s.name)}</a>`).join(', ')}</div>` : ''}</div>`; };
   const R = J.R;
   return `<div class="topbar"><div><h1>총회 자료</h1><div class="sub">${esc(a.title)} · ${fmtK(a.date)} · 회칙 ${esc((currentBylaw(dd) || {}).revision || '')} 기준 자동 판정${a.unsaved ? ' · <b>아직 저장 안 됨</b>' : ''}</div></div>
-    <div class="row">${asmPicker(list, a)}${canEdit() ? `<button class="btn" id="as-print">총회 자료 출력</button>${a.unsaved ? '' : asmExportBtns()}` : ''}</div></div>
+    <div class="row">${asmPicker(list, a)}${canEdit() ? `<button class="btn" id="as-print">총회 자료 출력</button><button class="btn" id="as-sign">출석 확인표 출력</button>${a.unsaved ? '' : asmExportBtns()}` : ''}</div></div>
   <div class="stack">
     ${edit ? `<div class="card"><div class="fields"><label class="f"><span>총회 날짜 (판정 기준일)</span><input type="date" id="as-date" value="${esc(a.date)}"></label><label class="f"><span>구분</span><select id="as-kind">${['정기총회', '임시총회'].map(k => `<option ${a.kind === k ? 'selected' : ''}>${k}</option>`).join('')}</select></label><label class="f"><span>제목</span><input type="text" id="as-title" value="${esc(a.title)}"></label><label class="f"><span>장소</span><input type="text" id="as-place" value="${esc(a.place || '')}"></label></div><div class="row" style="margin-top:8px"><button class="btn p" id="as-save">${a.unsaved ? '이 총회 만들기' : '저장'}</button></div></div>` : ''}
     <div class="grid2">
@@ -1798,7 +1816,7 @@ VIEWS.assembly = async () => {
           <tr><td class="note">참석 교사·팸장 (참고, 정족수에 안 넣음)</td>${J.q.rows.map(r => `<td class="n note">${r.t}</td>`).join('')}<td></td><td></td><td></td></tr></tbody></table></div>
         ${edit ? `<div class="row" style="margin-top:6px;gap:6px"><span class="note">정족수 기준:</span>${[['report', '보고서 숫자'], ['check', '출석부 체크 수']].map(([k, l]) => `<button class="btn s ${J.q.basis === k ? 'p' : ''}" data-qbasis="${k}">${l}</button>`).join('')}<span class="note">둘이 다르면 서기가 보고서에 적은 숫자와 출석부 체크가 어긋난 것 — 보고서 열람에서 그 주를 확인</span></div>` : ''}${J.q.rows.length ? '' : '<div class="note">총회 날짜 이전 보고서가 없습니다.</div>'}</div>
       <div class="card"><h2>결의권자(선거권자) <span class="r">회칙 5조</span></h2><div class="quorum"><span class="big">${cnt('ok')}명</span><span class="note">확인 필요 ${cnt('check')}명 · 해당 아님 ${cnt('no')}명</span></div>
-        <div class="note" style="margin-top:6px;line-height:1.7">${J.list.filter(j => j.voter === 'ok').map(j => j.s.name).sort((a, b) => a.localeCompare(b, 'ko')).map(n => `<span class="chip">${esc(n)}</span>`).join(' ') || '없음'}${cnt('check') ? `<div style="margin-top:4px">확인 필요: ${J.list.filter(j => j.voter === 'check').map(j => esc(j.s.name)).sort((a, b) => a.localeCompare(b, 'ko')).join(', ')}</div>` : ''}</div>
+        <div class="note" style="margin-top:6px;line-height:1.7">${(() => { const v = J.list.filter(j => j.voter === 'ok'); const chips = arr => arr.map(j => `<span class="chip">${esc(j.s.name)}</span>`).join(' '); const m = v.filter(j => !j.fam), f = v.filter(j => j.fam); return v.length ? `<div class="vchips"><b>회원 ${m.length}</b> ${chips(m)}</div>${f.length ? `<div class="vchips"><b>팸장 ${f.length}</b> ${chips(f)}</div>` : ''}` : '없음'; })()}${cnt('check') ? `<div style="margin-top:4px">확인 필요: ${J.list.filter(j => j.voter === 'check').map(j => esc(j.s.name)).sort((a, b) => a.localeCompare(b, 'ko')).join(', ')}</div>` : ''}</div>
         <div class="note" style="margin-top:6px">새가족반 수료 후 ${R.voterMonths}개월 이상, 최근 1년 출석률 ${R.voterRate}% 이상, 회원(만 ${R.ageMin}~${R.ageMax}세 미혼, 직분자·타 목장 제외)</div></div>
     </div>
     <div class="card"><h2>올해 임원·팀장·팸장 <span class="r">임원은 회장·부회장·총무·서기·회계 5명(부총무 등 부임원 포함) · 팀장·팸장은 임원이 아님 · 출석부의 교사·임원 명단에서</span></h2>${staffKindsHTML(dd)}</div>
@@ -1809,8 +1827,8 @@ VIEWS.assembly = async () => {
       <div class="tw"><table><thead><tr><th class="n no">No.</th><th>직위</th><th>이름</th><th>자격</th><th>비고</th>${edit ? '<th></th>' : ''}</tr></thead><tbody>${(a.candidates || []).map((c, i) => { const j = J.list.find(x => x.s.id === c.sid); const k = c.pos === '회장' ? 'pres' : c.pos === '부회장' ? 'vp' : 'appt'; return `<tr><td class="n no">${i + 1}</td><td>${esc(c.pos)}</td><td>${esc(c.name)}</td><td>${j ? jpill(j[k]) : ''}</td><td>${esc(c.note || '')}</td>${edit ? `<td><button class="btn s d" data-del-cand="${i}">빼기</button></td>` : ''}</tr>`; }).join('') || `<tr><td colspan="6" class="note">아직 후보가 없습니다.</td></tr>`}</tbody></table></div>
       ${edit ? `<div class="row" style="margin-top:10px"><select id="cd-pos" style="width:auto">${[...ASSEMBLY_POS, ...ASSEMBLY_POS_SUB].map(p => `<option>${p}</option>`).join('')}</select><select id="cd-sid" style="flex:1">${J.list.filter(j => j.member !== 'no').map(j => `<option value="${j.s.id}">${esc(j.s.name)}</option>`).join('')}</select><input type="text" id="cd-note" placeholder="비고 (추천인 등)" style="flex:1"><button class="btn" id="cd-add">후보 추가</button></div>` : ''}</div>
     <div class="card"><h2><span>판정표 <span class="row" style="display:inline-flex;gap:4px;margin-left:8px">${[['ok', '결의권자'], ['check', '확인 필요'], ['no', '해당 아님'], ['border', '55~65% 경계'], ['all', '전체']].map(([k, l]) => `<button class="btn s ${filter === k ? 'p' : ''}" data-vf="${k}">${l}</button>`).join('')}</span></span><span class="r">직전 1년 = ${esc(yrReps[0].date)} ~ ${esc(yrReps[yrReps.length - 1].date)} (총회 당일 포함) · 달력상 주일 ${yrReps.length}주가 분모 · 보고서 없는 주일 ${yrReps.filter(r => r.missing).length}주는 결석으로 셈 · "(추정)"은 소속 이력·출석 기록으로 짐작한 날짜</span></h2>
-      <div class="tw"><table class="judge"><thead><tr><th class="n no">No.</th><th>이름</th><th>팸</th><th class="n">나이</th><th>청년부 출석 시작</th><th class="n">1년 출석</th><th class="ystrip-h"><div class="ystrip">${stripHead}</div></th><th>선거권</th><th>회장</th><th>부회장</th><th>임명직</th><th>이력</th>${edit ? '<th></th>' : ''}</tr></thead><tbody>
-      ${rows.map((j, i) => `<tr><td class="n no">${i + 1}</td><td>${esc(j.s.name)}</td><td class="note">${esc((classOf(dd, j.s) || {}).name || '')}</td><td class="n">${j.age ?? ''}</td><td>${j.ys ? esc(j.ys.date) + (j.ys.est ? ' <span class="note">(추정)</span>' : j.ys.school ? ' <span class="note">(주일학교)</span>' : j.ys.evang ? ' <span class="note">(등록일)</span>' : '') : ''}</td><td class="n"><button class="btn s" data-attd="${j.s.id}" title="주별 출석 근거 보기">${j.rate === null ? '근거' : `${j.cnt}/${j.of} (${j.rate}%)`}</button></td><td><div class="ystrip">${strip(j)}</div></td><td>${jpill(j.voter, j.rsn.voter)}</td><td>${jpill(j.pres, j.rsn.pres)}</td><td>${jpill(j.vp, j.rsn.vp)}</td><td>${jpill(j.appt, j.rsn.appt)}</td><td class="why">${[...(j.histList || []), ...j.why.filter(w => /^보정/.test(w))].map(x => `<div class="hist-line">${esc(x)}</div>`).join('')}</td>${edit ? `<td>${j.s.pseudo ? '<span class="note" title="학생 카드가 없는 팸장(교사·임원 명단)">팸장</span>' : `<button class="btn s" data-mi="${j.s.id}">정보</button>`}</td>` : ''}</tr>`).join('') || '<tr><td colspan="13" class="note">해당자가 없습니다.</td></tr>'}
+      <div class="tw"><table class="judge"><thead><tr><th class="n no">No.</th><th>이름</th><th>임원 자격</th><th class="n">나이</th><th>청년부 출석 시작</th><th class="n">1년 출석</th><th class="ystrip-h"><div class="ystrip">${stripHead}</div></th><th>선거권</th><th>회장</th><th>부회장</th><th>임명직</th><th>이력</th>${edit ? '<th></th>' : ''}</tr></thead><tbody>
+      ${rows.map((j, i) => `${j.fam && (i === 0 || !rows[i - 1].fam) ? `<tr class="j-div"><td colspan="13">팸장 <span class="note">회원은 아니지만 결의권자로 넣습니다</span></td></tr>` : ''}<tr${j.fam ? ' class="j-fam"' : ''}><td class="n no">${i + 1}</td><td>${esc(j.s.name)}${j.fam ? ' <span class="pill info">팸장</span>' : ''}</td><td class="osum">${(o => `<span class="pill ${o.cls}">${o.ok}</span>${o.why ? `<div class="pwhy">${esc(o.why)}</div>` : ''}`)(officerSum(j))}</td><td class="n">${j.age ?? ''}</td><td>${j.ys ? esc(j.ys.date) + (j.ys.est ? ' <span class="note">(추정)</span>' : j.ys.school ? ' <span class="note">(주일학교)</span>' : j.ys.evang ? ' <span class="note">(등록일)</span>' : '') : ''}</td><td class="n"><button class="btn s" data-attd="${j.s.id}" title="주별 출석 근거 보기">${j.rate === null ? '근거' : `${j.cnt}/${j.of} (${j.rate}%)`}</button></td><td><div class="ystrip">${strip(j)}</div></td><td>${jpill(j.voter, j.rsn.voter)}</td><td>${jpill(j.pres, j.rsn.pres)}</td><td>${jpill(j.vp, j.rsn.vp)}</td><td>${jpill(j.appt, j.rsn.appt)}</td><td class="why">${[...(j.histList || []), ...j.why.filter(w => /^보정/.test(w))].map(x => `<div class="hist-line">${esc(x)}</div>`).join('')}</td>${edit ? `<td>${j.s.pseudo ? '<span class="note" title="학생 카드가 없는 팸장(교사·임원 명단)">팸장</span>' : `<button class="btn s" data-mi="${j.s.id}">정보</button>`}</td>` : ''}</tr>`).join('') || '<tr><td colspan="13" class="note">해당자가 없습니다.</td></tr>'}
       </tbody></table></div>
       ${J.excluded && J.excluded.length ? `<details class="judge-out" style="margin-top:10px"><summary>판정에서 뺀 사람 ${J.excluded.length}명 <span class="note">출석부 재적이 아니거나(장기결석·군입대·새친구 등) 결혼·직분·타 목장·라피끄 — 회칙상 회원이 아님</span></summary><div class="row" style="gap:4px;flex-wrap:wrap;margin-top:6px">${J.excluded.map(x => `<span class="chip">${esc(x.s.name)} <span class="note">${esc(x.why)}</span></span>`).join('')}</div></details>` : ''}</div>
   </div>`;
@@ -1835,7 +1853,7 @@ function bindAsmPicker(dd) {
 }
 BIND.assembly = () => {
   const dd = S.data.young; const { a } = pickAssembly(dd); bindAsmPicker(dd); bindAssemblyExport(dd, a);
-  const pr = $('#as-print'); if (pr) pr.onclick = () => { S.sub = { ...S.sub, print: true }; render(); };
+  const pr = $('#as-print'); if (pr) pr.onclick = () => { S.sub = { ...S.sub, print: true }; render(); }; const sg = $('#as-sign'); if (sg) sg.onclick = () => { S.sub = { ...S.sub, print: 'sign' }; render(); };
   const bk = $('#as-back'); if (bk) { bk.onclick = () => { delete S.sub.print; render(); }; $('#as-pr').onclick = () => window.print(); return; }
   document.querySelectorAll('[data-vf]').forEach(b => b.onclick = () => { S.sub.vf = b.dataset.vf; renderHere(); });
   document.querySelectorAll('[data-attd]').forEach(b => b.onclick = e => { e.stopPropagation(); const s = dd.students.find(x => x.id === b.dataset.attd) || (assemblyJudge(dd, a).list.find(j => j.s.id === b.dataset.attd) || {}).s; if (s) openModal(attEvidencePaper(dd, s, a.date)); });

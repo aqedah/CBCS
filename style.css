@@ -467,3 +467,8 @@ td.ie-on:hover{outline:2px dashed var(--accent);outline-offset:-3px;background:v
 .hist-tbl td.hist-act{width:1%}
 .attlog tr.al-div th,.attlog tr.al-div td{background:var(--bg) !important;border-top:2px solid var(--line);font-size:12px;padding-top:10px}
 .attlog tr.al-out th.al-name b{color:var(--muted)}
+.judge tr.j-div td{background:var(--bg);border-top:2px solid var(--line);font-weight:700;font-size:12px;color:var(--muted)}
+.judge td.osum{min-width:120px}
+.vchips{display:flex;flex-wrap:wrap;gap:4px 6px;align-items:center}
+.vchips+.vchips{margin-top:6px;padding-top:6px;border-top:1px dashed var(--line)}
+.vchips b{font-size:12px;color:var(--ink);margin-right:2px}
