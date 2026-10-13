@@ -454,3 +454,4 @@ td.ie-on:hover{outline:2px dashed var(--accent);outline-offset:-3px;background:v
 .hist-tbl td.hist-act{white-space:nowrap;text-align:right}
 .hist-tbl td.hist-act .btn{margin-left:2px}
 .hist-tbl input{width:100%;min-width:60px}
+.ystrip .yw.m{background:repeating-linear-gradient(45deg,var(--line-soft) 0 2px,transparent 2px 4px);outline:1px dashed var(--line)}

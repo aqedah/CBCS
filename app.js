@@ -465,6 +465,9 @@ function promotionPaper(dd, nextYear, plan, incoming) {
 
 /* ───────────── 출석부 ───────────── */
 const LEFT_KINDS = ['제적', '졸업', '상급 부서 진급', '결혼', '직분', '이사', '타 교회', '기타']; // 결혼·직분: 회칙 4조로 회원 자격 종료(장년 소속)
+// 총회 직전 1년의 달력상 주일(52주): (기준일-12개월, 기준일] — 보고서가 없는 주일도 결석으로 분모에 들어간다 (회칙 5조 4항 '1년 이내 출석률', 사용자 확정)
+// 기준일(총회일) 이하의 마지막 주일부터 거꾸로 52주. 총회 당일이 주일이면 그날 출석까지 포함
+function yearSundays(dd, base) { const d = new Date(base + 'T00:00:00'); while (d.getDay() !== 0) d.setDate(d.getDate() - 1); const out = []; for (let i = 0; i < 52; i++) { const dt = iso(d); out.unshift(dd.reports[dt] || { date: dt, att: {}, missing: true }); d.setDate(d.getDate() - 7); } return out; }
 const namedReports = dd => Object.values(dd.reports).filter(r => r.date <= today() && Object.keys(r.att || {}).length && !(r.imported && !Object.keys(r.att).length)).sort((a, b) => a.date < b.date ? -1 : 1);
 function lastAttended(dd, s) { const r = namedReports(dd).filter(r => (r.att || {})[s.id]); return r.length ? r[r.length - 1].date : ''; }
 function absentStreak(dd, s) { const reps = namedReports(dd); let n = 0; for (let i = reps.length - 1; i >= 0; i--) { if ((reps[i].att || {})[s.id]) break; n++; } return { n, of: reps.length }; }
@@ -1390,7 +1393,7 @@ function attEvidence(r, s) {
 }
 function judge(dd, s, base, R) {
   const why = []; const age = ageAt(s.birth, base);
-  const yearReps = namedReports(dd).filter(r => r.date < base && r.date >= addMonths(base, -12));
+  const yearReps = yearSundays(dd, base);
   const ev = yearReps.map(r => attEvidence(r, s)); const cnt = ev.filter(e => e.v).length; const rate = yearReps.length ? Math.round(cnt / yearReps.length * 100) : null;
   const extra = ev.filter(e => e.v === 'U' || e.v === 'T').length;
   const ys = youngStart(dd, s), cs = churchStart(dd, s);
@@ -1722,9 +1725,9 @@ VIEWS.assembly = async () => {
   const cnt = k => J.list.filter(j => j.voter === k).length;
   const filter = S.sub.vf || 'ok';
   const rows = J.list.filter(j => filter === 'all' || (filter === 'border' ? (j.rate !== null && j.rate >= 55 && j.rate <= 65) : j.voter === filter));
-  const yrFrom = addMonths(a.date, -12); const yrReps = namedReports(dd).filter(r => r.date < a.date && r.date >= yrFrom);
+  const yrFrom = addMonths(a.date, -12); const yrReps = yearSundays(dd, a.date);
   const stripHead = (() => { let last = ''; return yrReps.map(r => { const m = r.date.slice(0, 7); const first = m !== last; last = m; const mo = +r.date.slice(5, 7); return `<span class="yw ${first ? 'ym' : ''}" title="${r.date}">${first && [1, 4, 7, 10].includes(mo) ? (mo === 1 ? "'" + r.date.slice(2, 4) + '.1' : mo + '월') : ''}</span>`; }).join(''); })();
-  const strip = j => yrReps.map(r => { const e = attEvidence(r, j.s); const v = e.v; return `<span class="yw ${v === 'P' ? 'p' : v === 'O' ? 'o' : v ? 't' : 'x'}" title="${r.date}${v ? ' ' + e.src : ' 결석'}"></span>`; }).join('');
+  const strip = j => yrReps.map(r => { const e = attEvidence(r, j.s); const v = e.v; return `<span class="yw ${v === 'P' ? 'p' : v === 'O' ? 'o' : v ? 't' : r.missing ? 'm' : 'x'}" title="${r.date}${v ? ' ' + e.src : r.missing ? ' 보고서 없음(결석으로 셈)' : ' 결석'}"></span>`; }).join('');
   const unBapt = dd.students.filter(s => s.status !== 'left' && !isBaptized(s));
   const col = (k, label) => { const ok = J.list.filter(j => j[k] === 'ok'), ck = J.list.filter(j => j[k] === 'check'); return `<div class="cand-col"><h3>${label} <span class="note">${ok.length}명${ck.length ? ` · 확인 ${ck.length}` : ''}</span></h3><div class="row" style="gap:4px">${ok.map(j => `<button class="chip" data-mi="${j.s.id}">${esc(j.s.name)}</button>`).join('') || '<span class="note">없음</span>'}</div>${ck.length ? `<div class="note" style="margin-top:6px">확인 필요: ${ck.map(j => `<a href="#" data-mi="${j.s.id}">${esc(j.s.name)}</a>`).join(', ')}</div>` : ''}</div>`; };
   const R = J.R;
@@ -1745,7 +1748,7 @@ VIEWS.assembly = async () => {
     <div class="card"><h2>후보자 명단 <span class="r">총회에 올릴 후보 · 회의록의 선거 결과로 이어집니다</span></h2>
       <div class="tw"><table><thead><tr><th class="n no">No.</th><th>직위</th><th>이름</th><th>자격</th><th>비고</th>${edit ? '<th></th>' : ''}</tr></thead><tbody>${(a.candidates || []).map((c, i) => { const j = J.list.find(x => x.s.id === c.sid); const k = c.pos === '회장' ? 'pres' : c.pos === '부회장' ? 'vp' : 'appt'; return `<tr><td class="n no">${i + 1}</td><td>${esc(c.pos)}</td><td>${esc(c.name)}</td><td>${j ? jpill(j[k]) : ''}</td><td>${esc(c.note || '')}</td>${edit ? `<td><button class="btn s d" data-del-cand="${i}">빼기</button></td>` : ''}</tr>`; }).join('') || `<tr><td colspan="6" class="note">아직 후보가 없습니다.</td></tr>`}</tbody></table></div>
       ${edit ? `<div class="row" style="margin-top:10px"><select id="cd-pos" style="width:auto">${[...ASSEMBLY_POS, ...ASSEMBLY_POS_SUB].map(p => `<option>${p}</option>`).join('')}</select><select id="cd-sid" style="flex:1">${J.list.filter(j => j.member !== 'no').map(j => `<option value="${j.s.id}">${esc(j.s.name)}</option>`).join('')}</select><input type="text" id="cd-note" placeholder="비고 (추천인 등)" style="flex:1"><button class="btn" id="cd-add">후보 추가</button></div>` : ''}</div>
-    <div class="card"><h2><span>판정표 <span class="row" style="display:inline-flex;gap:4px;margin-left:8px">${[['ok', '결의권자'], ['check', '확인 필요'], ['no', '해당 아님'], ['border', '55~65% 경계'], ['all', '전체']].map(([k, l]) => `<button class="btn s ${filter === k ? 'p' : ''}" data-vf="${k}">${l}</button>`).join('')}</span></span><span class="r">직전 1년 = ${esc(yrFrom)} ~ ${esc(a.date)} · 출석 체크된 주일 ${yrReps.length}주 · "(추정)"은 소속 이력·출석 기록으로 짐작한 날짜</span></h2>
+    <div class="card"><h2><span>판정표 <span class="row" style="display:inline-flex;gap:4px;margin-left:8px">${[['ok', '결의권자'], ['check', '확인 필요'], ['no', '해당 아님'], ['border', '55~65% 경계'], ['all', '전체']].map(([k, l]) => `<button class="btn s ${filter === k ? 'p' : ''}" data-vf="${k}">${l}</button>`).join('')}</span></span><span class="r">직전 1년 = ${esc(yrReps[0].date)} ~ ${esc(yrReps[yrReps.length - 1].date)} (총회 당일 포함) · 달력상 주일 ${yrReps.length}주가 분모 · 보고서 없는 주일 ${yrReps.filter(r => r.missing).length}주는 결석으로 셈 · "(추정)"은 소속 이력·출석 기록으로 짐작한 날짜</span></h2>
       ${edit && unBapt.length ? `<div class="hint" style="margin-bottom:8px">신급이 세례·입교가 아닌 회원 ${unBapt.length}명 (${unBapt.map(x => esc(x.name)).join(', ')}). 신급 자료가 정리될 때까지 <button class="btn s" id="as-bapt-all">전원 "세례"로 임시 표기</button> — 나중에 신급 자료를 올리면 덮어씁니다.</div>` : ''}
       <div class="tw"><table class="judge"><thead><tr><th class="n no">No.</th><th>이름</th><th>팸</th><th class="n">나이</th><th>청년부 출석 시작</th><th class="n">1년 출석</th><th class="ystrip-h"><div class="ystrip">${stripHead}</div></th><th>선거권</th><th>회장</th><th>부회장</th><th>임명직</th><th>이력</th>${edit ? '<th></th>' : ''}</tr></thead><tbody>
       ${rows.map((j, i) => `<tr><td class="n no">${i + 1}</td><td>${esc(j.s.name)}</td><td class="note">${esc((classOf(dd, j.s) || {}).name || '')}</td><td class="n">${j.age ?? ''}</td><td>${j.ys ? esc(j.ys.date) + (j.ys.est ? ' <span class="note">(추정)</span>' : '') : ''}</td><td class="n"><button class="btn s" data-attd="${j.s.id}" title="주별 출석 근거 보기">${j.rate === null ? '근거' : `${j.cnt}/${j.of} (${j.rate}%)`}</button></td><td><div class="ystrip">${strip(j)}</div></td><td>${jpill(j.voter, j.rsn.voter)}</td><td>${jpill(j.pres, j.rsn.pres)}</td><td>${jpill(j.vp, j.rsn.vp)}</td><td>${jpill(j.appt, j.rsn.appt)}</td><td class="why">${[...(j.histList || []), ...j.why.filter(w => /^보정/.test(w))].map(x => `<div class="hist-line">${esc(x)}</div>`).join('')}</td>${edit ? `<td><button class="btn s" data-mi="${j.s.id}">정보</button></td>` : ''}</tr>`).join('') || '<tr><td colspan="13" class="note">해당자가 없습니다.</td></tr>'}
@@ -1753,18 +1756,16 @@ VIEWS.assembly = async () => {
   </div>`;
 };
 function attEvidencePaper(dd, s, base) {
-  const from = addMonths(base, -12); const all = Object.values(dd.reports).filter(r => r.date < base && r.date >= from).sort((a, b) => a.date < b.date ? -1 : 1);
-  const named = new Set(namedReports(dd).map(r => r.date));
-  const rows = all.map(r => { const e = attEvidence(r, s); const inDen = named.has(r.date); return { r, e, inDen }; });
-  const den = rows.filter(x => x.inDen).length, num = rows.filter(x => x.inDen && x.e.v).length;
-  const sun = []; { const d = new Date(from + 'T00:00:00'); while (d.getDay() !== 0) d.setDate(d.getDate() + 1); while (iso(d) < base) { sun.push(iso(d)); d.setDate(d.getDate() + 7); } }
-  const missing = sun.filter(dt => !dd.reports[dt]);
+  const from = addMonths(base, -12); const all = yearSundays(dd, base);
+  const rows = all.map(r => { const e = attEvidence(r, s); return { r, e, inDen: true }; });
+  const den = rows.length, num = rows.filter(x => x.e.v).length;
+  const missing = all.filter(r => r.missing).map(r => r.date);
   const V = { P: ['ok', '출석'], O: ['warn', '온라인'], U: ['info', '이름만'], T: ['info', '교사 명단'], '': ['mute', '—'] };
   return `<h2>${esc(s.name)} — 직전 1년 출석 근거<button class="btn s" id="modal-close">닫기</button></h2>
-    <p class="note">${esc(from)} ~ ${esc(base)} · 출석률 계산 = 출석(어떤 근거든) ${num} ÷ 출석 체크가 있는 주일 ${den} = <b>${den ? Math.round(num / den * 100) : '—'}%</b>. 보고서가 없는 주일(${missing.length}주)과 출석 체크가 비어 있는 보고서는 분모에서 빠집니다.</p>
+    <p class="note">${esc(all[0].date)} ~ ${esc(all[all.length - 1].date)} · 출석률 계산 = 출석(어떤 근거든) ${num} ÷ 직전 1년 달력상 주일 ${den}주 = <b>${den ? (num / den * 100).toFixed(1) : '—'}%</b> (60% 기준: ${Math.ceil(den * 0.6)}주 이상). 보고서가 없는 주일(${missing.length}주)도 결석으로 세며, 총회 당일 출석까지 포함합니다.</p>
     ${missing.length ? `<div class="hint" style="margin-bottom:8px">보고서가 없는 주일: ${missing.map(d => d.slice(5).replace('-', '/')).join(', ')}</div>` : ''}
     <div class="tw" style="max-height:60vh;overflow:auto"><table><thead><tr><th>주일</th><th>판정</th><th>근거</th><th>분모</th><th>보고서 출석/재적</th><th>비고</th></tr></thead><tbody>
-    ${rows.map(({ r, e, inDen }) => { const st = reportStats(dd, r); return `<tr><td>${r.date}</td><td><span class="pill ${V[e.v][0]}">${V[e.v][1]}</span></td><td class="note">${esc(e.src)}</td><td>${inDen ? '○' : '<span class="note">제외(출석 체크 없음)</span>'}</td><td class="n">${st.p}/${st.total}</td><td class="note">${r.imported ? '변환' : ''}${(r.absent || {})[s.id] ? ' 결석 사유: ' + esc(r.absent[s.id]) : ''}</td></tr>`; }).join('') || '<tr><td colspan="6" class="note">기간 안에 보고서가 없습니다.</td></tr>'}
+    ${rows.map(({ r, e, inDen }) => { const st = reportStats(dd, r); return `<tr><td>${r.date}</td><td><span class="pill ${V[e.v][0]}">${V[e.v][1]}</span></td><td class="note">${esc(e.src)}</td><td>○</td><td class="n">${r.missing ? '<span class="note">보고서 없음</span>' : `${st.p}/${st.total}`}</td><td class="note">${r.imported ? '변환' : ''}${(r.absent || {})[s.id] ? ' 결석 사유: ' + esc(r.absent[s.id]) : ''}</td></tr>`; }).join('') || '<tr><td colspan="6" class="note">기간 안에 보고서가 없습니다.</td></tr>'}
     </tbody></table></div>
     <p class="note" style="margin-top:8px">근거: 출석 체크(출석부 연결) · 이름만(보고서 출석자 이름이 출석부와 연결 안 됨 — 출석부에서 이름·생일 확인) · 교사 명단(주일 보고서 "예배에 참석한 교사·임원" 칸) · —(어느 기록에도 없음)</p>`;
 }
