@@ -679,7 +679,7 @@ function studentCard(dd, s) {
       <label class="f"><span>신급</span><select id="sc-faith">${faithOptions(s)}</select></label>
       <label class="f"><span>신급 연도·반기</span><div class="row" style="gap:4px"><input type="number" id="sc-fyear" value="${s.faithYear || ''}" placeholder="2019" style="width:90px"><select id="sc-fhalf" style="width:auto"><option value="" ${!s.faithHalf ? 'selected' : ''}>—</option><option ${s.faithHalf === '상' ? 'selected' : ''}>상</option><option ${s.faithHalf === '하' ? 'selected' : ''}>하</option></select></div></label>
       <label class="f"><span>학교</span><input type="text" id="sc-school" value="${f('school')}"></label>
-      ${dd.id === 'young' ? `<label class="f"><span>직분</span><select id="sc-crole">${churchRoleOptions(s.churchRole || '')}</select></label>` : ''}${dd.id === 'young' ? `<label class="f"><span>결혼</span><select id="sc-married"><option value="">미혼</option><option value="1" ${s.married ? 'selected' : ''}>기혼</option></select></label><label class="f"><span>결혼한 때</span><input type="text" id="sc-mdate" value="${f('marriedDate')}" placeholder="예: 2026-04 또는 2026-04-18"></label>` : ''}
+      ${dd.id === 'young' ? `<label class="f"><span>청년부에 들어온 길</span><select id="sc-origin">${[['', '자동 판단'], ['school', '주일학교 출신'], ['evang', '전도']].map(([k, l]) => `<option value="${k}" ${(s.origin || '') === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>` : ''}${dd.id === 'young' ? `<label class="f"><span>직분</span><select id="sc-crole">${churchRoleOptions(s.churchRole || '')}</select></label>` : ''}${dd.id === 'young' ? `<label class="f"><span>결혼</span><select id="sc-married"><option value="">미혼</option><option value="1" ${s.married ? 'selected' : ''}>기혼</option></select></label><label class="f"><span>결혼한 때</span><input type="text" id="sc-mdate" value="${f('marriedDate')}" placeholder="예: 2026-04 또는 2026-04-18"></label>` : ''}
       <label class="f"><span>연락처 (본인)</span><input type="tel" id="sc-phone" value="${f('phone')}"></label>
       <label class="f"><span>보호자 연락처</span><div class="row" style="gap:4px"><input type="tel" id="sc-gphone" value="${f('guardianPhone')}" style="flex:1"><select id="sc-grel" style="width:auto">${['부','모','보호자'].map(k => `<option ${(s.guardianRel || '보호자') === k ? 'selected' : ''}>${k}</option>`).join('')}</select></div></label>
       <label class="f"><span>아버지</span><input type="text" id="sc-father" value="${f('father')}"></label>
@@ -745,7 +745,7 @@ BIND.roster = () => {
       else if (ns !== 'left' && was === 'left') { (s.statusLog = s.statusLog || []).push({ date: today(), from: 'left', to: ns, reason: '복적' }); s.leftDate = ''; s.leftKind = ''; s.leftReason = ''; }
       else if (ns === 'left') Object.assign(s, { leftDate: ld, leftKind: lk, leftReason: lr });
       if ($('#sc-group')) s.group = $('#sc-group').value;
-      if ($('#sc-crole')) s.churchRole = $('#sc-crole').value;
+      if ($('#sc-crole')) s.churchRole = $('#sc-crole').value; if ($('#sc-origin')) s.origin = $('#sc-origin').value;
       if ($('#sc-married')) { s.married = !!$('#sc-married').value || (ns === 'left' && lk === '결혼'); s.marriedDate = s.married ? $('#sc-mdate').value.trim() : ''; }
       Object.assign(s, { name: $('#sc-name').value.trim(), classId: $('#sc-class').value, sex: $('#sc-sex').value, status: ns, birth: $('#sc-birth').value, faith: $('#sc-faith').value, faithYear: +$('#sc-fyear').value || '', faithHalf: $('#sc-fhalf').value, school: $('#sc-school').value, phone: $('#sc-phone').value, guardianPhone: $('#sc-gphone').value, guardianRel: $('#sc-grel').value, father: $('#sc-father').value, mother: $('#sc-mother').value, address: $('#sc-address').value, note: $('#sc-note').value, statusText: ns === 'custom' ? ($('#sc-stext').value.trim() || '기타') : '' });
       await backend.set(`depts/${dd.id}/students/${s.id}`, s); closeModal(); renderHere(); toast('저장했습니다'); };
@@ -1345,10 +1345,17 @@ const ageAt = (birth, ref) => { if (!birth || !/^\d{4}-\d\d-\d\d$/.test(birth)) 
 const yearsSince = (from, ref) => (new Date(ref + 'T00:00:00') - new Date(from + 'T00:00:00')) / (365.25 * 864e5);
 const isBaptized = s => /세례|입교/.test(s.faith || '') && s.faith !== '유아세례';
 const faithUnknown = s => !s.faith || s.faith === '모름' || s.faith === '미정'; // 아직 신급을 확인하지 않음 ('없음'은 확인 결과 신급이 없는 것)
+// 주일학교(중고등부 등)에서 올라온 회원인지: 소속 이력에 청년부 아닌 교회학교 기록이 있거나, 진급으로 받은 경우
+const fromSchool = s => s.origin ? s.origin === 'school' : (s.history || []).some(h => h.dept && h.dept !== 'young' && h.dept !== 'committee') || /중고등부|고등부|중등부/.test([...(s.history || []).map(h => h.origDept || ''), String(s.source || ''), s.fromDept || ''].join(' '));
 function youngStart(dd, s) {
+  const by = s.birth ? +s.birth.slice(0, 4) : 0;
+  // 청년부 출석 시작 규칙(2026-10-13): 복적자는 복적일, 주일학교 출신은 만 19세 되는 해 1월 1일, 전도되어 온 회원은 청년부 등록일
+  const back = (s.statusLog || []).some(l => l.from === 'left' && l.to !== 'left' && l.date);
+  if (!back && fromSchool(s) && by) return { date: `${by + 19}-01-01`, est: false, school: true };
+  if (!back && (s.origin === 'evang' || !fromSchool(s)) && s.joinDate) return { date: s.joinDate, est: false, evang: true };
   const r = youngStartRaw(dd, s); if (!r) return null;
   // 고3까지는 중고등부: 청년부 등록일은 만 19세가 되는 해 1월 1일보다 앞설 수 없다
-  const by = s.birth ? +s.birth.slice(0, 4) : 0; const floor = by ? `${by + 19}-01-01` : '';
+  const floor = by ? `${by + 19}-01-01` : '';
   if (floor && r.date < floor) return { ...r, date: floor, floored: true };
   return r;
 }
@@ -1411,7 +1418,9 @@ function judge(dd, s, base, R) {
   const yYears = ys ? yearsSince(ys.date, base) : null, cYears = cs ? yearsSince(cs.date, base) : null;
   if (extra) why.push(`출석 ${extra}주는 교사·임원 참석 명단 또는 이름만 적힌 출석자에서 보탬`);
   if (ys && ys.rejoined) why.push(ys.noReturn ? '제적 기록 뒤 출석 기록이 없음 — 복적일 확인 필요' : `제적 후 ${ys.date} 복적${ys.est ? '(추정: 제적 뒤 첫 출석)' : ''} — 출석 연수·6개월은 복적일부터`);
-  if (ys && ys.floored) why.push(`청년부 등록 ${ys.date} (만 19세 되는 해 1월, 그 전은 중고등부)`);
+  if (ys && ys.school) why.push(`주일학교 출신 — 청년부 시작 ${ys.date} (만 19세 되는 해 1월)`);
+  else if (ys && ys.evang) why.push(`전도 — 청년부 등록일 ${ys.date}`);
+  else if (ys && ys.floored) why.push(`청년부 등록 ${ys.date} (만 19세 되는 해 1월, 그 전은 중고등부)`);
   // 4조 회원
   let member = 'ok';
   if (s.status === 'left') { member = 'no'; why.push('제적'); }
@@ -1669,12 +1678,12 @@ BIND.bylaws = () => {
 
 /* 총회 자료 */
 function memberInfoForm(s) {
-  return `<div class="fields"><label class="f"><span>청년부 첫 출석일</span><input type="date" id="mi-join" value="${esc(s.joinDate || '')}"></label><label class="f"><span>본 교회 첫 출석일</span><input type="date" id="mi-cjoin" value="${esc(s.churchJoin || '')}"></label><label class="f"><span>새가족반 수료일</span><input type="date" id="mi-new" value="${esc(s.newcomerDone || '')}"></label><label class="f"><span>생년월일</span><input type="date" id="mi-birth" value="${esc(s.birth || '')}"></label>
+  return `<div class="fields"><label class="f"><span>청년부 첫 출석일</span><input type="date" id="mi-join" value="${esc(s.joinDate || '')}"></label><label class="f"><span>본 교회 첫 출석일</span><input type="date" id="mi-cjoin" value="${esc(s.churchJoin || '')}"></label><label class="f"><span>새가족반 수료일</span><input type="date" id="mi-new" value="${esc(s.newcomerDone || '')}"></label><label class="f"><span>생년월일</span><input type="date" id="mi-birth" value="${esc(s.birth || '')}"></label><label class="f"><span>청년부에 들어온 길</span><select id="mi-origin">${[['', '자동 판단'], ['school', '주일학교 출신 (만 19세 되는 해 1월)'], ['evang', '전도 (청년부 등록일)']].map(([k, l]) => `<option value="${k}" ${(s.origin || '') === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
     <label class="f"><span>신급</span><select id="mi-faith">${faithOptions(s)}</select></label><label class="f"><span>결혼</span><select id="mi-married"><option value="">미혼</option><option value="1" ${s.married ? 'selected' : ''}>기혼</option></select></label>
     <label class="f"><span>교회 직분</span><select id="mi-role">${churchRoleOptions(s.churchRole || '')}</select></label><label class="f"><span>타 부서 직책</span><input type="text" id="mi-other" value="${esc(s.otherRole || '')}" placeholder="교사, 찬양팀 임원 등"></label>
     <label class="f"><span>타 목장·전도회 소속</span><select id="mi-cell"><option value="">아니오</option><option value="1" ${s.otherCell ? 'selected' : ''}>예</option></select></label><label class="f"><span>제명 이력</span><input type="text" id="mi-exp" value="${esc(s.expelled || '')}" placeholder="예: 2022 제명"></label></div>`;
 }
-function readMemberInfo(s) { Object.assign(s, { joinDate: $('#mi-join').value, churchJoin: $('#mi-cjoin').value, newcomerDone: $('#mi-new').value, birth: $('#mi-birth').value, faith: $('#mi-faith').value, married: !!$('#mi-married').value, churchRole: $('#mi-role').value, otherRole: $('#mi-other').value.trim(), otherCell: !!$('#mi-cell').value, expelled: $('#mi-exp').value.trim() }); }
+function readMemberInfo(s) { if ($('#mi-origin')) s.origin = $('#mi-origin').value; Object.assign(s, { joinDate: $('#mi-join').value, churchJoin: $('#mi-cjoin').value, newcomerDone: $('#mi-new').value, birth: $('#mi-birth').value, faith: $('#mi-faith').value, married: !!$('#mi-married').value, churchRole: $('#mi-role').value, otherRole: $('#mi-other').value.trim(), otherCell: !!$('#mi-cell').value, expelled: $('#mi-exp').value.trim() }); }
 function assemblyPaper(dd, a, J) {
   const voters = J.list.filter(j => j.voter === 'ok');
   return `<section class="paper"><div class="hd"><div><h1>${esc(a.title)} 자료</h1><div class="sub">중앙성서교회 청년부 · 회칙 ${esc((currentBylaw(dd) || {}).revision || '')} 기준</div></div><div class="meta">${fmtK(a.date)}${a.place ? ' · ' + esc(a.place) : ''}</div></div>
@@ -1762,7 +1771,7 @@ VIEWS.assembly = async () => {
     <div class="card"><h2><span>판정표 <span class="row" style="display:inline-flex;gap:4px;margin-left:8px">${[['ok', '결의권자'], ['check', '확인 필요'], ['no', '해당 아님'], ['border', '55~65% 경계'], ['all', '전체']].map(([k, l]) => `<button class="btn s ${filter === k ? 'p' : ''}" data-vf="${k}">${l}</button>`).join('')}</span></span><span class="r">직전 1년 = ${esc(yrReps[0].date)} ~ ${esc(yrReps[yrReps.length - 1].date)} (총회 당일 포함) · 달력상 주일 ${yrReps.length}주가 분모 · 보고서 없는 주일 ${yrReps.filter(r => r.missing).length}주는 결석으로 셈 · "(추정)"은 소속 이력·출석 기록으로 짐작한 날짜</span></h2>
       ${edit && unBapt.length ? `<div class="hint" style="margin-bottom:8px">신급이 세례·입교가 아닌 회원 ${unBapt.length}명 (${unBapt.map(x => esc(x.name)).join(', ')}). 신급 자료가 정리될 때까지 <button class="btn s" id="as-bapt-all">전원 "세례"로 임시 표기</button> — 나중에 신급 자료를 올리면 덮어씁니다.</div>` : ''}
       <div class="tw"><table class="judge"><thead><tr><th class="n no">No.</th><th>이름</th><th>팸</th><th class="n">나이</th><th>청년부 출석 시작</th><th class="n">1년 출석</th><th class="ystrip-h"><div class="ystrip">${stripHead}</div></th><th>선거권</th><th>회장</th><th>부회장</th><th>임명직</th><th>이력</th>${edit ? '<th></th>' : ''}</tr></thead><tbody>
-      ${rows.map((j, i) => `<tr><td class="n no">${i + 1}</td><td>${esc(j.s.name)}</td><td class="note">${esc((classOf(dd, j.s) || {}).name || '')}</td><td class="n">${j.age ?? ''}</td><td>${j.ys ? esc(j.ys.date) + (j.ys.est ? ' <span class="note">(추정)</span>' : '') : ''}</td><td class="n"><button class="btn s" data-attd="${j.s.id}" title="주별 출석 근거 보기">${j.rate === null ? '근거' : `${j.cnt}/${j.of} (${j.rate}%)`}</button></td><td><div class="ystrip">${strip(j)}</div></td><td>${jpill(j.voter, j.rsn.voter)}</td><td>${jpill(j.pres, j.rsn.pres)}</td><td>${jpill(j.vp, j.rsn.vp)}</td><td>${jpill(j.appt, j.rsn.appt)}</td><td class="why">${[...(j.histList || []), ...j.why.filter(w => /^보정/.test(w))].map(x => `<div class="hist-line">${esc(x)}</div>`).join('')}</td>${edit ? `<td><button class="btn s" data-mi="${j.s.id}">정보</button></td>` : ''}</tr>`).join('') || '<tr><td colspan="13" class="note">해당자가 없습니다.</td></tr>'}
+      ${rows.map((j, i) => `<tr><td class="n no">${i + 1}</td><td>${esc(j.s.name)}</td><td class="note">${esc((classOf(dd, j.s) || {}).name || '')}</td><td class="n">${j.age ?? ''}</td><td>${j.ys ? esc(j.ys.date) + (j.ys.est ? ' <span class="note">(추정)</span>' : j.ys.school ? ' <span class="note">(주일학교)</span>' : j.ys.evang ? ' <span class="note">(등록일)</span>' : '') : ''}</td><td class="n"><button class="btn s" data-attd="${j.s.id}" title="주별 출석 근거 보기">${j.rate === null ? '근거' : `${j.cnt}/${j.of} (${j.rate}%)`}</button></td><td><div class="ystrip">${strip(j)}</div></td><td>${jpill(j.voter, j.rsn.voter)}</td><td>${jpill(j.pres, j.rsn.pres)}</td><td>${jpill(j.vp, j.rsn.vp)}</td><td>${jpill(j.appt, j.rsn.appt)}</td><td class="why">${[...(j.histList || []), ...j.why.filter(w => /^보정/.test(w))].map(x => `<div class="hist-line">${esc(x)}</div>`).join('')}</td>${edit ? `<td><button class="btn s" data-mi="${j.s.id}">정보</button></td>` : ''}</tr>`).join('') || '<tr><td colspan="13" class="note">해당자가 없습니다.</td></tr>'}
       </tbody></table></div></div>
   </div>`;
 };
