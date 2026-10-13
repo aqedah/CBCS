@@ -1396,11 +1396,13 @@ async function saveBylaw(dd, b) { const { unsaved, _id, ...data } = b; await bac
 async function saveAssembly(dd, a) { const { _id, unsaved, ...data } = a; await backend.set(`depts/young/assemblies/${a.id}`, data); delete a.unsaved; if (!dd.assemblies.includes(a)) dd.assemblies.push(a); }
 
 /* 판정 */
-function quorumOf(dd, base, R) {
+// 정족수(13조): 직전 N주 평균 출석의 2/3. 출석 인원은 두 가지로 셀 수 있다 — 보고서에 적힌 출석 수(report) / 출석부에 체크된 회원 수(check). 총회 자료의 basis로 고른다
+function quorumOf(dd, base, R, basis) {
   const reps = Object.values(dd.reports).filter(r => r.date < base).sort((a, b) => a.date < b.date ? -1 : 1).slice(-R.quorumWeeks);
-  const rows = reps.map(r => ({ date: r.date, p: reportStats(dd, r).p }));
-  const avg = rows.length ? rows.reduce((a, b) => a + b.p, 0) / rows.length : 0;
-  return { rows, avg, need: Math.ceil(avg * R.quorumNum / R.quorumDen) };
+  const rows = reps.map(r => { const st = reportStats(dd, r); const chk = Object.values(r.att || {}).filter(Boolean).length + Object.keys(r.attUnmatched || {}).length; const rep = (r.counts && r.counts.att) || st.p; const t = (r.teachersPresent || []).length; return { date: r.date, rep, chk, t, p: basis === 'check' ? chk : rep }; });
+  const avgOf = k => rows.length ? rows.reduce((a, b) => a + b[k], 0) / rows.length : 0; const need = v => Math.ceil(v * R.quorumNum / R.quorumDen);
+  const avg = avgOf('p');
+  return { rows, avg, need: need(avg), basis: basis || 'report', alt: { rep: { avg: avgOf('rep'), need: need(avgOf('rep')) }, chk: { avg: avgOf('chk'), need: need(avgOf('chk')) } } };
 }
 // 한 주일의 출석 근거: 'P'/'O'(출석 체크) · 'U'(보고서 출석자 이름이 출석부와 안 맞아 이름으로만 남음) · 'T'(교사·임원 참석 명단에 있음) · ''(없음)
 function attEvidence(r, s) {
@@ -1481,7 +1483,7 @@ function assemblyJudge(dd, a) {
   fam.filter(x => !x.stu).forEach(x => { const t = dd.doc.staff.find(y => y.status !== 'left' && normName(y.name) === normName(x.name)) || {}; pool.push({ id: 'fam_' + normName(x.name), name: x.name, sex: t.sex || '', birth: t.birth || '', faith: t.faith || '', status: 'active', group: '', history: [], pseudo: true }); });
   const list = pool.map(s => { const j = judge(dd, s, a.date, R); if (isFamP(s)) { j.voter = 'ok'; j.rsn = j.rsn || {}; j.rsn.voter = ['팸장 — 결의권자']; j.why.unshift('팸장 — 결의권자'); j.fam = true; } return applyOverride(a, j); }).sort((x, y) => x.s.name.localeCompare(y.s.name, 'ko'));
   const excluded = dd.students.filter(s => s.status !== 'left' && !inPool(s)).map(s => ({ s, why: outWhy(s) })).sort((x, y) => x.why.localeCompare(y.why, 'ko') || x.s.name.localeCompare(y.s.name, 'ko'));
-  return { R, list, q: quorumOf(dd, a.date, R), excluded };
+  return { R, list, q: quorumOf(dd, a.date, R, a.quorumBasis || 'report'), excluded };
 }
 function lastSundayOfYear(y) { const d = new Date(y, 11, 31); d.setDate(d.getDate() - d.getDay()); return iso(d); }
 function blankAssembly(date) { return { id: date, date, kind: '정기총회', title: `${+date.slice(0, 4)}년 청년부 정기총회`, place: '', overrides: {}, candidates: [], minutes: { opened: '', closed: '', presider: '', secretary: '', attendees: '', order: '개회 기도\n성원 보고\n전 회의록 낭독\n사업·회계 보고\n임원 선거\n기타 안건\n폐회', agenda: [], votes: [], notes: '', status: 'draft' }, unsaved: true }; }
@@ -1771,7 +1773,11 @@ VIEWS.assembly = async () => {
     ${edit ? `<div class="card"><div class="fields"><label class="f"><span>총회 날짜 (판정 기준일)</span><input type="date" id="as-date" value="${esc(a.date)}"></label><label class="f"><span>구분</span><select id="as-kind">${['정기총회', '임시총회'].map(k => `<option ${a.kind === k ? 'selected' : ''}>${k}</option>`).join('')}</select></label><label class="f"><span>제목</span><input type="text" id="as-title" value="${esc(a.title)}"></label><label class="f"><span>장소</span><input type="text" id="as-place" value="${esc(a.place || '')}"></label></div><div class="row" style="margin-top:8px"><button class="btn p" id="as-save">${a.unsaved ? '이 총회 만들기' : '저장'}</button></div></div>` : ''}
     <div class="grid2">
       <div class="card"><h2>정족수 <span class="r">회칙 13조 · 직전 ${R.quorumWeeks}주 평균 출석의 ${R.quorumNum}/${R.quorumDen}</span></h2><div class="quorum"><span class="big">${J.q.need}명</span><span class="note">평균 ${J.q.avg.toFixed(1)}명</span></div>
-        <div class="note" style="margin-top:6px">${J.q.rows.map(r => `${r.date.slice(5).replace('-', '/')} ${r.p}명`).join(' · ') || '총회 날짜 이전 보고서가 없습니다.'}</div></div>
+        <div class="tw" style="margin-top:6px"><table><thead><tr><th>주일</th>${J.q.rows.map(r => `<th class="n">${r.date.slice(5).replace('-', '/')}</th>`).join('')}<th class="n">평균</th><th class="n">2/3</th></tr></thead><tbody>
+          <tr><td>보고서에 적힌 출석 수${J.q.basis === 'report' ? ' <span class="pill ok">기준</span>' : ''}</td>${J.q.rows.map(r => `<td class="n">${r.rep}</td>`).join('')}<td class="n">${J.q.alt.rep.avg.toFixed(1)}</td><td class="n"><b>${J.q.alt.rep.need}</b></td></tr>
+          <tr><td>출석부에 체크된 회원 수${J.q.basis === 'check' ? ' <span class="pill ok">기준</span>' : ''}</td>${J.q.rows.map(r => `<td class="n">${r.chk}</td>`).join('')}<td class="n">${J.q.alt.chk.avg.toFixed(1)}</td><td class="n"><b>${J.q.alt.chk.need}</b></td></tr>
+          <tr><td class="note">참석 교사·팸장 (참고, 정족수에 안 넣음)</td>${J.q.rows.map(r => `<td class="n note">${r.t}</td>`).join('')}<td></td><td></td></tr></tbody></table></div>
+        ${edit ? `<div class="row" style="margin-top:6px;gap:6px"><span class="note">정족수 기준:</span>${[['report', '보고서 숫자'], ['check', '출석부 체크 수']].map(([k, l]) => `<button class="btn s ${J.q.basis === k ? 'p' : ''}" data-qbasis="${k}">${l}</button>`).join('')}<span class="note">둘이 다르면 서기가 보고서에 적은 숫자와 출석부 체크가 어긋난 것 — 보고서 열람에서 그 주를 확인</span></div>` : ''}${J.q.rows.length ? '' : '<div class="note">총회 날짜 이전 보고서가 없습니다.</div>'}</div>
       <div class="card"><h2>결의권자(선거권자) <span class="r">회칙 5조</span></h2><div class="quorum"><span class="big">${cnt('ok')}명</span><span class="note">확인 필요 ${cnt('check')}명 · 해당 아님 ${cnt('no')}명</span></div>
         <div class="note" style="margin-top:6px">새가족반 수료 후 ${R.voterMonths}개월 이상, 최근 1년 출석률 ${R.voterRate}% 이상, 회원(만 ${R.ageMin}~${R.ageMax}세 미혼, 직분자·타 목장 제외)</div></div>
     </div>
@@ -1814,6 +1820,7 @@ BIND.assembly = () => {
   const bk = $('#as-back'); if (bk) { bk.onclick = () => { delete S.sub.print; render(); }; $('#as-pr').onclick = () => window.print(); return; }
   document.querySelectorAll('[data-vf]').forEach(b => b.onclick = () => { S.sub.vf = b.dataset.vf; renderHere(); });
   document.querySelectorAll('[data-attd]').forEach(b => b.onclick = e => { e.stopPropagation(); const s = dd.students.find(x => x.id === b.dataset.attd) || (assemblyJudge(dd, a).list.find(j => j.s.id === b.dataset.attd) || {}).s; if (s) openModal(attEvidencePaper(dd, s, a.date)); });
+  document.querySelectorAll('[data-qbasis]').forEach(b => b.onclick = async () => { a.quorumBasis = b.dataset.qbasis; await saveAssembly(dd, a); render(); });
   const ba = $('#as-bapt-all'); if (ba) ba.onclick = async () => { const list = dd.students.filter(s => s.status !== 'left' && !isBaptized(s)); if (!list.length) return; ba.disabled = true; ba.textContent = '표기 중…'; for (const s of list) { s.faithPrev = s.faith || ''; s.faith = '세례'; s.flags = [...(s.flags || []).filter(f => !/신급 임시/.test(f)), `신급 임시 표기(세례) ${today()} — 신급 자료로 확인 필요${s.faithPrev ? ' (원래: ' + s.faithPrev + ')' : ''}`]; await backend.set(`depts/${dd.id}/students/${s.id}`, s); } render(); toast(`${list.length}명을 세례로 임시 표기했습니다`); };
   const read = () => { const d = $('#as-date'); if (!d) return; const nd = d.value || a.date; Object.assign(a, { kind: $('#as-kind').value, title: $('#as-title').value.trim(), place: $('#as-place').value.trim() }); if (nd !== a.date) { a.date = nd; if (a.unsaved) { a.id = nd; S.sub.newDate = nd; } } };
   const dt = $('#as-date'); if (dt) dt.onchange = () => { read(); if (a.unsaved) { S.sub.asm = 'new'; } render(); };
