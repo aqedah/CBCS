@@ -445,7 +445,7 @@ async function syncPromotions(dd, nextYear) { // 보내는 부서가 출석부�
   if (!NEXT_DEPT[dd.id]) return;
   const { out } = promotionPlan(dd, nextYear);
   const existing = (S.promotions || (S.promotions = await backend.list('promotions'))).filter(p => p.fromDept === dd.id && p.year === nextYear);
-  const want = out.map(({ s, toDept, toClass }) => ({ id: `${nextYear}_${s.id}`, year: nextYear, fromDept: dd.id, toDept, toClass, studentId: s.id, name: s.name, sex: s.sex, birth: s.birth || '', fromClass: s.classId || '', phone: s.phone || '', guardianPhone: s.guardianPhone || '', guardianRel: s.guardianRel || '', father: s.father || '', mother: s.mother || '', faith: s.faith || '', faithYear: s.faithYear || '', faithHalf: s.faithHalf || '', address: s.address || '', siblings: s.siblings || [], school: s.school || '', note: s.note || '', received: (existing.find(e => e._id === `${nextYear}_${s.id}`) || {}).received || false }));
+  const want = out.map(({ s, toDept, toClass }) => ({ id: `${nextYear}_${s.id}`, year: nextYear, fromDept: dd.id, toDept, toClass, studentId: s.id, name: s.name, sex: s.sex, birth: s.birth || '', fromClass: s.classId || '', phone: s.phone || '', guardianPhone: s.guardianPhone || '', guardianRel: s.guardianRel || '', father: s.father || '', mother: s.mother || '', faith: s.faith || '', faithYear: s.faithYear || '', faithHalf: s.faithHalf || '', address: s.address || '', siblings: sibs(s), school: s.school || '', note: s.note || '', received: (existing.find(e => e._id === `${nextYear}_${s.id}`) || {}).received || false }));
   const changed = [];
   for (const w of want) { const e = existing.find(x => x._id === w.id); if (!e || JSON.stringify({ ...e, _id: undefined, received: undefined }) !== JSON.stringify({ ...w, _id: undefined, received: undefined })) changed.push(w); }
   for (const e of existing) if (!want.some(w => w.id === e._id) && !e.received) { await backend.del(`promotions/${e._id}`); S.promotions = S.promotions.filter(x => x._id !== e._id); }
@@ -702,7 +702,7 @@ BIND.roster = () => {
     const nextYear = YEAR + 1; const inc = (S.promotions || []).filter(p => p.toDept === dd.id && p.year === nextYear && !p.received);
     for (const x of inc) {
       const sid = `${dd.id}_${x.name}_${x.birth || uid()}`;
-      const st = { id: sid, name: x.name, sex: x.sex || '남', birth: x.birth || '', classId: x.toClass || (dd.doc.classes[0] || {}).id || '', status: 'active', dept: dd.id, faith: x.faith || '', faithYear: x.faithYear || '', faithHalf: x.faithHalf || '', phone: x.phone || '', guardianPhone: x.guardianPhone || '', guardianRel: x.guardianRel || '', school: x.school || '', father: x.father || '', mother: x.mother || '', siblings: x.siblings || [], address: x.address || '', evangelist: '', scholarship: [], note: x.note || '', history: [{ year: YEAR, dept: x.fromDept, origDept: DEPTS[x.fromDept] || '', classId: x.fromClass || '', note: `${nextYear}년 진급` }], flags: [`${nextYear}년 ${DEPTS[x.fromDept]}에서 진급 — 반 배정 확인`], source: [`진급 ${nextYear}`] };
+      const st = { id: sid, name: x.name, sex: x.sex || '남', birth: x.birth || '', classId: x.toClass || (dd.doc.classes[0] || {}).id || '', status: 'active', dept: dd.id, faith: x.faith || '', faithYear: x.faithYear || '', faithHalf: x.faithHalf || '', phone: x.phone || '', guardianPhone: x.guardianPhone || '', guardianRel: x.guardianRel || '', school: x.school || '', father: x.father || '', mother: x.mother || '', siblings: sibs(x), address: x.address || '', evangelist: '', scholarship: [], note: x.note || '', history: [{ year: YEAR, dept: x.fromDept, origDept: DEPTS[x.fromDept] || '', classId: x.fromClass || '', note: `${nextYear}년 진급` }], flags: [`${nextYear}년 ${DEPTS[x.fromDept]}에서 진급 — 반 배정 확인`], source: [`진급 ${nextYear}`] };
       await backend.set(`depts/${dd.id}/students/${sid}`, st); dd.students.push(st);
       const { _id, ...pd } = x; pd.received = true; pd.receivedAt = today(); await backend.set(`promotions/${_id}`, pd); x.received = true;
     }
@@ -2210,7 +2210,7 @@ const TITLE_RE = /\s*(목사|전도사|장로|권사|안수집사|집사|성도|
 function familyRows(s) {
   const split = (v, rel) => { const t = String(v || '').trim(); if (!t) return null; const m = t.match(TITLE_RE); return { name: m ? t.slice(0, m.index).trim() : t, rel, birth: '', church: m ? m[1] : '', note: '' }; };
   const rows = [split(s.father, '부'), split(s.mother, '모')].filter(Boolean);
-  (s.siblings || []).forEach(n => { let where = ''; for (const d of Object.keys(DEPTS)) { const dd = S.data[d]; const x = dd && dd.students.find(y => y.name === n && y.status !== 'left'); if (x) { where = `${DEPTS[d]} ${(classOf(dd, x) || {}).name || x.classId || ''}`.trim(); break; } } rows.push({ name: n, rel: '형제자매', birth: '', church: where ? '본교회' : '', note: where }); });
+  sibs(s).forEach(n => { let where = ''; for (const d of Object.keys(DEPTS)) { const dd = S.data[d]; const x = dd && dd.students.find(y => y.name === n && y.status !== 'left'); if (x) { where = `${DEPTS[d]} ${(classOf(dd, x) || {}).name || x.classId || ''}`.trim(); break; } } rows.push({ name: n, rel: '형제자매', birth: '', church: where ? '본교회' : '', note: where }); });
   return rows;
 }
 // 주소 옆 지도: 펼칠 때만 지도를 불러옴(펼치기 전에는 주소가 지도 서비스로 가지 않음)
@@ -2536,7 +2536,9 @@ function bindCareNeeds(dd) {
 /* ───────────── 형제자매 연결 ─────────────
    학생 카드의 형제자매 이름을 같은 부서·다른 부서 학생과 이어 보여 준다.
    siblings/{부서}: 형제자매가 적힌 학생의 이름·반·형제 이름만 담은 색인(연락처·주소 없음). 로그인한 모든 부서가 읽는다. */
-const sibIndexOf = dd => dd.students.filter(s => s.status !== 'left' && (s.siblings || []).length).map(s => ({ id: s.id, name: s.name, classId: (classOf(dd, s) || {}).name || s.classId || '', siblings: s.siblings }));
+/* 형제자매 — 예전 자료는 글자("홍길동")로, 새 자료는 목록으로 저장돼 있어 둘 다 받음 */
+const sibs = s => Array.isArray(s && s.siblings) ? s.siblings : String((s && s.siblings) || '').split(/[,，、\/]\s*/).map(x => x.trim()).filter(Boolean);
+const sibIndexOf = dd => dd.students.filter(s => s.status !== 'left' && sibs(s).length).map(s => ({ id: s.id, name: s.name, classId: (classOf(dd, s) || {}).name || s.classId || '', siblings: sibs(s) }));
 async function syncSiblings(dd) {
   const c = await loadShared(); if (c.sibErr) return;
   const mine = sibIndexOf(dd); const cur = c.sib.find(x => x._id === dd.id);
@@ -2545,9 +2547,9 @@ async function syncSiblings(dd) {
   try { await backend.set(`siblings/${dd.id}`, doc); c.sib = [...c.sib.filter(x => x._id !== dd.id), { _id: dd.id, ...doc }]; } catch (e) { c.sibErr = e.code || e.message; }
 }
 function siblingLinks(dd, s) {
-  if (!s) return []; const names = new Set(s.siblings || []); const out = []; const seen = new Set();
-  dd.students.filter(x => x.id !== s.id && x.status !== 'left' && (names.has(x.name) || (x.siblings || []).includes(s.name))).forEach(x => { seen.add(x.name); out.push({ name: x.name, where: (classOf(dd, x) || {}).name || x.classId || '', same: true }); });
-  ((S.committee || {}).sib || []).filter(d => d._id !== dd.id).forEach(d => (d.list || []).forEach(x => { if (names.has(x.name) || (x.siblings || []).includes(s.name)) { seen.add(x.name); out.push({ name: x.name, where: `${deptLabel(d._id)} ${x.classId || ''}`.trim(), same: false }); } }));
+  if (!s) return []; const names = new Setsibs(s); const out = []; const seen = new Set();
+  dd.students.filter(x => x.id !== s.id && x.status !== 'left' && (names.has(x.name) || sibs(x).includes(s.name))).forEach(x => { seen.add(x.name); out.push({ name: x.name, where: (classOf(dd, x) || {}).name || x.classId || '', same: true }); });
+  ((S.committee || {}).sib || []).filter(d => d._id !== dd.id).forEach(d => (d.list || []).forEach(x => { if (names.has(x.name) || sibs(x).includes(s.name)) { seen.add(x.name); out.push({ name: x.name, where: `${deptLabel(d._id)} ${x.classId || ''}`.trim(), same: false }); } }));
   [...names].filter(n => !seen.has(n)).forEach(n => out.push({ name: n, where: '', same: false }));
   return out;
 }
@@ -2558,7 +2560,7 @@ function studentExtras(dd, s) {
   const edit = canEdit() && !isCommittee(); const chips = siblingChips(dd, s);
   return `<div class="sx">
     <div class="sx-row"><b>형제자매</b><span>${chips || '<span class="note">적힌 형제자매가 없습니다</span>'}</span></div>
-    ${edit ? `<div class="row" style="margin-top:6px"><input type="text" id="sx-sib" value="${esc((s.siblings || []).join(', '))}" placeholder="이름을 쉼표로 구분 (예: 김하늘, 김바다)" style="flex:1;min-width:180px"><button class="btn s" id="sx-sib-save">형제자매 저장</button></div><div class="note" style="margin-top:4px">다른 부서에 있는 형제자매는 그 부서에서도 서로 이름을 적어 두면 부서·반이 함께 보입니다.</div>` : ''}
+    ${edit ? `<div class="row" style="margin-top:6px"><input type="text" id="sx-sib" value="${esc(sibs(s).join(', '))}" placeholder="이름을 쉼표로 구분 (예: 김하늘, 김바다)" style="flex:1;min-width:180px"><button class="btn s" id="sx-sib-save">형제자매 저장</button></div><div class="note" style="margin-top:4px">다른 부서에 있는 형제자매는 그 부서에서도 서로 이름을 적어 두면 부서·반이 함께 보입니다.</div>` : ''}
   </div>`;
 }
 function bindStudentExtras(dd, s) {
