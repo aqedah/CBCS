@@ -3,3 +3,4 @@ raw/
 *.json
 !manifest.webmanifest
 __pycache__/
+!.eslintrc.json

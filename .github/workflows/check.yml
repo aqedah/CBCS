@@ -1,0 +1,12 @@
+# 올릴 때마다 자동 검사: 정의되지 않은 이름(오타·잘못 옮긴 변수) 같은 실수를 찾는다.
+# 실패하면 GitHub 커밋 옆에 빨간 X가 뜬다.
+name: check
+on: [push, pull_request]
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: npx --yes eslint@8.57.0 --no-eslintrc -c .eslintrc.json app.js tour.js patches.js config.js

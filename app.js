@@ -10,6 +10,7 @@ const DEMO = QS.has('demo'); // 체험 모드: 가상 자료(demo-data.js)만 �
 const MOCK = QS.has('mock') || DEMO;
 const $ = s => document.querySelector(s);
 const uid = () => Math.random().toString(36).slice(2, 10);
+const DEL = Symbol('delete-field'); // backend.update에서 칸 지우기
 const won = n => (Number(n) || 0).toLocaleString('ko-KR');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 const DAYS = ['일','월','화','수','목','금','토'];
@@ -33,7 +34,7 @@ const backend = MOCK ? mockBackend() : await firebaseBackend();
 
 async function firebaseBackend() {
   const FB = 'https://www.gstatic.com/firebasejs/10.14.1/';
-  const [{ initializeApp }, { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged }, { getFirestore, doc, getDoc, setDoc, deleteDoc, collection, getDocs, writeBatch }] = await Promise.all([import(FB + 'firebase-app.js'), import(FB + 'firebase-auth.js'), import(FB + 'firebase-firestore.js')]);
+  const [{ initializeApp }, { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged }, { getFirestore, doc, getDoc, setDoc, updateDoc, deleteField, FieldPath, deleteDoc, collection, getDocs, writeBatch }] = await Promise.all([import(FB + 'firebase-app.js'), import(FB + 'firebase-auth.js'), import(FB + 'firebase-firestore.js')]);
   // 한 기기에서 여러 부서 계정을 함께 로그인해 둘 수 있다(초등부 교사 + 교육위원회 임원 등). 부서마다 따로 로그인 상태를 둔다.
   const cfg = window.CBCS_FIREBASE; const base = initializeApp(cfg);
   const mk = app => ({ app, auth: getAuth(app), db: getFirestore(app) });
@@ -65,6 +66,8 @@ async function firebaseBackend() {
     onSession(cb) { cb(active); },
     async get(p) { const s = await getDoc(ref(p)); return s.exists() ? s.data() : null; },
     async set(p, data) { await setDoc(ref(p), data); },
+    // 바뀐 칸만 고친다: changes = [[['att','학생id'], 값 또는 DEL], ...] — 다른 사람이 동시에 고친 다른 칸을 덮어쓰지 않음
+    async update(p, changes) { const args = changes.flatMap(([path, v]) => [new FieldPath(...path), v === DEL ? deleteField() : v]); await updateDoc(ref(p), ...args); },
     async del(p) { await deleteDoc(ref(p)); },
     async list(p) { const s = await getDocs(collection(cur().db, ...p.split('/'))); return s.docs.map(x => ({ _id: x.id, ...x.data() })); },
     async batchSet(items, progress) { // items: [{path, data}]
@@ -92,6 +95,7 @@ function mockBackend() { // 로컬 시험용: data/import_data.json을 읽어 �
     onSession(cb) { seeded.then(() => cb(session)); },
     async get(p) { return store[p] ? JSON.parse(JSON.stringify(store[p])) : null; },
     async set(p, data) { store[p] = JSON.parse(JSON.stringify(data)); save(); },
+    async update(p, changes) { const o = store[p]; if (!o) throw new Error('not-found'); changes.forEach(([path, v]) => { let t = o; path.slice(0, -1).forEach(k => { t = t[k] = t[k] && typeof t[k] === 'object' ? t[k] : {}; }); const k = path[path.length - 1]; if (v === DEL) delete t[k]; else t[k] = JSON.parse(JSON.stringify(v)); }); save(); },
     async del(p) { delete store[p]; save(); },
     async list(p) { const pre = p + '/'; return Object.keys(store).filter(k => k.startsWith(pre) && !k.slice(pre.length).includes('/')).map(k => ({ _id: k.slice(pre.length), ...JSON.parse(JSON.stringify(store[k])) })); },
     async batchSet(items, progress) { items.forEach(it => { store[it.path] = it.data; }); save(); if (progress) progress(items.length, items.length); }
@@ -116,6 +120,7 @@ async function loadDept(d, force) {
   if (d === 'young') dd.doc.classLabel = youngUnit(YEAR); // 청년부 소속 단위: 2026년까지 팸, 2027년부터 목장
   if (S.careKey && S.careDept === d) await decryptCare(dd);
   dd.doc.ledgers = dd.doc.ledgers || []; dd.doc.classes = dd.doc.classes || []; dd.doc.staff = dd.doc.staff || []; dd.doc.budgetPlan = dd.doc.budgetPlan || []; dd.doc.monthlyPlans = dd.doc.monthlyPlans || {}; dd.doc.monthlyTexts = dd.doc.monthlyTexts || {}; dd.doc.notes = dd.doc.notes || {};
+  dd.reportBase = clone(dd.reports); // 저장할 때 무엇이 바뀌었는지 비교할 기준(서버에서 읽은 그대로)
   dd.students.forEach(normalizeFaith); // 화면에만 정리된 값으로 보인다 — 열람만으로는 저장하지 않는다(학생 카드에서 저장할 때 함께 저장됨)
   S.data[d] = dd; return dd;
 }
@@ -212,7 +217,7 @@ const NAV_MOBILE = [['home','홈'],['attend','출결'],['ledger','회계'],['rep
 // 휴대폰: 출석부(출석 체크·명단·통계), 회계(열람·영수증)는 위쪽 탭으로 나눈다
 const M_ROSTER_TABS = [['attend', '출석 체크'], ['members', '명단'], ['stats', '통계']];
 const M_MONEY_TABS = [['ledger', '회계 열람'], ['receipt', '영수증']];
-const NAV_COMMITTEE = [['home','메인','⌂'],['reports','보고서 열람','✎'],['assets','물품대장 열람','▢'],['roster','출석부 열람','☰'],['outings','주말학습·차량','⇄'],['scholarship','장학','★'],['archive','보관함','▣'],['backup','자료 내려받기','⇩'],['import','데이터 가져오기','⇪'],['tutorial','사용 안내','?']];
+const NAV_COMMITTEE = [['home','메인','⌂'],['reports','보고서 열람','✎'],['assets','물품대장 열람','▢'],['roster','출석부 열람','☰'],['outings','주말학습·차량','⇄'],['scholarship','장학','★'],['archive','보관함','▣'],['backup','백업·복원','⇩'],['tutorial','사용 안내','?']];
 const NAV_COMMITTEE_MOBILE = [['home','메인'],['reports','보고서'],['scholarship','장학'],['tutorial','안내']];
 const VIEWS = {}, BIND = {};
 // 메뉴 묶음: 사이드 메뉴에서 누르면 아래로 펼쳐지는 하위 메뉴 (휴대폰은 화면 위 탭)
@@ -231,10 +236,26 @@ function navButton(n) {
   const inside = g.items.some(t => t[0] === S.view); const open = S.navOpen[g.id] ?? inside;
   return `<button data-navgroup="${esc(g.id)}" class="grp ${inside ? 'in' : ''} ${open ? 'open' : ''}"><span class="k">${n[2] || ''}</span>${n[1]}<span class="caret">${open ? '▴' : '▾'}</span></button>${open ? `<div class="sub-nav">${g.items.map(([k, l]) => `<button data-nav="${esc(k)}" class="${S.view === k ? 'on' : ''}">${l}</button>`).join('')}</div>` : ''}`;
 }
-const FOOTER = `<footer class="foot"><p>🔒 모든 자료는 교육부 전용 서버(데이터베이스)에만 보관되며, 부서 비밀번호로 로그인한 사람만 볼 수 있습니다. 외부에 공개하거나 제공하지 않습니다.</p><p>제작자: 이삭 목사 · 중앙성서교회</p></footer>`;
+const FOOTER = `<footer class="foot"><p>🔒 모든 자료는 교육부 전용 데이터베이스(Google Firebase)에 보관되며, 부서 비밀번호로 로그인한 사람만 볼 수 있습니다. 교회 밖에 공개하거나 넘기지 않습니다. 다만 "지도에서 보기"를 누르면 그 주소가 지도 서비스로 전달됩니다.</p><p>제작자: 이삭 목사 · 중앙성서교회</p></footer>`;
 
 // 같은 화면에서 저장·복적처럼 고친 뒤 다시 그릴 때는 보던 위치를 그대로 둔다
 const renderHere = () => { S.keepScroll = window.scrollY; return render(); };
+/* 저장하지 않고 떠나기 경고: 저장 단추가 있는 작성 화면(보고서·월간·계획서·회칙 본문·주말학습·차량 등)에서
+   글을 고친 뒤 저장하지 않고 다른 메뉴로 가거나 창을 닫으려 하면 한 번 묻는다. 바로 저장되는 칸(출석 체크 등)은 해당 없음. */
+const PAGE_SAVES = ['w-save', 'm-save', 'pl-save', 'bt-save', 'ot-save', 'vh-save', 'mn-save', 'as-save'];
+S.dirty = false;
+function trackDirty() {
+  S.dirty = false; const main = document.querySelector('.main'); if (!main) return;
+  if (!PAGE_SAVES.some(id => document.getElementById(id))) return;
+  main.addEventListener('input', e => { if (!e.target.closest('.modal') && e.target.matches('input:not([type=file]):not([type=checkbox]), textarea, select')) S.dirty = true; });
+  PAGE_SAVES.forEach(id => { const b = document.getElementById(id); if (b) b.addEventListener('click', () => { S.dirty = false; }, true); });
+}
+function leaveOk(fn) {
+  if (!S.dirty) return fn();
+  openModal(`<h2>저장하지 않은 내용<button class="btn s" id="modal-close">닫기</button></h2><p>이 화면에서 고친 내용을 아직 저장하지 않았습니다. 저장하지 않고 이동하면 고친 내용이 사라집니다.</p><div class="row"><button class="btn" id="lv-stay">머물기</button><button class="btn d" id="lv-go">저장 안 하고 이동</button></div>`);
+  $('#modal-close').onclick = closeModal; $('#lv-stay').onclick = closeModal; $('#lv-go').onclick = () => { closeModal(); S.dirty = false; fn(); };
+}
+window.addEventListener('beforeunload', e => { if (S.dirty) { e.preventDefault(); e.returnValue = ''; } });
 async function render() {
   const root = $('#root');
   if (!S.user) { root.innerHTML = loginView(); bindLogin(); return; }
@@ -260,7 +281,7 @@ async function render() {
     <main class="main" id="main">${DEMO ? `<div class="demo-bar no-print"><b>체험 모드</b> · 모든 이름과 숫자는 가상입니다. 바꾼 내용은 이 브라우저에만 저장됩니다.<span style="flex:1"></span><button class="btn s" data-tour>튜토리얼</button><button class="btn s" data-demo-reset>체험 자료 초기화</button></div>` : ''}${body}<div class="main-foot">${FOOTER}</div></main>
     <nav class="mobile-nav">${nav.map(n => `<button data-nav="${n[0]}" class="${navKeyOf(S.view) === n[0] ? 'on' : ''}">${n[1]}</button>`).join('')}<button data-account>${esc(acctShort(S.user))} ⇄</button></nav>
   </div>`;
-  const go = v => { const same = groupOfView(v) && groupOfView(v) === groupOfView(S.view); const keep = same && S.sub.dept ? { dept: S.sub.dept } : {}; S.view = v; S.sub = keep; S.navOpen = {}; render(); };
+  const go = v => leaveOk(() => go0(v)); const go0 = v => { const same = groupOfView(v) && groupOfView(v) === groupOfView(S.view); const keep = same && S.sub.dept ? { dept: S.sub.dept } : {}; S.view = v; S.sub = keep; S.navOpen = {}; render(); };
   root.querySelectorAll('[data-nav]').forEach(b => b.onclick = () => go(b.dataset.nav));
   root.querySelectorAll('[data-navgroup]').forEach(b => b.onclick = () => { const g = NAV_GROUPS().find(x => x.id === b.dataset.navgroup); const inside = g.items.some(t => t[0] === S.view); const open = S.navOpen[g.id] ?? inside; if (!open && !inside) go(g.items[0][0]); else { S.navOpen = { [g.id]: !open }; render(); } });
   root.querySelectorAll('[data-doctab]').forEach(b => b.onclick = () => go(b.dataset.doctab));
@@ -274,6 +295,7 @@ async function render() {
   root.querySelectorAll('[data-tour]').forEach(b => b.onclick = () => startTour());
   root.querySelectorAll('[data-demo-reset]').forEach(b => b.onclick = () => { backend.reset(); location.href = location.pathname + '?demo=1'; });
   if (S.keepScroll != null) { const y = S.keepScroll; S.keepScroll = null; window.scrollTo(0, y); } else window.scrollTo(0, 0);
+  trackDirty();
   if (window.CBCS_TOUR) window.CBCS_TOUR.afterRender();
 }
 // 튜토리얼: 체험 모드에서만 돈다(실제 자료 화면에서는 체험 모드를 새 창으로 연다)
@@ -780,7 +802,26 @@ BIND.roster = () => {
 
 /* ───────────── 주일 보고서 ───────────── */
 function blankReport(dd, date) { return { dept: dd.id, date, united: false, weekLabel: `${+date.slice(5,7)}월 ${weekIndex(date)}주`, type: `${dd.doc.name} 주일예배`, presider: '', prayer: '', text: '', title: '', preacher: '', notice: '', counts: {}, att: {}, attUnmatched: {}, absent: {}, newcomers: [], offering: { sunday: 0, tithe: 0, thanks: 0, other: 0 }, teachersPresent: [], teachersAbsent: {}, activity: '', meeting: '', special: '', schedule: [], classRows: [], writer: '', flags: [], status: 'draft', source: '앱 입력' }; }
-async function saveReport(dd, r) { await backend.set(`depts/${dd.id}/reports/${r.date}`, r); dd.reports[r.date] = r; }
+/* 주일 보고서 저장 — 처음 저장은 통째로, 그다음부터는 바뀐 칸만(출석·결석 사유는 학생 한 명 단위).
+   교사 여러 명이 휴대폰으로 같은 주일 출석을 동시에 체크해도 서로 덮어쓰지 않는다. 저장 뒤 서버 것을 다시 읽어 남이 바꾼 것도 합친다. */
+const jsonEq = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+const clone = x => x == null ? x : JSON.parse(JSON.stringify(x));
+async function saveReport(dd, r) {
+  const p = `depts/${dd.id}/reports/${r.date}`; dd.reportBase = dd.reportBase || {}; const base = dd.reportBase[r.date];
+  const { _id, ...cur } = r;
+  if (!base) { await backend.set(p, cur); }
+  else {
+    const ch = []; const MAPS = ['att', 'absent'];
+    new Set([...Object.keys(base), ...Object.keys(cur)]).forEach(k => {
+      if (k === '_id') return;
+      if (MAPS.includes(k) && cur[k] && typeof cur[k] === 'object' && base[k] && typeof base[k] === 'object') { new Set([...Object.keys(base[k]), ...Object.keys(cur[k])]).forEach(id => { if (!jsonEq(base[k][id], cur[k][id])) ch.push([[k, id], cur[k][id] === undefined ? DEL : cur[k][id]]); }); }
+      else if (!jsonEq(base[k], cur[k])) ch.push([[k], cur[k] === undefined ? DEL : cur[k]]);
+    });
+    if (ch.length) { try { await backend.update(p, ch); } catch (e) { if (/not-found|No document/i.test(e.code || e.message)) await backend.set(p, cur); else throw e; } }
+  }
+  const fresh = await backend.get(p) || cur; Object.keys(r).forEach(k => delete r[k]); Object.assign(r, fresh);
+  dd.reports[r.date] = r; dd.reportBase[r.date] = clone(fresh);
+}
 VIEWS.weekly = async () => {
   const dd = D();
   if (S.sub.preview) return reportPaper(dd, dd.reports[S.sub.preview], true);
@@ -1495,7 +1536,15 @@ const JP = { ok: ['ok', '해당'], no: ['mute', '아님'], check: ['warn', '확�
 const jpill = (v, reasons) => `<span class="pill ${JP[v][0]}">${JP[v][1]}</span>${v !== 'ok' && reasons && reasons.length ? `<div class="pwhy">${reasons.map(esc).join('<br>')}</div>` : ''}`;
 function applyOverride(a, j) { const o = (a.overrides || {})[j.s.id]; if (o && o.voter) { j.voter = o.voter; if (j.rsn) j.rsn.voter = ['보정: ' + (o.note || '총회에서 정정')]; } if (o && o.note) j.why.push('보정: ' + o.note); return j; }
 // 판정 대상: 출석부의 재적 회원 + 팸장(팸장은 결의권자). 장기결석·군입대 등, 제적, 결혼·직분(자격 종료), 타 목장 소속은 판정표에서 빼고 아래에 따로 적는다
+/* 총회 판정 확정: 그날의 판정 결과를 총회 문서에 그대로 저장해 둔다. 확정 뒤에는 회원 상태·출석·회칙이 바뀌어도
+   이 총회의 화면·출력·엑셀이 확정 당시 결과로 나온다. "지금 기준으로 다시 보기"로 현재 계산과 비교할 수 있다. */
+function assemblySnapshot(dd, J) {
+  const mini = s => ({ id: s.id, name: s.name, birth: s.birth || '', faith: s.faith || '', sex: s.sex || '', pseudo: !!s.pseudo });
+  return { at: today(), bylaw: (currentBylaw(dd) || {}).revision || '', R: clone(J.R), q: clone(J.q),
+    list: J.list.map(j => { const { s, ...rest } = j; return { ...clone(rest), s: mini(s) }; }), excluded: (J.excluded || []).map(x => ({ s: mini(x.s), why: x.why })) };
+}
 function assemblyJudge(dd, a) {
+  if (a.snapshot && !S.sub.asLive) return { ...clone(a.snapshot), snap: true };
   const R = (currentBylaw(dd) || {}).params || RULE_2025;
   const fam = famLeaders(dd, YEAR); const famSet = new Set(fam.map(x => normName(x.name))); const isFamP = s => famSet.has(normName(s.name));
   const outWhy = s => s.status === 'left' ? '제적' : isGrad(s) ? statusName(s) : s.churchRole ? `직분(${s.churchRole})` : s.otherCell ? '타 목장 소속' : s.group === '라피끄' ? '라피끄' : AWAY.includes(s.status) ? statusName(s) : s.status === 'newcomer' ? '새친구' : '';
@@ -1930,7 +1979,7 @@ async function exportAssemblyXLSX(dd, a, J) {
 }
 function bindAssemblyExport(dd, a) {
   const run = async (btn, job) => { const t = btn.textContent; btn.disabled = true; btn.textContent = '만드는 중…'; try { await job(); toast('파일을 받았습니다'); } catch (e) { toast(e.message || '내보내기에 실패했습니다'); } finally { btn.disabled = false; btn.textContent = t; } };
-  document.querySelectorAll('[data-asx]').forEach(b => b.onclick = () => run(b, () => exportAssemblyXLSX(dd, a, assemblyJudge(dd, a))));
+  document.querySelectorAll('[data-asx]').forEach(b => b.onclick = () => run(b, () => exportAssemblyXLSX(dd, a, a.snapshot ? { ...clone(a.snapshot), snap: true } : assemblyJudge(dd, a))));
   document.querySelectorAll('[data-asp]').forEach(b => b.onclick = () => { if (S.sub.print !== true) { S.sub = { ...S.sub, print: true }; render(); } printAsPDF(`${a.date}-청년부-총회자료.pdf`); });
 }
 const asmExportBtns = () => '<button class="btn" data-asx>엑셀로 받기</button><button class="btn" data-asp>PDF로 받기</button>';
@@ -1948,8 +1997,9 @@ VIEWS.assembly = async () => {
   const col = (k, label) => { const ok = J.list.filter(j => j[k] === 'ok'), ck = J.list.filter(j => j[k] === 'check'); return `<div class="cand-col"><h3>${label} <span class="note">${ok.length}명${ck.length ? ` · 확인 ${ck.length}` : ''}</span></h3><div class="row" style="gap:4px">${ok.map(j => `<button class="chip" data-mi="${esc(j.s.id)}">${esc(j.s.name)}</button>`).join('') || '<span class="note">없음</span>'}</div>${ck.length ? `<div class="note" style="margin-top:6px">확인 필요: ${ck.map(j => `<a href="#" data-mi="${esc(j.s.id)}">${esc(j.s.name)}</a>`).join(', ')}</div>` : ''}</div>`; };
   const R = J.R;
   return `<div class="topbar"><div><h1>총회 자료</h1><div class="sub">${esc(a.title)} · ${fmtK(a.date)} · 회칙 ${esc((currentBylaw(dd) || {}).revision || '')} 기준 자동 판정${a.unsaved ? ' · <b>아직 저장 안 됨</b>' : ''}</div></div>
-    <div class="row">${asmPicker(list, a)}${canEdit() ? `<button class="btn" id="as-print">총회 자료 출력</button><button class="btn" id="as-sign">출석 확인표 출력</button>${a.unsaved ? '' : asmExportBtns()}` : ''}</div></div>
+    <div class="row">${asmPicker(list, a)}${canEdit() && edit && !a.unsaved ? (a.snapshot ? `<button class="btn" id="as-live">${S.sub.asLive ? '확정 판정 보기' : '지금 기준으로 다시 보기'}</button><button class="btn d" id="as-unlock">확정 풀기</button>` : `<button class="btn p" id="as-lock">판정 확정</button>`) : ''}${canEdit() ? `<button class="btn" id="as-print">총회 자료 출력</button><button class="btn" id="as-sign">출석 확인표 출력</button>${a.unsaved ? '' : asmExportBtns()}` : ''}</div></div>
   <div class="stack">
+    ${a.snapshot ? `<div class="hint ${S.sub.asLive ? '' : 'info'}">${S.sub.asLive ? `<b>지금 기준으로 다시 계산한 판정</b>을 보고 있습니다. 출력·엑셀은 여전히 ${esc(a.snapshot.at)} 확정 판정으로 나옵니다.` : `<b>${esc(a.snapshot.at)}에 판정을 확정했습니다</b> (회칙 ${esc(a.snapshot.bylaw)} 기준). 이 총회의 화면·출력·엑셀은 확정 당시 결과로 나오며, 그 뒤 회원 상태나 출석이 바뀌어도 달라지지 않습니다.`}</div>` : ''}
     ${edit ? `<div class="card"><div class="fields"><label class="f"><span>총회 날짜 (판정 기준일)</span><input type="date" id="as-date" value="${esc(a.date)}"></label><label class="f"><span>구분</span><select id="as-kind">${['정기총회', '임시총회'].map(k => `<option ${a.kind === k ? 'selected' : ''}>${k}</option>`).join('')}</select></label><label class="f"><span>제목</span><input type="text" id="as-title" value="${esc(a.title)}"></label><label class="f"><span>장소</span><input type="text" id="as-place" value="${esc(a.place || '')}"></label></div><div class="row" style="margin-top:8px"><button class="btn p" id="as-save">${a.unsaved ? '이 총회 만들기' : '저장'}</button></div></div>` : ''}
     <div class="grid2">
       <div class="card"><h2>정족수 <span class="r">회칙 13조 · 직전 ${R.quorumWeeks}주 평균 출석의 ${R.quorumNum}/${R.quorumDen} · 평균 × 2/3 그대로, 그 이상이어야 성원 · 출석부 기준</span></h2><div class="quorum"><span class="big">${J.q.need}명</span><span class="note">평균 ${J.q.avg.toFixed(1)}명 × 2/3 = ${J.q.exact.toFixed(2)}명 → 이 이상이려면 ${J.q.need}명</span></div>
@@ -1996,7 +2046,10 @@ function bindAsmPicker(dd) {
 }
 BIND.assembly = () => {
   const dd = S.data.young; const { a } = pickAssembly(dd); bindAsmPicker(dd); bindAssemblyExport(dd, a);
-  const pr = $('#as-print'); if (pr) pr.onclick = () => { S.sub = { ...S.sub, print: true }; render(); }; const sg = $('#as-sign'); if (sg) sg.onclick = () => { S.sub = { ...S.sub, print: 'sign' }; render(); };
+  const lk = $('#as-lock'); if (lk) lk.onclick = () => { openModal(`<h2>판정 확정<button class="btn s" id="modal-close">닫기</button></h2><p>지금의 판정 결과(결의권자 ${assemblyJudge(dd, a).list.filter(j => j.voter === 'ok').length}명, 정족수 ${assemblyJudge(dd, a).q.need}명)를 이 총회 기록으로 고정합니다. 이후 화면·출력·엑셀은 이 결과로 나옵니다. 보통 총회 당일 또는 직전에 누릅니다.</p><div class="row"><button class="btn p" id="lk-yes">확정</button><button class="btn" id="lk-no">취소</button></div>`); $('#modal-close').onclick = closeModal; $('#lk-no').onclick = closeModal; $('#lk-yes').onclick = async () => { delete a.snapshot; a.snapshot = assemblySnapshot(dd, assemblyJudge(dd, a)); await saveAssembly(dd, a); closeModal(); delete S.sub.asLive; renderHere(); toast('판정을 확정했습니다'); }; };
+  const ul = $('#as-unlock'); if (ul) ul.onclick = () => { openModal(`<h2>확정 풀기<button class="btn s" id="modal-close">닫기</button></h2><p>${esc(a.snapshot.at)} 확정 판정을 지우고 다시 자동 계산으로 돌아갈까요? 확정 당시 결과는 사라집니다.</p><div class="row"><button class="btn d" id="ul-yes">확정 풀기</button><button class="btn" id="ul-no">취소</button></div>`); $('#modal-close').onclick = closeModal; $('#ul-no').onclick = closeModal; $('#ul-yes').onclick = async () => { delete a.snapshot; await saveAssembly(dd, a); closeModal(); delete S.sub.asLive; renderHere(); toast('확정을 풀었습니다'); }; };
+  const lv = $('#as-live'); if (lv) lv.onclick = () => { S.sub.asLive = !S.sub.asLive; renderHere(); };
+  const pr = $('#as-print'); if (pr) pr.onclick = () => { const live = S.sub.asLive; S.sub = { ...S.sub, print: true }; delete S.sub.asLive; if (live) toast('출력은 확정 판정으로 나옵니다'); render(); }; const sg = $('#as-sign'); if (sg) sg.onclick = () => { S.sub = { ...S.sub, print: 'sign' }; delete S.sub.asLive; render(); };
   const bk = $('#as-back'); if (bk) { bk.onclick = () => { delete S.sub.print; render(); }; $('#as-pr').onclick = () => printAsPDF(`${a.date}-청년부-${S.sub.print === 'sign' ? '총회-출석확인표' : '총회자료'}.pdf`); return; }
   document.querySelectorAll('[data-vf]').forEach(b => b.onclick = () => { S.sub.vf = b.dataset.vf; renderHere(); });
   document.querySelectorAll('[data-attd]').forEach(b => b.onclick = e => { e.stopPropagation(); const s = dd.students.find(x => x.id === b.dataset.attd) || (assemblyJudge(dd, a).list.find(j => j.s.id === b.dataset.attd) || {}).s; if (s) openModal(attEvidencePaper(dd, s, a.date)); });
@@ -2182,11 +2235,13 @@ BIND.scholarship = () => {
 };
 
 /* ───────────── 데이터 가져오기 (교육위원회) ───────────── */
-VIEWS.import = async () => `<div class="topbar"><div><h1>데이터 가져오기</h1><div class="sub">변환된 초기 데이터(JSON)를 올립니다. 같은 id는 덮어쓰고, 앱에서 새로 만든 자료는 건드리지 않습니다.</div></div></div>
-  <div class="stack"><div class="card"><input type="file" id="im-file" accept="application/json,.json"><div class="row" style="margin-top:10px"><button class="btn p" id="im-go" disabled>올리기</button><label class="row" style="font-size:12.5px"><input type="checkbox" id="im-reports" checked> 주일 보고서</label><label class="row" style="font-size:12.5px"><input type="checkbox" id="im-students" checked> 출석부</label><label class="row" style="font-size:12.5px"><input type="checkbox" id="im-money" checked> 회계</label><label class="row" style="font-size:12.5px"><input type="checkbox" id="im-plan" checked> 연간 계획·월간</label><label class="row" style="font-size:12.5px"><input type="checkbox" id="im-sch" checked> 장학</label><label class="row" style="font-size:12.5px"><input type="checkbox" id="im-arch" checked> 보관 색인</label></div><pre class="progress" id="im-log" style="margin-top:12px"></pre></div>
+/* 처음 옮길 때 쓰던 가져오기·교인명부 넣기 — 이제 "백업·복원" 화면 아래쪽 접힌 칸에 있다 */
+const importCardsHTML = () => `  <div class="stack"><div class="card"><input type="file" id="im-file" accept="application/json,.json"><div class="row" style="margin-top:10px"><button class="btn p" id="im-go" disabled>올리기</button><label class="row" style="font-size:12.5px"><input type="checkbox" id="im-reports" checked> 주일 보고서</label><label class="row" style="font-size:12.5px"><input type="checkbox" id="im-students" checked> 출석부</label><label class="row" style="font-size:12.5px"><input type="checkbox" id="im-money" checked> 회계</label><label class="row" style="font-size:12.5px"><input type="checkbox" id="im-plan" checked> 연간 계획·월간</label><label class="row" style="font-size:12.5px"><input type="checkbox" id="im-sch" checked> 장학</label><label class="row" style="font-size:12.5px"><input type="checkbox" id="im-arch" checked> 보관 색인</label></div><pre class="progress" id="im-log" style="margin-top:12px"></pre></div>
   <div class="card"><h2>명부(신급·가족·연락처) 가져오기</h2><div class="note">tools/roster_xlsx.py로 교육부 명부 엑셀을 바꾼 <b>roster.json</b>을 올립니다. 부서마다 이름+생일로 기존 학생을 찾아 신급·신급연도·연락처·학교·부모·형제자매·주소·전도자·장학을 채웁니다. 신급은 명부 값으로 덮어쓰고(임시 "세례" 표기는 풀림), 나머지는 비어 있는 칸만 채웁니다. 명부에만 있는 사람은 새로 추가합니다.</div>
     <input type="file" id="rs-file" accept="application/json,.json" style="margin-top:8px"><div class="row" style="margin-top:10px"><button class="btn p" id="rs-go" disabled>가져오기 시작</button></div><pre class="progress" id="rs-log" style="margin-top:10px"></pre></div>
   <div class="card"><h2>엑셀 가져오기 (앞으로)</h2><div class="note">출석부·회계 엑셀을 정해진 양식으로 올리면 바로 반영하는 기능은 전 부서 시행 후 양식을 정해 추가합니다.</div></div></div>`;
+VIEWS.import = async () => `<div class="topbar"><div><h1>데이터 가져오기</h1><div class="sub">변환된 초기 데이터(JSON)를 올립니다. 같은 id는 덮어쓰고, 앱에서 새로 만든 자료는 건드리지 않습니다.</div></div></div>
+${importCardsHTML()}`;
 BIND.import = () => {
   bindRosterImport();
   let payload = null; const log = m => { $('#im-log').textContent += m + '\n'; };
@@ -2214,7 +2269,13 @@ async function importRoster(payload, log) {
     if (!DEPTS[d]) { log(`${d}: 모르는 부서 — 건너뜀`); continue; }
     if (!isCommittee() && S.dept !== d) { log(`${DEPTS[d]} ${rows.length}명: 다른 부서라 건너뜀 (교육위원회로 들어가면 전 부서 가능)`); continue; }
     const dd = await loadDept(d); const items = []; let upd = 0, add = 0, lft = 0; const warn = [];
-    const findS = x => { const same = dd.students.filter(s => normName(s.name) === normName(x.name)); if (!same.length) return null; const exact = same.find(s => x.birth && s.birth && md(s.birth) === md(x.birth)); if (exact) return exact; const loose = same.filter(s => !x.birth || !s.birth); if (loose.length === 1) return loose[0]; if (same.length === 1) { if (x.birth && same[0].birth) warn.push(`${x.name}: 생일이 다름 (앱 ${same[0].birth} / 명부 ${x.birth}) — 같은 사람으로 봄`); return same[0]; } warn.push(`${x.name}: 같은 이름이 ${same.length}명이라 못 정함 — 건너뜀`); return undefined; };
+    // 같은 사람 찾기 — 생년월일(연도까지) 일치만 자동으로 합친다. 생일이 다르거나 동명이인이면 합치지 않고 "확인 필요"에 올린다
+    const findS = x => { const same = dd.students.filter(s => normName(s.name) === normName(x.name)); if (!same.length) return null;
+      const exact = same.filter(s => x.birth && s.birth && s.birth === x.birth); if (exact.length === 1) return exact[0];
+      if (exact.length > 1) { warn.push(`${x.name} ${x.birth}: 앱에 같은 이름·생일이 ${exact.length}명 — 건너뜀`); return undefined; }
+      const loose = same.filter(s => !x.birth || !s.birth); if (loose.length === 1 && same.length === 1) { warn.push(`${x.name}: 한쪽에 생일이 없어 이름으로만 맞춤 — 맞는지 확인`); return loose[0]; }
+      if (same.length === 1 && x.birth && same[0].birth) { warn.push(`${x.name}: 생일이 다름 (앱 ${same[0].birth} / 명부 ${x.birth})${md(same[0].birth) === md(x.birth) ? ' — 연도만 다름' : ''} — 합치지 않음, 같은 사람이면 앱에서 생일을 고친 뒤 다시 가져오기`); return undefined; }
+      warn.push(`${x.name}: 같은 이름이 ${same.length}명이라 못 정함 — 건너뜀`); return undefined; };
     for (const x of rows) {
       let s = findS(x); if (s === undefined) continue;
       if (!s) { s = { id: `${d}_${x.name}_${x.birth || uid()}`, name: x.name, sex: x.sex || '', birth: x.birth || '', dept: d, classId: '', status: x.left ? 'left' : 'active', faith: '', faithYear: '', faithHalf: '', phone: '', school: '', father: '', mother: '', siblings: [], address: '', evangelist: '', guardianPhone: '', guardianRel: '', scholarship: [], note: '', history: [], statusLog: [], flags: [`${payload.year || ''} 명부에서 추가`] }; dd.students.push(s); add++; } else upd++;
@@ -2982,27 +3043,48 @@ VIEWS.backup = async () => {
   const c = await loadShared(); const last = (c.backupMeta || {}).at || '';
   const counts = []; for (const d of Object.keys(DEPTS)) { const dd = await loadDept(d); await loadReceipts(dd); counts.push({ d, n: dd.receipts.length, pend: pendingReceipts(dd).length, err: dd.receiptsErr }); }
   const total = counts.reduce((a, x) => a + x.n, 0);
-  return `<div class="topbar"><div><h1>자료 내려받기 · 정리</h1><div class="sub">교육위원회 전용 · 한 달에 한 번 전체 자료를 파일로 받아 시놀로지에 보관합니다</div></div></div>
+  const bm = c.backupMeta || {};
+  return `<div class="topbar"><div><h1>백업 · 복원</h1><div class="sub">교육위원회 전용 · 한 달에 한 번 전체 자료를 파일로 받아 시놀로지에 보관하고, 필요할 때 그 파일로 되돌립니다</div></div></div>
   <div class="stack">
-    <div class="card"><h2>전체 자료 내려받기 <span class="r">${last ? '마지막: ' + esc(last) + ((c.backupMeta || {}).count ? ` · ${c.backupMeta.count}건` : '') : '아직 받은 적 없음'}</span></h2>
-      <p style="margin:0 0 10px">네 부서의 출석부·보고서·회계·물품대장·연간계획서·교회생활과 교육위원회 공지·일정·장학·차량 신청을 파일 하나(JSON)로 받습니다. 실수로 지워졌을 때 "데이터 가져오기"에 이 파일을 올리면 받은 날의 상태로 되돌릴 수 있습니다. 심방 카드는 부서 관리자 비밀번호로 잠겨 있어 교육위원회도 읽을 수 없으므로 이 파일에 들어가지 않습니다.</p>
+    <div class="card"><h2>1. 전체 자료 백업 <span class="r">${bm.fullAt ? '마지막 정상 백업: ' + esc(bm.fullAt) + (bm.fullCount ? ` · ${bm.fullCount}건` : '') : last && !bm.partial ? '마지막: ' + esc(last) : '정상 백업 기록 없음'}${bm.partial ? ` · <span class="pill warn">${esc(bm.at)} 부분 백업(${(bm.miss || []).length}묶음 못 읽음)</span>` : ''}</span></h2>
+      <p style="margin:0 0 10px">네 부서의 출석부·보고서·회계·물품대장·연간계획서·교회생활·주말학습과 교육위원회 공지·일정·장학·차량 신청을 파일 하나(JSON)로 받습니다. 한 묶음이라도 읽지 못하면 "부분 백업"으로 따로 표시하고, 정상 백업 날짜는 바꾸지 않습니다. 심방 카드는 부서 관리자 비밀번호로 잠겨 있어 교육위원회도 읽을 수 없으므로 이 파일에 들어가지 않습니다(각 부서 관리자 모드에서 따로 받습니다).</p>
       <div class="row"><button class="btn p" id="bk-go">전체 자료 내려받기</button><label class="row" style="font-size:12.5px"><input type="checkbox" id="bk-img"> 영수증 사진도 포함 (파일이 커집니다)</label></div>
       <pre class="progress" id="bk-log" style="margin-top:10px"></pre>
       <div class="hint" style="margin-top:10px">이 파일에는 학생 연락처·주소와 장학 계좌번호가 들어 있습니다. 시놀로지의 교육위원회 폴더에만 두고, 카톡이나 메일로 보내지 마세요. 받은 뒤에는 컴퓨터의 "다운로드" 폴더에서 지워 주세요.</div></div>
-    <div class="card"><h2>영수증 사진 정리 <span class="r">지금 ${total}장</span></h2>
+    <div class="card"><h2>2. 백업 파일로 되돌리기 (복원)</h2>
+      <p style="margin:0 0 10px">백업 파일을 고르면 <b>먼저 무엇이 바뀌는지 보여 주고</b>, 확인을 누를 때만 올립니다. 파일에 있는 자료는 그 날의 내용으로 덮어쓰고, <b>파일에 없는 자료(백업 뒤에 새로 만든 것)는 지우지 않습니다</b>(병합 복원). 되돌리기 전에 지금 상태를 먼저 백업해 두세요.</p>
+      <input type="file" id="rt-file" accept="application/json,.json"><div id="rt-preview" style="margin-top:10px"></div></div>
+    <div class="card"><h2>3. 영수증 사진 정리 <span class="r">지금 ${total}장</span></h2>
       <p style="margin:0 0 10px">영수증 사진은 입력을 돕는 용도이고 증빙은 실물 영수증입니다. 연말 결산과 감사가 끝나면 그 해 사진을 한꺼번에 지웁니다. 회계 장부의 지출 기록은 그대로 남습니다.</p>
       <div class="tw"><table><thead><tr><th>부서</th><th class="n">보관 중인 사진</th><th class="n">결의서 없는 사진</th></tr></thead><tbody>${counts.map(x => `<tr><td>${DEPTS[x.d]}</td><td class="n">${x.err ? '읽기 실패' : x.n}</td><td class="n">${x.err ? '' : x.pend}</td></tr>`).join('')}</tbody></table></div>
       <div class="row" style="margin-top:10px"><select id="bk-year" style="width:auto">${[YEAR, YEAR - 1, YEAR - 2].map(y => `<option value="${esc(y)}" ${y === YEAR - 1 ? 'selected' : ''}>${y}년까지</option>`).join('')}</select><button class="btn d" id="bk-purge">결산 완료 — 영수증 사진 삭제</button><span class="note">고른 해의 12월 31일까지 올라온 사진을 지웁니다. 되돌릴 수 없습니다.</span></div></div>
+    <details class="card"><summary><b>4. 처음 옮길 때 쓰던 도구 · 교인명부 넣기</b> <span class="note">해마다 한 번(교인명부) 또는 거의 쓰지 않음</span></summary><div style="margin-top:10px">${importCardsHTML()}</div></details>
   </div>`;
 };
+const BACKUP_PATH_OK = p => /^depts\/(kinder|elem|youth|young)(\/[A-Za-z]+\/[^/]+)?$/.test(p) && !/\/care\//.test(p) || /^committee\/main(\/(notices|events)\/[^/]+)?$/.test(p) || /^(scholarship|archive|promotions|vehicles|siblings|meta)\/[^/]+$/.test(p);
+const backupColOf = p => { const a = p.split('/'); return a[0] === 'depts' ? (a.length > 2 ? `${DEPTS[a[1]] || a[1]} · ${a[2]}` : `${DEPTS[a[1]] || a[1]} · 부서 설정`) : a[0] === 'committee' ? (a.length > 2 ? `교육위원회 · ${a[2]}` : '교육위원회 · 설정') : a[0]; };
 BIND.backup = () => {
+  if (typeof BIND.import === 'function' && $('#im-file')) BIND.import();
+  const rf = $('#rt-file'); if (rf) rf.onchange = async e => { const f = e.target.files[0]; const box = $('#rt-preview'); if (!f) return; box.innerHTML = '<div class="note">파일을 읽고, 지금 서버 자료와 비교하는 중…</div>';
+    try { const pay = JSON.parse(await f.text()); if (!pay || pay.kind !== 'cbcs-backup' || !Array.isArray(pay.raw)) throw new Error('CBCS 백업 파일이 아닙니다');
+      const ok = pay.raw.filter(x => x && typeof x.path === 'string' && x.data && typeof x.data === 'object' && BACKUP_PATH_OK(x.path)); const bad = pay.raw.length - ok.length;
+      const groups = {}; ok.forEach(x => { const a = x.path.split('/'); const col = a.length % 2 === 0 ? a.slice(0, -1).join('/') : a.join('/'); (groups[col] = groups[col] || []).push(x); });
+      const rows = []; for (const [col, items] of Object.entries(groups)) { let exist = new Set(); try { if (col.split('/').length % 2 === 1) exist = new Set((await backend.list(col)).map(d => `${col}/${d._id}`)); else { const d = await backend.get(col); if (d) exist.add(col); } } catch (er) {} const over = items.filter(x => exist.has(x.path)).length; rows.push({ col, n: items.length, over, add: items.length - over }); }
+      const tot = rows.reduce((t, r) => ({ n: t.n + r.n, over: t.over + r.over, add: t.add + r.add }), { n: 0, over: 0, add: 0 });
+      box.innerHTML = `<div class="note">${esc(f.name)} · 만든 날 ${esc((pay.generated || '').slice(0, 10))}${pay.partial ? ' · <span class="pill warn">부분 백업 파일</span>' : ''}${bad ? ` · 형식이 맞지 않아 뺀 항목 ${bad}건` : ''}</div>
+        <div class="tw" style="margin-top:6px"><table><thead><tr><th>묶음</th><th class="n">파일 속</th><th class="n">덮어씀</th><th class="n">새로 생김</th></tr></thead><tbody>${rows.sort((a, b) => a.col.localeCompare(b.col)).map(r => `<tr><td>${esc(backupColOf(r.col + '/x'))}</td><td class="n">${r.n}</td><td class="n">${r.over || ''}</td><td class="n">${r.add || ''}</td></tr>`).join('')}<tr><th>합계</th><td class="n"><b>${tot.n}</b></td><td class="n"><b>${tot.over}</b></td><td class="n"><b>${tot.add}</b></td></tr></tbody></table></div>
+        <div class="row" style="margin-top:8px"><button class="btn d" id="rt-go">${tot.n}건 되돌리기</button><span class="note">파일에 없는 자료는 그대로 둡니다.</span></div><pre class="progress" id="rt-log"></pre>`;
+      $('#rt-go').onclick = () => { openModal(`<h2>백업으로 되돌리기<button class="btn s" id="modal-close">닫기</button></h2><p>${esc((pay.generated || '').slice(0, 10))} 백업으로 <b>${tot.over}건을 덮어쓰고 ${tot.add}건을 새로 만듭니다.</b> 그 뒤에 고친 내용은 사라집니다. 계속할까요?</p><div class="row"><button class="btn d" id="rt-yes">되돌리기</button><button class="btn" id="rt-no">취소</button></div>`); $('#modal-close').onclick = closeModal; $('#rt-no').onclick = closeModal;
+        $('#rt-yes').onclick = async () => { closeModal(); const lg = $('#rt-log'); try { await backend.batchSet(ok.map(x => ({ path: x.path, data: x.data })), (a, b) => { lg.textContent = `진행 ${a}/${b}`; }); lg.textContent = `완료 — ${ok.length}건을 되돌렸습니다. 새로고침하면 반영됩니다.`; S.data = {}; S.committee = null; } catch (er) { lg.textContent = '되돌리기 실패: ' + (er.code || er.message); } }; };
+    } catch (er) { box.innerHTML = `<div class="hint">${esc(er.message || '파일을 읽지 못했습니다')}</div>`; } };
   const log = m => { const el = $('#bk-log'); if (el) el.textContent = m; };
   const go = $('#bk-go'); if (go) go.onclick = async () => {
     go.disabled = true;
-    try { const { raw, miss } = await collectAll($('#bk-img').checked, log); const payload = { kind: 'cbcs-backup', generated: new Date().toISOString(), year: YEAR, count: raw.length, raw };
+    try { const { raw, miss } = await collectAll($('#bk-img').checked, log); const byCol = {}; raw.forEach(x => { const k = backupColOf(x.path); byCol[k] = (byCol[k] || 0) + 1; });
+      const payload = { kind: 'cbcs-backup', schemaVersion: 1, generated: new Date().toISOString(), year: YEAR, count: raw.length, partial: miss.length > 0, missing: miss, collections: byCol, raw };
       downloadText(`CBCS-backup-${today()}.json`, JSON.stringify(payload));
-      try { const meta = { at: today(), count: raw.length }; await backend.set('meta/backup', meta); S.committee.backupMeta = meta; } catch (e) {}
-      log(`${raw.length}건을 내려받았습니다.${miss.length ? '\n읽지 못한 묶음: ' + miss.join(', ') : ''}\n파일을 시놀로지 교육위원회 폴더로 옮겨 주세요.`); }
+      try { const prev = S.committee.backupMeta || {}; const meta = miss.length ? { ...prev, at: today(), count: raw.length, partial: true, miss } : { at: today(), count: raw.length, partial: false, miss: [], fullAt: today(), fullCount: raw.length }; await backend.set('meta/backup', meta); S.committee.backupMeta = meta; } catch (e) {}
+      log(`${raw.length}건을 내려받았습니다.${miss.length ? `\n⚠ 부분 백업 — 읽지 못한 묶음 ${miss.length}개: ` + miss.join(', ') : '\n정상 백업(빠진 묶음 없음)'}\n파일을 시놀로지 교육위원회 폴더로 옮겨 주세요.`); renderHere(); }
     catch (e) { log('내려받기 실패: ' + (e.code || e.message)); }
     go.disabled = false;
   };

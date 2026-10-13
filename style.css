@@ -570,3 +570,6 @@ details.card.principle>summary:hover .pr-tg{border-color:var(--accent);color:var
 .todo .d{font-size:12px;color:var(--muted);margin-top:2px}
 .todo .btn{flex-shrink:0}
 @media(max-width:900px){.todo-list{grid-template-columns:1fr}}
+/* 출석 체크 버튼: 손가락으로 누르기 쉬운 크기(휴대폰 44px 이상) */
+.att .s button{min-height:36px}
+@media(max-width:760px){.att .s{padding:2px 6px}.att .s button{min-height:46px;font-size:15px;padding:4px 6px}}
