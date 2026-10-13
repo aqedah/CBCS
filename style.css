@@ -465,3 +465,5 @@ td.ie-on:hover{outline:2px dashed var(--accent);outline-offset:-3px;background:v
 .sc-grid table td,.sc-grid table th{overflow-wrap:break-word;word-break:keep-all}
 .hist-tbl td:nth-child(3),.hist-tbl td:nth-child(4){min-width:5.5em}
 .hist-tbl td.hist-act{width:1%}
+.attlog tr.al-div th,.attlog tr.al-div td{background:var(--bg) !important;border-top:2px solid var(--line);font-size:12px;padding-top:10px}
+.attlog tr.al-out th.al-name b{color:var(--muted)}
