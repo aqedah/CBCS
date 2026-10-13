@@ -121,6 +121,7 @@ details.fold .tw{margin-top:10px}
 .paper .meta{text-align:right;font-size:11.5px;line-height:1.6}
 .paper h2{font-size:12.5px;font-weight:700;margin:14px 0 6px;display:flex;gap:8px;align-items:center}
 .paper h2::before{content:"";width:4px;height:12px;background:#8a1f2b;display:inline-block}
+.paper h3{font-size:11.5px;font-weight:700;margin:10px 0 4px;color:#444}
 .paper table{font-size:11.5px}
 .paper th,.paper td{border:1px solid #b9b5ab;padding:4px 6px;color:#1d1c19}
 .paper th{background:#f4f3ef;color:#5c584f}
