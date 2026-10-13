@@ -1400,7 +1400,7 @@ async function saveAssembly(dd, a) { const { _id, unsaved, ...data } = a; await 
 function quorumOf(dd, base, R, basis) {
   const reps = Object.values(dd.reports).filter(r => r.date < base).sort((a, b) => a.date < b.date ? -1 : 1).slice(-R.quorumWeeks);
   const rows = reps.map(r => { const st = reportStats(dd, r); const chk = Object.values(r.att || {}).filter(Boolean).length + Object.keys(r.attUnmatched || {}).length; const rep = (r.counts && r.counts.att) || st.p; const t = (r.teachersPresent || []).length; return { date: r.date, rep, chk, t, p: basis === 'check' ? chk : rep }; });
-  const avgOf = k => rows.length ? rows.reduce((a, b) => a + b[k], 0) / rows.length : 0; const need = v => Math.ceil(v * R.quorumNum / R.quorumDen);
+  const avgOf = k => rows.length ? rows.reduce((a, b) => a + b[k], 0) / rows.length : 0; const need = v => Math.floor(v * R.quorumNum / R.quorumDen); // 소수점은 버림 (2026 임원회의 결정: 출석부 기준 평균 28.2 → 18명)
   const avg = avgOf('p');
   return { rows, avg, need: need(avg), basis: basis || 'report', alt: { rep: { avg: avgOf('rep'), need: need(avgOf('rep')) }, chk: { avg: avgOf('chk'), need: need(avgOf('chk')) } } };
 }
@@ -1483,7 +1483,7 @@ function assemblyJudge(dd, a) {
   fam.filter(x => !x.stu).forEach(x => { const t = dd.doc.staff.find(y => y.status !== 'left' && normName(y.name) === normName(x.name)) || {}; pool.push({ id: 'fam_' + normName(x.name), name: x.name, sex: t.sex || '', birth: t.birth || '', faith: t.faith || '', status: 'active', group: '', history: [], pseudo: true }); });
   const list = pool.map(s => { const j = judge(dd, s, a.date, R); if (isFamP(s)) { j.voter = 'ok'; j.rsn = j.rsn || {}; j.rsn.voter = ['팸장 — 결의권자']; j.why.unshift('팸장 — 결의권자'); j.fam = true; } return applyOverride(a, j); }).sort((x, y) => x.s.name.localeCompare(y.s.name, 'ko'));
   const excluded = dd.students.filter(s => s.status !== 'left' && !inPool(s)).map(s => ({ s, why: outWhy(s) })).sort((x, y) => x.why.localeCompare(y.why, 'ko') || x.s.name.localeCompare(y.s.name, 'ko'));
-  return { R, list, q: quorumOf(dd, a.date, R, a.quorumBasis || 'report'), excluded };
+  return { R, list, q: quorumOf(dd, a.date, R, a.quorumBasis || 'check'), excluded }; // 기준 기본값: 출석부 체크 수 (2026 임원회의 결정)
 }
 function lastSundayOfYear(y) { const d = new Date(y, 11, 31); d.setDate(d.getDate() - d.getDay()); return iso(d); }
 function blankAssembly(date) { return { id: date, date, kind: '정기총회', title: `${+date.slice(0, 4)}년 청년부 정기총회`, place: '', overrides: {}, candidates: [], minutes: { opened: '', closed: '', presider: '', secretary: '', attendees: '', order: '개회 기도\n성원 보고\n전 회의록 낭독\n사업·회계 보고\n임원 선거\n기타 안건\n폐회', agenda: [], votes: [], notes: '', status: 'draft' }, unsaved: true }; }
@@ -1772,8 +1772,8 @@ VIEWS.assembly = async () => {
   <div class="stack">
     ${edit ? `<div class="card"><div class="fields"><label class="f"><span>총회 날짜 (판정 기준일)</span><input type="date" id="as-date" value="${esc(a.date)}"></label><label class="f"><span>구분</span><select id="as-kind">${['정기총회', '임시총회'].map(k => `<option ${a.kind === k ? 'selected' : ''}>${k}</option>`).join('')}</select></label><label class="f"><span>제목</span><input type="text" id="as-title" value="${esc(a.title)}"></label><label class="f"><span>장소</span><input type="text" id="as-place" value="${esc(a.place || '')}"></label></div><div class="row" style="margin-top:8px"><button class="btn p" id="as-save">${a.unsaved ? '이 총회 만들기' : '저장'}</button></div></div>` : ''}
     <div class="grid2">
-      <div class="card"><h2>정족수 <span class="r">회칙 13조 · 직전 ${R.quorumWeeks}주 평균 출석의 ${R.quorumNum}/${R.quorumDen}</span></h2><div class="quorum"><span class="big">${J.q.need}명</span><span class="note">평균 ${J.q.avg.toFixed(1)}명</span></div>
-        <div class="tw" style="margin-top:6px"><table><thead><tr><th>주일</th>${J.q.rows.map(r => `<th class="n">${r.date.slice(5).replace('-', '/')}</th>`).join('')}<th class="n">평균</th><th class="n">2/3</th></tr></thead><tbody>
+      <div class="card"><h2>정족수 <span class="r">회칙 13조 · 직전 ${R.quorumWeeks}주 평균 출석의 ${R.quorumNum}/${R.quorumDen} · 소수점 버림 · 출석부 기준 (2026 임원회의 결정)</span></h2><div class="quorum"><span class="big">${J.q.need}명</span><span class="note">평균 ${J.q.avg.toFixed(1)}명</span></div>
+        <div class="tw" style="margin-top:6px"><table><thead><tr><th>주일</th>${J.q.rows.map(r => `<th class="n">${r.date.slice(5).replace('-', '/')}</th>`).join('')}<th class="n">평균</th><th class="n">2/3(버림)</th></tr></thead><tbody>
           <tr><td>보고서에 적힌 출석 수${J.q.basis === 'report' ? ' <span class="pill ok">기준</span>' : ''}</td>${J.q.rows.map(r => `<td class="n">${r.rep}</td>`).join('')}<td class="n">${J.q.alt.rep.avg.toFixed(1)}</td><td class="n"><b>${J.q.alt.rep.need}</b></td></tr>
           <tr><td>출석부에 체크된 회원 수${J.q.basis === 'check' ? ' <span class="pill ok">기준</span>' : ''}</td>${J.q.rows.map(r => `<td class="n">${r.chk}</td>`).join('')}<td class="n">${J.q.alt.chk.avg.toFixed(1)}</td><td class="n"><b>${J.q.alt.chk.need}</b></td></tr>
           <tr><td class="note">참석 교사·팸장 (참고, 정족수에 안 넣음)</td>${J.q.rows.map(r => `<td class="n note">${r.t}</td>`).join('')}<td></td><td></td></tr></tbody></table></div>
