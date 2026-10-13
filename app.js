@@ -1417,7 +1417,7 @@ function judge(dd, s, base, R) {
     if (!sinceNew) { voter = 'check'; why.push('출석 시작일 모름'); }
     else if (sinceNew > addMonths(base, -R.voterMonths)) { voter = 'no'; why.push(`${s.newcomerDone ? '새가족반 수료' : '출석 시작'} ${R.voterMonths}개월 미만`); }
     if (rate === null) { if (voter === 'ok') voter = 'check'; why.push('출석 기록 없음'); }
-    else if (rate < R.voterRate) { voter = 'no'; why.push(`출석률 ${rate}%`); }
+    else if (cnt * 100 < R.voterRate * yearReps.length) { voter = 'no'; why.push(`출석률 ${(cnt / yearReps.length * 100).toFixed(1)}% (${cnt}/${yearReps.length}, 기준 ${Math.ceil(yearReps.length * R.voterRate / 100)}주 이상)`); } // 반올림하지 않고 정확히 비교 (31/52=59.6%는 미달)
   }
   const voterWhy = why.slice();
   // 11조 후보 자격 — 판정과 함께 그 칸의 사유도 모은다
