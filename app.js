@@ -174,7 +174,7 @@ const classStudents = (dd, cid) => activeStudents(dd).filter(s => s.classId === 
 const FAITH_OPTS = ['', '없음', '유아세례', '학습', '세례', '입교'];
 const faithOptions = s => { const cur = s.faith === '모름' || s.faith === '미정' ? '' : (s.faith || ''); return FAITH_OPTS.map(k => `<option value="${k}" ${cur === k ? 'selected' : ''}>${k || '모름'}</option>`).join('') + (FAITH_OPTS.includes(cur) ? '' : `<option selected>${esc(cur)}</option>`); };
 // 교회 직분 (청년부 회원 자격 판정: 직분자는 회원 아님 — 회칙 4조)
-const CHURCH_ROLES = ['서리집사', '안수집사', '시무장로', '은퇴장로', '원로장로', '교육전도사', '부목사', '담임목사'];
+const CHURCH_ROLES = ['서리집사', '안수집사', '권사', '명예권사', '시무장로', '은퇴장로', '원로장로', '교육전도사', '부목사', '담임목사'];
 const churchRoleOptions = cur => `<option value="">없음</option>${CHURCH_ROLES.map(k => `<option ${cur === k ? 'selected' : ''}>${k}</option>`).join('')}${cur && !CHURCH_ROLES.includes(cur) ? `<option selected>${esc(cur)}</option>` : ''}`;
 const NOTE_TAGS = ['학습대상자', '세례대상자', '입교대상자', '어린이세례(타교단)'];
 // 신급 칸 정리: 신급에는 없음·모름·유아세례·학습·입교·세례만 둔다. "학습대상"·"?" 같은 값과 연도 표기는 비고로 옮긴다.
