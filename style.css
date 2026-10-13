@@ -450,3 +450,7 @@ td.ie-on:hover{outline:2px dashed var(--accent);outline-offset:-3px;background:v
 .ie-opts label:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
 .ie-hist{font-size:12px;color:var(--muted);margin-top:4px}
 .ie-hist summary{cursor:pointer;color:var(--fg)}
+.hist-reg{font-size:12.5px;margin:0 0 6px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.hist-tbl td.hist-act{white-space:nowrap;text-align:right}
+.hist-tbl td.hist-act .btn{margin-left:2px}
+.hist-tbl input{width:100%;min-width:60px}
