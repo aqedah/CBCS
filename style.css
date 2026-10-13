@@ -455,3 +455,13 @@ td.ie-on:hover{outline:2px dashed var(--accent);outline-offset:-3px;background:v
 .hist-tbl td.hist-act .btn{margin-left:2px}
 .hist-tbl input{width:100%;min-width:60px}
 .ystrip .yw.m{background:repeating-linear-gradient(45deg,var(--line-soft) 0 2px,transparent 2px 4px);outline:1px dashed var(--line)}
+/* 학생 카드: 창(모달) 폭이 좁으면 두 칸을 위아래로 쌓고, 표 글자가 한 자씩 끊기지 않게 */
+.modal{container-type:inline-size}
+.sc-grid>*{align-self:start}
+.kvl{align-content:start}
+@container (max-width:820px){
+  .sc-grid{grid-template-columns:1fr !important}
+}
+.sc-grid table td,.sc-grid table th{overflow-wrap:break-word;word-break:keep-all}
+.hist-tbl td:nth-child(3),.hist-tbl td:nth-child(4){min-width:5.5em}
+.hist-tbl td.hist-act{width:1%}
