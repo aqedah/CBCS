@@ -509,3 +509,22 @@ td.ie-on:hover{outline:2px dashed var(--accent);outline-offset:-3px;background:v
 [data-theme="dark"] .bylaw-text ins.bl-add,[data-theme="dark"] .bl-diffbar ins.bl-add{color:#7fe0a6;background:#123a24}
 [data-theme="dark"] .bylaw-text del.bl-del,[data-theme="dark"] .bl-diffbar del.bl-del{color:#ff9b91;background:#3d1714}
 @media print{.bylaw-text .bl-chg{border-left:0;padding-left:0;margin-left:0}.bylaw-text ins.bl-add{color:inherit;background:none;font-weight:inherit}.bylaw-text del.bl-del{display:none}}
+.bl-chgcard .bl-cg{padding:8px 0;border-top:1px dotted var(--line)}
+.bl-chgcard .bl-cg:first-of-type{border-top:0}
+.bl-cg-h{font-weight:700;font-size:13px;margin-bottom:3px;display:flex;gap:6px;align-items:center}
+.bl-cg-b{font-size:12.5px;line-height:1.65;color:var(--fg)}
+.bl-cg-b+.bl-cg-b{margin-top:4px}
+.bl-cg-b ins.bl-add{text-decoration:none;color:#0b6b3a;background:#e3f4ea;border-radius:2px;padding:0 2px;font-weight:600}
+.bl-cg-b del.bl-del{color:#b42318;background:#fdecea;text-decoration:line-through;border-radius:2px;padding:0 2px}
+[data-theme="dark"] .bl-cg-b ins.bl-add{color:#7fe0a6;background:#123a24}
+[data-theme="dark"] .bl-cg-b del.bl-del{color:#ff9b91;background:#3d1714}
+table.bl-sum td{white-space:normal}
+details.card.principle>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;list-style:none}
+details.card.principle>summary::-webkit-details-marker{display:none}
+details.card.principle>summary h2{margin:0}
+details.card.principle:not([open])>summary{margin:0}
+details.card.principle[open]>summary{margin-bottom:10px}
+.pr-tg{flex-shrink:0;font-size:12px;border:1px solid var(--line);border-radius:6px;padding:3px 10px;color:var(--muted);background:var(--panel)}
+.pr-tg::after{content:'접기 ▴'}
+details.card.principle:not([open]) .pr-tg::after{content:'펼치기 ▾'}
+details.card.principle>summary:hover .pr-tg{border-color:var(--accent);color:var(--accent)}

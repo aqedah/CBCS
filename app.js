@@ -1385,7 +1385,7 @@ async function loadYoung() {
 /* 회칙 화면의 규례 종류: 청년부 회칙(총회 자동 판정 기준) · 한국성서선교회 헌장(통상 규례, 판정에는 안 씀) */
 // 청년부 회칙 화면 맨 위에 늘 보이는 원칙
 const YOUNG_PRINCIPLE = { src: '사단법인 한국성서선교회 헌장 제29조(기관의 권리 및 의무)', lead: '각 회원교회는 남, 녀 전도회, 장년회, 청년회, 각급 주일학교 등 여러 기관을 가지며 다음과 같은 권리 및 의무를 갖는다.', items: ['전 기관은 그 교회에 소속된다.', '각 기관은 그 교회에 봉사하기 위하여 존재한다.', '각 기관은 당회의 관할 하에 그 지도 및 치리를 받는다.', '각 기관은 당회의 지도하에 사업을 운영한다.', '각 기관은 사업을 위한 예산 결산을 당회에 제출하여 감사를 받는다.'] };
-const principleHTML = () => `<div class="card principle"><h2>${esc(YOUNG_PRINCIPLE.src)}</h2><p>${esc(YOUNG_PRINCIPLE.lead)}</p><ol>${YOUNG_PRINCIPLE.items.map(x => `<li>${esc(x)}</li>`).join('')}</ol></div>`;
+const principleHTML = () => `<details class="card principle" ${S.principleClosed ? '' : 'open'}><summary><h2>${esc(YOUNG_PRINCIPLE.src)}</h2><span class="pr-tg"></span></summary><p>${esc(YOUNG_PRINCIPLE.lead)}</p><ol>${YOUNG_PRINCIPLE.items.map(x => `<li>${esc(x)}</li>`).join('')}</ol></details>`;
 const RULE_DOCS = { young: { name: '청년부 회칙', org: '중앙성서교회 청년부' }, gideon: { name: '기드온 찬양팀 회칙', org: '중앙성서교회 기드온 찬양팀' }, charter: { name: '한국성서선교회 헌장', org: '한국성서선교회' } };
 const bylawKind = b => (b && b.kind) || 'young';
 const bylawsOf = (dd, k) => dd.bylaws.filter(b => bylawKind(b) === k);
@@ -1547,7 +1547,7 @@ function bylawHTML(t, opt = {}) {
     const h = wordDiffHTML('', q.txt, P.text); if (h == null) return esc(q.txt); q.chg = 2; return h; };
   const flush = () => { if (para) { if (para.lab) { const m = para.lab.match(/제\s*(\d+)\s*조(?:\s*의\s*(\d+))?/); if (m) art = 'A' + m[1] + (m[2] ? '-' + m[2] : ''), pi = 0; } const key = keyOf(para);
       const html = body(para, key); if (seen) seen.add(key);
-      if (opt.collect) opt.collect.push({ key, lab: para.lab || '', txt: para.txt, full: (para.lab || '') + ' ' + para.txt, chg: para.chg || 0 }); out.push(`<p class="${para.cls}${para.chg ? ' bl-chg' : ''}">${para.lab ? `<span class="art">${esc(para.lab)}</span>` : ''}${html}</p>`); para = null; } };
+      if (opt.collect) opt.collect.push({ key, lab: para.lab || '', txt: para.txt, full: (para.lab || '') + ' ' + para.txt, chg: para.chg || 0, html }); out.push(`<p class="${para.cls}${para.chg ? ' bl-chg' : ''}">${para.lab ? `<span class="art">${esc(para.lab)}</span>` : ''}${html}</p>`); para = null; } };
   const head = (lvl, cls, x) => { flush(); started = true; const id = 'bl-h' + (n++); toc.push({ id, cls, x }); const nw = P && !P.heads.has(blNorm(x)); out.push(`<div role="heading" aria-level="${lvl}" class="${cls}${nw ? ' bl-chg' : ''}" id="${id}">${nw ? `<ins class="bl-add">${esc(x)}</ins>` : esc(x)}</div>`); if (opt.collect) opt.collect.push({ head: blNorm(x) }); };
   const start = (cls, txt, lab) => { flush(); para = { cls, txt, lab }; };
   const ends = x => /([.。!?」』)\]]|다|함|음|됨|임|요)$/.test(x);
@@ -1599,7 +1599,9 @@ function bylawDiffOpt(b, vs) {
   const seenKeys = new Set(); const cur = []; bylawHTML(b.text, { prev: P, seenKeys, collect: cur });
   const curText = cur.filter(q => !q.head).map(q => blNorm(q.full)).join('');
   const removed = ps.filter(q => !q.head && !/^=+/.test(q.full.trim()) && !seenKeys.has(q.key) && !curText.includes(blNorm(q.txt)));
-  const opt = { prev: P, pv, removed, nChg: cur.filter(q => q.chg === 1).length, nNew: cur.filter(q => q.chg === 2).length };
+  const artName = (q, src) => /\d+\s*차\s*수정\s*:|공포\s*서기/.test(q.txt) ? '개정 이력' : (() => { const a = q.key.split('|')[0]; if (a === 'pre') return '머리말'; const m = a.match(/^A(\d+)(?:-(\d+))?$/); return m ? `제${m[1]}조${m[2] ? '의' + m[2] : ''}` : a; })();
+  const changes = [...cur.filter(q => !q.head && q.chg).map(q => ({ art: artName(q), kind: q.chg === 1 ? '바뀜' : '새로 생김', html: String(q.html || '').replace(/^\s*[:：]\s*/, '') })), ...removed.map(q => ({ art: artName(q), kind: '빠짐', html: `<del class="bl-del">${esc(q.txt.trim().replace(/^[:：]\s*/, ''))}</del>` }))];
+  const opt = { prev: P, pv, removed, changes, nChg: cur.filter(q => q.chg === 1).length, nNew: cur.filter(q => q.chg === 2).length };
   _blDiff.k = ck; _blDiff.opt = opt; return opt;
 }
 function bylawDiffBlock(b, vs) {
@@ -1631,8 +1633,11 @@ VIEWS.bylaws = async () => {
     <div class="stack">
       <div class="card"><h2>판(版) 목록</h2><div class="list vlist">${vs.map(x => `<button class="item ${x.id === b.id ? 'on' : ''}" data-bylaw="${esc(x.id)}" style="text-align:left;width:100%"><div><div class="t">${esc(x.revision || DOC.name)}</div><div class="d">${x.date ? esc(x.date) + ' · ' : ''}${{ current: '현행', draft: '개정안', old: '이전 판' }[x.status]}</div></div></button>`).join('')}</div>
         ${edit ? `<div class="row" style="margin-top:10px"><button class="btn s" id="bl-add">새 개정안 추가</button>${isYoung || kind === 'gideon' ? '<button class="btn s" id="bl-import">역대 회칙 가져오기 (JSON)</button>' : ''}</div>` : ''}</div>
-      ${isYoung ? `<div class="card"><h2>${b.status === 'current' ? '앱이 판정하는 조문' : '현행과 달라지는 점'}</h2><div class="tw"><table><tbody>${(b.summary || []).map(x => Array.isArray(x) ? x : [x.no, x.title, x.body]).map(([n, t, d]) => `<tr><th style="white-space:nowrap">${esc(n)}</th><td><b>${esc(t)}</b> <span class="note">${esc(d)}</span></td></tr>`).join('')}</tbody></table></div></div>
-      <div class="card"><h2>판정 기준값 <span class="r">${edit ? '개정되면 여기 숫자만 고치면 됩니다' : ''}</span></h2><div class="fields" style="grid-template-columns:1fr 1fr">
+      ${b.text.trim() ? (() => { const o = bylawDiffOpt(b, vs); if (!o.pv) return `<div class="card"><h2>앞 판에서 바뀐 점</h2><div class="note">이 판보다 앞선 판이 없어 비교할 수 없습니다.</div></div>`;
+        const groups = []; o.changes.forEach(c => { let g = groups.find(x => x.art === c.art); if (!g) groups.push(g = { art: c.art, items: [] }); g.items.push(c); });
+        return `<div class="card bl-chgcard"><h2>${esc(b.revision || '')}에서 바뀐 점 <span class="r">${esc(o.pv.revision || '')} 대비 · 조문 ${groups.length}곳</span></h2>${groups.length ? groups.map(g => `<div class="bl-cg"><div class="bl-cg-h">${esc(g.art)} ${[...new Set(g.items.map(x => x.kind))].map(k => `<span class="pill ${k === '빠짐' ? 'bad' : k === '새로 생김' ? 'ok' : 'warn'}">${k}</span>`).join(' ')}</div>${g.items.map(x => `<div class="bl-cg-b">${x.html}</div>`).join('')}</div>`).join('') : '<div class="note">앞 판과 글자가 같습니다.</div>'}</div>`; })() : ''}
+      ${isYoung && (b.summary || []).length ? `<div class="card"><h2>${b.status === 'current' ? '총회 판정 기준 (현행 회칙 요약)' : '이 판의 총회 판정 기준 (요약)'}</h2><div class="tw"><table class="bl-sum"><tbody>${(b.summary || []).map(x => Array.isArray(x) ? x : [x.no, x.title, x.body]).map(([n, t, d]) => `<tr><th style="white-space:nowrap">${esc(n)}</th><td><b>${esc(t)}</b> <span class="note">${esc(d)}</span></td></tr>`).join('')}</tbody></table></div></div>` : ''}
+      ${isYoung ? `<div class="card"><h2>판정 기준값 <span class="r">${edit ? '개정되면 여기 숫자만 고치면 됩니다' : ''}</span></h2><div class="fields" style="grid-template-columns:1fr 1fr">
         ${[['ageMin', '회원 최소 나이'], ['ageMax', '회원 최대 나이'], ['voterMonths', '선거권: 수료 후 개월'], ['voterRate', '선거권: 1년 출석률(%)'], ['presAgeMax', '회장 최대 나이 (0=제한 없음)'], ['presYears', '회장 출석 연수'], ['vpYears', '부회장 출석 연수'], ['apptYears', '임명직 출석 연수'], ['sameRoleMax', '같은 직위 연속 최대 연수 (9조)'], ['chairTeamMax', '회장단 연속 최대 연수 (0=제한 없음)'], ['quorumWeeks', '정족수: 직전 몇 주']].map(([k, l]) => `<label class="f"><span>${l}</span><input type="number" data-rp="${k}" value="${R[k] ?? ''}" ${edit ? '' : 'readonly'}></label>`).join('')}
         <label class="f"><span>정족수 비율</span><div class="row" style="gap:4px"><input type="number" data-rp="quorumNum" value="${R.quorumNum}" style="width:60px" ${edit ? '' : 'readonly'}>/<input type="number" data-rp="quorumDen" value="${R.quorumDen}" style="width:60px" ${edit ? '' : 'readonly'}></div></label>
         <div class="note" style="grid-column:span 2">세례교인 요건은 교회 원칙으로 <b>결의권자·회장·부회장·임명직 모두</b>에 항상 적용되며 판마다 바꾸지 않습니다 (학습·유아세례만으로는 안 됨).</div>
@@ -1784,6 +1789,7 @@ function bylawUploadDialog(dd, b) {
 }
 BIND.bylaws = () => {
   const dd = S.data.young; const kind = (dd.bylaws.find(x => x.id === S.sub.bylaw) ? bylawKind(dd.bylaws.find(x => x.id === S.sub.bylaw)) : (S.sub.rdoc || 'young')); const b = dd.bylaws.find(x => x.id === S.sub.bylaw) || currentOf(dd, kind);
+  const prc = document.querySelector('details.principle'); if (prc) prc.ontoggle = () => { S.principleClosed = !prc.open; };
   document.querySelectorAll('[data-bltoc]').forEach(a => a.onclick = e => { e.preventDefault(); const h = document.getElementById(a.dataset.bltoc); if (h) h.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
   document.querySelectorAll('[data-rdoc]').forEach(x => x.onclick = () => { S.sub = { rdoc: x.dataset.rdoc }; renderHere(); });
   document.querySelectorAll('[data-bylaw]').forEach(x => x.onclick = () => { S.sub = { bylaw: x.dataset.bylaw, nodiff: S.sub.nodiff }; renderHere(); });
