@@ -155,7 +155,7 @@ function ledgerSummary(dd, ledgerId, m) {
 // 학생 상태: 재적·새친구·장기결석·제적과, 재적은 유지하되 잠시 못 나오는 사정(군입대·학업·사업·직접 입력)
 const STATUS_OPTS = [['active', '재적'], ['newcomer', '새친구'], ['longabsent', '장기결석'], ['military', '군입대'], ['study', '학업'], ['business', '사업'], ['custom', '직접 입력'], ['left', '제적']];
 const AWAY = ['longabsent', 'military', 'study', 'business', 'custom'];
-const inRoll = s => (s.status === 'active' || AWAY.includes(s.status)) && !isGrad(s);
+const inRoll = s => (s.status === 'active' || AWAY.includes(s.status)) && !isGrad(s) && !(isYoungStu(s) && s.group === '팸장');
 const statusName = s => s.status === 'custom' ? (s.statusText || '기타') : (Object.fromEntries(STATUS_OPTS)[s.status] || s.status || '');
 const statusPill = s => `<span class="pill ${s.status === 'active' ? 'ok' : s.status === 'newcomer' ? 'info' : AWAY.includes(s.status) ? 'warn' : 'mute'}">${esc(statusName(s))}</span>`;
 const activeStudents = dd => dd.students.filter(inRoll);
@@ -651,7 +651,7 @@ function studentCard(dd, s) {
       <label class="f"><span>어머니</span><input type="text" id="sc-mother" value="${f('mother')}"></label>
       <label class="f" style="grid-column:span 2"><span>주소</span><input type="text" id="sc-address" value="${f('address')}"></label>
       <label class="f" style="grid-column:span 2"><span>비고</span><input type="text" id="sc-note" value="${f('note')}">${noteTagsHTML('sc-note')}</label>
-      ${dd.id === 'young' ? `<label class="f"><span>구분</span><select id="sc-group"><option value="" ${s.group !== '라피끄' ? 'selected' : ''}>청년</option><option value="라피끄" ${s.group === '라피끄' ? 'selected' : ''}>라피끄</option></select></label>` : ''}
+      ${dd.id === 'young' ? `<label class="f"><span>구분</span><select id="sc-group"><option value="" ${!['라피끄', '팸장'].includes(s.group) ? 'selected' : ''}>청년</option><option value="라피끄" ${s.group === '라피끄' ? 'selected' : ''}>라피끄</option><option value="팸장" ${s.group === '팸장' ? 'selected' : ''}>팸장 (재적에서 빠지고 팸장 탭으로)</option></select></label>` : ''}
       <label class="f"><span>제적 처리일</span><input type="date" id="sc-ldate" value="${f('leftDate')}"></label>
       <label class="f"><span>제적 구분 (결혼·직분·이사 등)</span><select id="sc-lkind"><option value="">—</option>${LEFT_KINDS.map(k => `<option ${s.leftKind === k ? 'selected' : ''}>${k}</option>`).join('')}</select></label>
       <label class="f" style="grid-column:span 2"><span>제적 사유</span><input type="text" id="sc-lreason" value="${f('leftReason')}" placeholder="상태가 제적일 때만 씁니다"></label>
@@ -2632,6 +2632,7 @@ function rosterCats(dd) {
   const young = dd.id === 'young'; const c = { active: [], newcomer: [], away: [], left: [], grad: [] };
   for (const s of dd.students) {
     if (young && isGrad(s)) { c.grad.push(s); continue; }
+    if (young && s.group === '팸장') continue; // 팸장 탭에서 본다
     if (s.status === 'left') { if (!(young && isStaffName(dd, s))) c.left.push(s); continue; }
     (s.status === 'newcomer' ? c.newcomer : AWAY.includes(s.status) ? c.away : c.active).push(s);
   }
@@ -2653,8 +2654,9 @@ function famLeaders(dd, yr) {
   const hists = dd.students.flatMap(s => (s.history || []).filter(h => +h.year === +yr && (!h.dept || h.dept === dd.id))).map(h => h.classId || '');
   const famOfName = n => (+yr === YEAR ? (dd.doc.classes.find(c => String(c.teacher || '').split(/[,·\s]+/).includes(n)) || {}).name : '') || hists.find(c => c.includes(n)) || '';
   if (+yr === YEAR) dd.doc.staff.filter(t => t.status !== 'left' && isFam(t.role)).forEach(t => out.set(normName(t.name), { name: t.name, role: roleParts(t.role).filter(isFam).join(', ') || t.role, other: roleParts(t.role).filter(x => !isFam(x)).join(', '), phone: t.phone || '' }));
+  if (+yr === YEAR) dd.students.filter(s => s.group === '팸장' && s.status !== 'left').forEach(s => { if (!out.has(normName(s.name))) out.set(normName(s.name), { name: s.name, role: '팸장', other: '', phone: s.phone || '' }); });
   (dd.officers || []).filter(o => +o.year === +yr && isFam(o.role)).forEach(o => { if (!out.has(normName(o.name))) out.set(normName(o.name), { name: o.name, role: o.role, other: '', phone: '' }); });
-  return [...out.values()].map(x => ({ ...x, fam: famOfName(x.name), stu: dd.students.find(s => normName(s.name) === normName(x.name)) })).sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+  return [...out.values()].map(x => { const stu = dd.students.find(s => normName(s.name) === normName(x.name)); return { ...x, fam: famOfName(x.name) || (+yr === YEAR && stu && stu.group === '팸장' ? ((classOf(dd, stu) || {}).name || '') : ''), stu }; }).sort((a, b) => a.name.localeCompare(b.name, 'ko'));
 }
 function famLeaderBody(dd, yr) {
   const list = famLeaders(dd, yr);
