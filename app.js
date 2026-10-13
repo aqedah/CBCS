@@ -2809,7 +2809,7 @@ function importYoungAttendance(dd) {
         for (const k of ['prayer', 'text', 'title', 'preacher', 'writer']) if (!doc[k] && r[k]) doc[k] = r[k];
         if (r.offering && !(doc.offering && (doc.offering.sunday || doc.offering.tithe))) doc.offering = { ...(doc.offering || {}), sunday: r.offering, tithe: 0, thanks: 0, other: 0, raw: r.offeringRaw || '' };
         if (r.meeting && !doc.meeting) doc.meeting = r.meeting;
-        if ((r.teachersPresent || []).length && !(doc.teachersPresent || []).length) doc.teachersPresent = r.teachersPresent.slice();
+        if ((r.teachersPresent || []).length) { if (r.teachersAssumed) { doc.teachersPresent = [...new Set([...(doc.teachersPresent || []), ...r.teachersPresent])]; doc.teachersAssumed = r.teachersAssumed; } else if (!(doc.teachersPresent || []).length) doc.teachersPresent = r.teachersPresent.slice(); } // 유권해석(교사 전원 출석)은 기존 보고서에도 더한다
         if (r.teachersUnsure) doc.teachersUnsure = r.teachersUnsure.slice(); if (r.teacherCount) doc.teacherCount = r.teacherCount;
         items.push({ path: `depts/young/reports/${r.date}`, data: doc });
       }
