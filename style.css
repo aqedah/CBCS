@@ -346,7 +346,8 @@ table.attlog .al-p{color:var(--ok)}
 table.attlog .al-o{color:var(--warn)}
 table.attlog .al-x{color:var(--muted)}
 table.attlog .al-sum{font-weight:600}
-@media print{.al-wrap{max-height:none;overflow:visible}table.attlog{font-size:8px}table.attlog th,table.attlog td{padding:1px 2px}@page{size:A4 landscape}}
+@page wide{size:A4 landscape}
+@media print{.al-wrap{max-height:none;overflow:visible;page:wide}table.attlog{font-size:8px}table.attlog th,table.attlog td{padding:1px 2px}}
 
 /* 총회 판정표: 직전 1년 주별 출석 띠 */
 .ystrip{display:flex;gap:1px;flex-wrap:nowrap;align-items:flex-end}
@@ -479,3 +480,21 @@ td.ie-on:hover{outline:2px dashed var(--accent);outline-offset:-3px;background:v
 .bl-art+.bl-art{margin-top:5px;padding-top:5px;border-top:1px dotted #d9d4cc}
 .bl-art .h{font-weight:700}
 .bl-art div:not(.h){padding-left:10px}
+
+/* 인쇄·PDF 저장 — 표 줄이 쪽 경계에서 잘리지 않게, 제목만 쪽 끝에 홀로 남지 않게, 표 머리는 쪽마다 반복 */
+@media print{
+  html,body{width:auto !important;min-width:0 !important;overflow:visible !important}
+  .main,.app{width:auto !important;min-width:0 !important;overflow:visible !important}
+  .paper{width:auto !important;max-width:100% !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .paper table{width:100%;page-break-inside:auto}
+  .paper thead{display:table-header-group}
+  .paper tr,.paper td,.paper th{break-inside:avoid;page-break-inside:avoid}
+  .paper h2,.paper h3,.bl-basis-h{break-after:avoid;page-break-after:avoid}
+  .paper .hd{flex-wrap:wrap;gap:4px 12px}
+  .paper .hd .meta{white-space:nowrap}
+  .bl-basis{break-inside:auto}
+  .bl-art{break-inside:avoid}
+  .tw{overflow:visible !important}
+  .paper .ft{margin-top:8px;break-before:avoid;page-break-before:avoid}
+  .bl-basis{font-size:10px;line-height:1.5}
+}

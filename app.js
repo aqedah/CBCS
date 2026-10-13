@@ -1763,15 +1763,12 @@ function assemblySignPaper(dd, a, J) {
 }
 /* 총회 자료 내보내기 — 엑셀(시트 5개)·PDF 파일로 바로 받기 */
 function saveBlob(blob, name) { const url = URL.createObjectURL(blob); const el = document.createElement('a'); el.href = url; el.download = name; document.body.appendChild(el); el.click(); el.remove(); setTimeout(() => URL.revokeObjectURL(url), 4000); }
-async function exportPaperPDF(html, fileName) {
-  const h2p = await loadLib('html2pdf', 'html2pdf');
-  const box = document.createElement('div'); box.setAttribute('data-theme', 'light');
-  box.style.cssText = 'position:fixed;left:0;top:0;width:794px;z-index:-1;opacity:0;pointer-events:none;background:#fff';
-  Object.entries({ '--fg': '#1d1c19', '--muted': '#6b675d', '--accent': '#8a1f2b', '--line': '#d9d5cc', '--line-soft': '#ebe8e1', '--panel': '#fff', '--bg': '#fff' }).forEach(([k, v]) => box.style.setProperty(k, v)); box.style.color = '#1d1c19';
-  box.innerHTML = html; const sec = box.querySelector('.paper'); if (sec) sec.style.cssText = 'max-width:none;border:0;padding:0;background:#fff;color:#1d1c19';
-  document.body.appendChild(box);
-  try { await h2p().set({ margin: [12, 12, 14, 12], filename: fileName, image: { type: 'jpeg', quality: 0.96 }, html2canvas: { scale: 2, backgroundColor: '#ffffff', useCORS: true }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }, pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', 'h2'] } }).from(box.firstElementChild).outputPdf('blob').then(bl => saveBlob(bl, fileName)); }
-  finally { box.remove(); }
+/* PDF는 브라우저 인쇄로 만든다 — 글자가 그대로 살아 있어(검색·복사·OCR 불필요) 쪽 나눔도 줄 단위로 깔끔하다.
+   예전 html2pdf 방식은 화면을 그림으로 찍어 붙여서 글자가 없고, 가장자리·쪽 경계가 잘렸다. */
+function printAsPDF(fileName) {
+  const old = document.title; document.title = String(fileName || old).replace(/\.pdf$/i, '');
+  const back = () => { document.title = old; window.removeEventListener('afterprint', back); }; window.addEventListener('afterprint', back);
+  toast('인쇄 창에서 대상(프린터)을 "PDF로 저장"으로 고르면 PDF 파일이 됩니다'); setTimeout(() => window.print(), 250);
 }
 async function exportAssemblyXLSX(dd, a, J) {
   const X = await loadLib('xlsx', 'XLSX');
@@ -1807,13 +1804,13 @@ async function exportAssemblyXLSX(dd, a, J) {
 function bindAssemblyExport(dd, a) {
   const run = async (btn, job) => { const t = btn.textContent; btn.disabled = true; btn.textContent = '만드는 중…'; try { await job(); toast('파일을 받았습니다'); } catch (e) { toast(e.message || '내보내기에 실패했습니다'); } finally { btn.disabled = false; btn.textContent = t; } };
   document.querySelectorAll('[data-asx]').forEach(b => b.onclick = () => run(b, () => exportAssemblyXLSX(dd, a, assemblyJudge(dd, a))));
-  document.querySelectorAll('[data-asp]').forEach(b => b.onclick = () => run(b, () => exportPaperPDF(assemblyPaper(dd, a, assemblyJudge(dd, a)), `${a.date}-청년부-총회자료.pdf`)));
+  document.querySelectorAll('[data-asp]').forEach(b => b.onclick = () => { if (S.sub.print !== true) { S.sub = { ...S.sub, print: true }; render(); } printAsPDF(`${a.date}-청년부-총회자료.pdf`); });
 }
 const asmExportBtns = () => '<button class="btn" data-asx>엑셀로 받기</button><button class="btn" data-asp>PDF로 받기</button>';
 VIEWS.assembly = async () => {
   const dd = await loadYoung(); const { a, list } = pickAssembly(dd); const J = assemblyJudge(dd, a); const edit = canYoung();
-  if (S.sub.print === 'sign') return `<div class="topbar no-print"><div><h1>총회 출석 확인표</h1><div class="sub">결의권자 명단과 서명란 — 총회 당일 출결 확인용</div></div><div class="row"><button class="btn" id="as-back">돌아가기</button><button class="btn p" id="as-pr">인쇄 / PDF 저장</button></div></div>${assemblySignPaper(dd, a, J)}`;
-  if (S.sub.print) return `<div class="topbar no-print"><div><h1>총회 자료 출력</h1></div><div class="row"><button class="btn" id="as-back">돌아가기</button>${asmExportBtns()}<button class="btn p" id="as-pr">인쇄</button></div></div>${assemblyPaper(dd, a, J)}`;
+  if (S.sub.print === 'sign') return `<div class="topbar no-print"><div><h1>총회 출석 확인표</h1><div class="sub">결의권자 명단과 서명란 — 총회 당일 출결 확인용</div></div><div class="row"><button class="btn" id="as-back">돌아가기</button><button class="btn p" id="as-pr">인쇄 / PDF로 저장</button></div></div>${assemblySignPaper(dd, a, J)}`;
+  if (S.sub.print) return `<div class="topbar no-print"><div><h1>총회 자료 출력</h1></div><div class="row"><button class="btn" id="as-back">돌아가기</button><button class="btn" data-asx>엑셀로 받기</button><button class="btn p" id="as-pr">인쇄 / PDF로 저장</button></div></div>${assemblyPaper(dd, a, J)}`;
   const cnt = k => J.list.filter(j => j.voter === k).length;
   const filter = S.sub.vf || 'ok';
   const rows = J.list.filter(j => filter === 'all' || (filter === 'border' ? (j.rate !== null && j.rate >= 55 && j.rate <= 65) : j.voter === filter));
@@ -1873,7 +1870,7 @@ function bindAsmPicker(dd) {
 BIND.assembly = () => {
   const dd = S.data.young; const { a } = pickAssembly(dd); bindAsmPicker(dd); bindAssemblyExport(dd, a);
   const pr = $('#as-print'); if (pr) pr.onclick = () => { S.sub = { ...S.sub, print: true }; render(); }; const sg = $('#as-sign'); if (sg) sg.onclick = () => { S.sub = { ...S.sub, print: 'sign' }; render(); };
-  const bk = $('#as-back'); if (bk) { bk.onclick = () => { delete S.sub.print; render(); }; $('#as-pr').onclick = () => window.print(); return; }
+  const bk = $('#as-back'); if (bk) { bk.onclick = () => { delete S.sub.print; render(); }; $('#as-pr').onclick = () => printAsPDF(`${a.date}-청년부-${S.sub.print === 'sign' ? '총회-출석확인표' : '총회자료'}.pdf`); return; }
   document.querySelectorAll('[data-vf]').forEach(b => b.onclick = () => { S.sub.vf = b.dataset.vf; renderHere(); });
   document.querySelectorAll('[data-attd]').forEach(b => b.onclick = e => { e.stopPropagation(); const s = dd.students.find(x => x.id === b.dataset.attd) || (assemblyJudge(dd, a).list.find(j => j.s.id === b.dataset.attd) || {}).s; if (s) openModal(attEvidencePaper(dd, s, a.date)); });
   document.querySelectorAll('[data-qbasis]').forEach(b => b.onclick = async () => { a.quorumBasis = b.dataset.qbasis; await saveAssembly(dd, a); render(); });
