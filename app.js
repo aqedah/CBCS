@@ -514,7 +514,7 @@ VIEWS.roster = async () => {
   const list = dd.students.filter(s => show === 'married' ? isWed(s) : show === 'away' ? AWAY.includes(s.status) : inGroup(s) && (show === 'all' ? true : show === 'active' ? inRoll(s) : s.status === show));
   const sort = S.sub.sort || 'name';
   const corder = s => { const i = dd.doc.classes.findIndex(c => c.id === s.classId); return i < 0 ? 999 : i; };
-  const byName = (a, b) => a.name.localeCompare(b.name, 'ko');
+  const byName = (a, b) => statusRank(dd, a) - statusRank(dd, b) || a.name.localeCompare(b.name, 'ko');
   const curDiv = young && list.some(s => youngDiv(s, YEAR) !== '1청년');
   const sorted = list.slice().sort(sort === 'name' ? byName : sort === 'gradeDesc' ? ((a, b) => { const sa = /새친구|장기/.test(a.classId || '') ? 1 : 0, sb = /새친구|장기/.test(b.classId || '') ? 1 : 0; return sa - sb || corder(b) - corder(a) || byName(a, b); }) : ((a, b) => corder(a) - corder(b) || byName(a, b)));
   const deptPick = isCommittee() ? `<div class="row" style="margin-bottom:10px">${Object.entries(DEPTS).map(([k,v]) => `<button class="btn ${dd.id === k ? 'p' : ''}" data-dept="${k}">${v}</button>`).join('')}</div>` : '';
@@ -2571,6 +2571,9 @@ BIND.backup = () => {
 // 청년부 구분(그해 기준): 라피끄가 있던 해에는 1청년·2청년·라피끄로 나눠 보여 준다. 2청년은 그해 팸 이름에 "2청"이 있을 때
 function youngDiv(s, yr) { const h = (s.history || []).find(x => +x.year === +yr); const g = h && h.group ? h.group : (+yr === YEAR ? (s.group || '청년') : '청년'); if (g === '라피끄') return '라피끄'; return /2청/.test((h && h.classId) || '') ? '2청년' : '1청년'; }
 // 팸장: 재적(회원)에 넣지 않고 따로 본다. 올해는 교사·임원 명단, 지난 해는 임원 이력에서
+// 명단 상태 순서: 재적(새친구·장기결석 포함) → 팸장 등 교사·임원 → 제적
+const isStaffName = (dd, s) => dd.doc.staff.some(t => t.status !== 'left' && normName(t.name) === normName(s.name));
+const statusRank = (dd, s) => s.status !== 'left' ? 0 : isStaffName(dd, s) ? 1 : 2;
 function famLeaders(dd, yr) {
   const isFam = r => /팸장/.test(r || ''); const out = new Map();
   const hists = dd.students.flatMap(s => (s.history || []).filter(h => +h.year === +yr && (!h.dept || h.dept === dd.id))).map(h => h.classId || '');
@@ -2598,7 +2601,7 @@ function yearRoster(dd, yr, grp, yearBar) {
   const famOf = s => { const h = hist(s); return h ? (h.classId || '') : ''; };
   const fams = [...new Set(list.map(famOf))].sort((a, b) => a.localeCompare(b, 'ko'));
   const sort = S.sub.sort || 'name';
-  const sorted = sort === 'fam' ? list.slice().sort((a, b) => famOf(a).localeCompare(famOf(b), 'ko') || a.name.localeCompare(b.name, 'ko')) : list;
+  const sorted = sort === 'fam' ? list.slice().sort((a, b) => famOf(a).localeCompare(famOf(b), 'ko') || statusRank(dd, a) - statusRank(dd, b) || a.name.localeCompare(b.name, 'ko')) : list.slice().sort((a, b) => statusRank(dd, a) - statusRank(dd, b) || a.name.localeCompare(b.name, 'ko'));
   const cnt = s => reps.filter(r => (r.att || {})[s.id]).length;
   const leftIn = s => (s.statusLog || []).find(l => l.to === 'left' && String(l.date || '').startsWith(String(yr)));
   return `<div class="topbar"><div><h1>출석부 ${yr}년 — ${esc(dd.doc.name)}</h1><div class="sub">그해 소속 ${list.length}명 · 출석 체크된 주일 ${reps.length}주 · 과거 출석부 엑셀에서 옮긴 기록입니다</div></div>
