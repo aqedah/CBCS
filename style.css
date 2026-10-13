@@ -473,3 +473,9 @@ td.ie-on:hover{outline:2px dashed var(--accent);outline-offset:-3px;background:v
 .vchips{display:flex;flex-wrap:wrap;gap:4px 6px;align-items:center}
 .vchips+.vchips{margin-top:6px;padding-top:6px;border-top:1px dashed var(--line)}
 .vchips b{font-size:12px;color:var(--ink);margin-right:2px}
+.bl-basis{margin:10px 0 4px;padding:8px 10px;border:1px solid #d9d4cc;background:#faf8f4;border-radius:3px;font-size:10.5px;line-height:1.6;color:#333;break-inside:avoid}
+.bl-basis-h{font-weight:700;font-size:11px;margin-bottom:4px;color:#8a1f2b}
+.bl-basis-h span{font-weight:400;color:#777}
+.bl-art+.bl-art{margin-top:5px;padding-top:5px;border-top:1px dotted #d9d4cc}
+.bl-art .h{font-weight:700}
+.bl-art div:not(.h){padding-left:10px}

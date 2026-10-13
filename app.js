@@ -1726,10 +1726,22 @@ function officerSum(j) {
   const why = (P.map(([k]) => (j.rsn && j.rsn[k] || [])[0]).find(Boolean) || '').replace(/\s+/g, ' ');
   return { ok: ok.length ? ok.join('·') + ' 가능' : ck.length ? ck.join('·') + ' 확인 필요' : '불가', why: ok.length === 3 ? '' : why, cls: ok.length ? 'ok' : ck.length ? 'warn' : 'mute' };
 }
+/* 회칙 본문에서 조항 몇 개만 뽑기 — 총회 자료의 판정 기준 표시용 */
+function bylawArticles(text, nums) {
+  const lines = String(text || '').split(/\r?\n/); const out = []; let cur = null;
+  const artNo = l => { const m = l.match(/^\s*제\s*(\d+)\s*조/); return m ? +m[1] : null; };
+  lines.forEach(l => { const n = artNo(l); if (n != null) { cur = nums.includes(n) ? { n, lines: [l.trim()] } : null; if (cur) out.push(cur); return; } if (/^\s*제\s*\d+\s*장/.test(l)) { cur = null; return; } if (cur && l.trim()) cur.lines.push(l.trim()); });
+  return nums.map(n => out.find(x => x.n === n)).filter(Boolean);
+}
+function bylawArtHTML(dd, nums, title) {
+  const b = currentBylaw(dd) || {}; const arts = bylawArticles(b.text, nums); if (!arts.length) return '';
+  return `<div class="bl-basis"><div class="bl-basis-h">${esc(title)} <span>— 청년부 회칙 ${esc(b.revision || '')}</span></div>${arts.map(a => `<div class="bl-art">${a.lines.map((l, i) => `<div${i ? '' : ' class="h"'}>${esc(l.replace(/\s{2,}/g, ' '))}</div>`).join('')}</div>`).join('')}</div>`;
+}
 function assemblyPaper(dd, a, J) {
   const voters = J.list.filter(j => j.voter === 'ok');
   return `<section class="paper"><div class="hd"><div><h1>${esc(a.title)} 자료</h1><div class="sub">중앙성서교회 청년부 · 회칙 ${esc((currentBylaw(dd) || {}).revision || '')} 기준</div></div><div class="meta">${fmtK(a.date)}${a.place ? ' · ' + esc(a.place) : ''}</div></div>
     <h2>1. 정족수 (회칙 13조)</h2><table class="kv"><tbody><tr><th>직전 ${J.q.rows.length}주 출석</th><td>${J.q.rows.map(r => `${r.date.slice(5).replace('-', '/')} ${r.p}명`).join(' · ')}</td></tr><tr><th>평균</th><td>${J.q.avg.toFixed(1)}명</td></tr><tr><th>정족수</th><td><b>${J.q.need}명</b> (평균의 ${J.R.quorumNum}/${J.R.quorumDen})</td></tr></tbody></table>
+    ${bylawArtHTML(dd, [13], '정족수 기준 조항')}
     <h2>현 임원 구성</h2><table class="kv"><tbody>${(() => { const g = staffByKind(dd); return ['임원', '팀장', '팸장'].map(k => `<tr><th>${k}</th><td>${g[k].map(x => `${esc(x.role)} ${esc(x.name)}`).join(', ') || '—'}</td></tr>`).join(''); })()}</tbody></table>
     <h2>2. 결의권 판정표 (회칙 5조)</h2><h3>결의권자 (${voters.length}명${voters.some(j => j.fam) ? ` · 그중 팸장 ${voters.filter(j => j.fam).length}명` : ''})</h3><table><thead><tr><th class="n">번호</th><th>이름</th><th>구분</th><th class="n">1년 출석률</th><th>임원 자격</th><th>사유</th></tr></thead><tbody>${voters.map((j, i) => { const o = officerSum(j); return `<tr><td class="n">${i + 1}</td><td>${esc(j.s.name)}</td><td>${j.fam ? '팸장' : '회원'}</td><td class="n">${j.rate ?? ''}%</td><td>${o.ok}</td><td style="font-size:11px">${esc(o.why)}</td></tr>`; }).join('')}</tbody></table>
     ${(() => { const vr = j => ((j.rsn && j.rsn.voter) || j.why || []).map(x => String(x).replace(/\s+/g, ' ')).filter(Boolean).join(' · ');
@@ -1738,6 +1750,7 @@ function assemblyPaper(dd, a, J) {
       const row = (j, i) => `<tr><td class="n">${i + 1}</td><td>${esc(j.s.name)}</td><td>${j.fam ? '팸장' : '회원'}</td><td class="n">${j.rate != null ? j.rate + '%' : ''}</td><td style="font-size:11px">${esc(vr(j))}</td></tr>`;
       return `<h3>확인 필요 (${ck.length}명)</h3><table>${head}<tbody>${ck.map(row).join('') || '<tr><td colspan="5">없음</td></tr>'}</tbody></table>
       <h3>해당 아님 (${no.length + ex.length}명)</h3><table>${head}<tbody>${no.map(row).join('')}${ex.map((x, i) => `<tr><td class="n">${no.length + i + 1}</td><td>${esc(x.s.name)}</td><td>회원 아님</td><td class="n"></td><td style="font-size:11px">${esc(x.why)}</td></tr>`).join('') || (no.length ? '' : '<tr><td colspan="5">없음</td></tr>')}</tbody></table>`; })()}
+    ${bylawArtHTML(dd, [4, 5, 6, 11], '판정 기준 조항 (회원 자격 4조 · 결의권 5조 · 결석과 제명 6조 · 임원 자격 11조)')}
     <h2>3. 후보자 명단 (회칙 11조)</h2><table><thead><tr><th>직위</th><th>후보</th><th>비고</th></tr></thead><tbody>${[...ASSEMBLY_POS, ...ASSEMBLY_POS_SUB].map(p => { const c = (a.candidates || []).filter(x => x.pos === p); return c.length ? c.map((x, i) => `<tr>${i ? '' : `<th rowspan="${c.length}">${p}</th>`}<td>${esc(x.name)}</td><td>${esc(x.note || '')}</td></tr>`).join('') : ''; }).join('') || '<tr><td colspan="3">후보 미정</td></tr>'}</tbody></table>
     <div class="ft"><b>중앙성서교회 청년부</b><span>CBCS에서 생성 · ${esc(a.date)}-총회자료.pdf</span></div></section>`;
 }
