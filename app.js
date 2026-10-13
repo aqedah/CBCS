@@ -778,6 +778,14 @@ function reportRow(dd, r, edit) {
 function reportTable(dd, rows, edit) {
   return `<div class="tw"><table class="rtab"><thead><tr><th>날짜</th><th>상태</th><th class="n">출석/재적</th><th class="n">출석률</th><th class="n">헌금</th><th>설교</th><th></th></tr></thead><tbody>${rows.map(r => reportRow(dd, r, edit)).join('') || '<tr><td colspan="7" class="note">보고서가 없습니다.</td></tr>'}</tbody></table></div>`;
 }
+// 주일 고르기: 연도 → 그해 주일 목록 (날짜 칸에 숫자를 치다 0002년이 되는 일을 막는다)
+function sundaysOfYear(y) { const out = []; const d = new Date(y, 0, 1); while (d.getDay() !== 0) d.setDate(d.getDate() + 1); while (d.getFullYear() === y) { out.push(iso(d)); d.setDate(d.getDate() + 7); } return out; }
+function sundayPicker(pick, dd) {
+  const y = +pick.slice(0, 4); const firstY = Math.min(2019, ...Object.keys(dd.reports).map(d => +d.slice(0, 4)).filter(Boolean));
+  const years = []; for (let k = YEAR + 1; k >= firstY; k--) years.push(k);
+  const days = sundaysOfYear(y); if (!days.includes(pick)) days.push(pick); days.sort();
+  return `<div class="sun-pick"><button class="btn s" data-sun-step="-7" title="지난 주일">‹</button><select id="w-year" style="width:auto">${years.map(k => `<option ${k === y ? 'selected' : ''}>${k}</option>`).join('')}</select><select id="w-date" style="width:auto">${days.map(d => `<option value="${d}" ${d === pick ? 'selected' : ''}>${+d.slice(5, 7)}월 ${+d.slice(8)}일${dd.reports[d] ? (dd.reports[d].status === 'done' ? ' ✓' : ' ·작성 중') : ''}</option>`).join('')}</select><button class="btn s" data-sun-step="7" title="다음 주일">›</button></div>`;
+}
 function reportList(dd, opts = {}) {
   const list = Object.values(dd.reports).sort((a, b) => a.date < b.date ? 1 : -1);
   const edit = canEdit() && !isCommittee();
@@ -786,7 +794,7 @@ function reportList(dd, opts = {}) {
   const pick = S.sub.pick || lastSunday(); const cur = dd.reports[pick];
   const status = !cur ? '<span class="pill warn">미작성</span>' : cur.status === 'done' ? '<span class="pill ok">작성 완료</span>' : '<span class="pill warn">작성 중</span>';
   const writePanel = edit ? `<div class="card write"><div class="row" style="justify-content:space-between"><div><div class="wt">주일 보고서 작성</div><div class="note">날짜를 고르고 작성을 누르세요. 출석은 이름을 누르기만 하면 됩니다.</div></div>
-      <div class="row"><input type="date" id="w-date" value="${pick}" style="width:auto">${status}<button class="btn p big" id="w-new">${!cur ? '작성 시작' : cur.status === 'done' ? '열어서 수정' : '이어서 작성'}</button>${cur ? `<button class="btn" data-prev="${pick}">보기</button>` : ''}</div></div></div>` : '';
+      <div class="row">${sundayPicker(pick, dd)}${status}<button class="btn p big" id="w-new">${!cur ? '작성 시작' : cur.status === 'done' ? '열어서 수정' : '이어서 작성'}</button>${cur ? `<button class="btn" data-prev="${pick}">보기</button>` : ''}</div></div></div>` : '';
   const months = {}; older.forEach(r => { (months[ym(r.date)] = months[ym(r.date)] || []).push(r); });
   const olderHTML = Object.keys(months).sort().reverse().map(m => `<details class="card fold"><summary>${m.replace('-', '년 ')}월 <span class="note">${months[m].length}장</span></summary>${reportTable(dd, months[m], edit)}</details>`).join('');
   return `<div class="topbar"><div><h1>주일 보고서${opts.title || ''}</h1><div class="sub">${edit ? '최근 보고서가 펼쳐져 있고, 그 전은 달별로 접혀 있습니다' : '열람 전용 · 작성·수정은 PC에서'}</div></div></div>
@@ -891,7 +899,7 @@ function bindAttButtons(dd, r, keep) {
 BIND.weekly = () => {
   const dd = D();
   if (S.sub.preview) { bindPaper(); return; }
-  if (!S.sub.date) { const n = $('#w-new'); if (n) n.onclick = () => { const dt = $('#w-date').value; if (!dt) return; S.sub = { date: dt }; render(); }; const wd = $('#w-date'); if (wd) wd.onchange = e => { S.sub.pick = e.target.value; render(); }; document.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => { S.sub = { date: b.dataset.edit }; render(); }); document.querySelectorAll('[data-prev]').forEach(b => b.onclick = () => { S.sub = { preview: b.dataset.prev }; render(); }); return; }
+  if (!S.sub.date) { const n = $('#w-new'); if (n) n.onclick = () => { const dt = $('#w-date').value; if (!dt) return; S.sub = { date: dt }; render(); }; const wd = $('#w-date'); if (wd) wd.onchange = e => { S.sub.pick = e.target.value; renderHere(); }; const wy = $('#w-year'); if (wy) wy.onchange = () => { const y = +wy.value; const cur = $('#w-date').value; const md = cur.slice(5); const days = sundaysOfYear(y); S.sub.pick = days.find(d => d.slice(5) >= md) || days[days.length - 1]; renderHere(); }; document.querySelectorAll('[data-sun-step]').forEach(b => b.onclick = () => { const d = new Date($('#w-date').value + 'T00:00:00'); d.setDate(d.getDate() + +b.dataset.sunStep); S.sub.pick = iso(d); renderHere(); }); document.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => { S.sub = { date: b.dataset.edit }; render(); }); document.querySelectorAll('[data-prev]').forEach(b => b.onclick = () => { S.sub = { preview: b.dataset.prev }; render(); }); return; }
   const r = dd.reports[S.sub.date] || blankReport(dd, S.sub.date); dd.reports[S.sub.date] = r;
   const keep = () => collect(dd, r);
   $('#w-back').onclick = async () => { keep(); await saveReport(dd, r); S.sub = {}; render(); };
