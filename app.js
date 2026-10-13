@@ -1486,7 +1486,26 @@ function assemblyJudge(dd, a) {
   return { R, list, q: quorumOf(dd, a.date, R, a.quorumBasis || 'check'), excluded }; // 기준 기본값: 출석부 체크 수 (2026 임원회의 결정)
 }
 function lastSundayOfYear(y) { const d = new Date(y, 11, 31); d.setDate(d.getDate() - d.getDay()); return iso(d); }
-function blankAssembly(date) { return { id: date, date, kind: '정기총회', title: `${+date.slice(0, 4)}년 청년부 정기총회`, place: '', overrides: {}, candidates: [], minutes: { opened: '', closed: '', presider: '', secretary: '', attendees: '', order: '개회 기도\n성원 보고\n전 회의록 낭독\n사업·회계 보고\n임원 선거\n기타 안건\n폐회', agenda: [], votes: [], notes: '', status: 'draft' }, unsaved: true }; }
+// 총회 순서 기본안 (한국성서선교회 대의원총회 순서를 청년부에 맞춘 것). 임시총회는 1·2·3·4·9·13·14·15·16만. 임원 교체는 1월 첫 주에 따로 하므로 이·취임 순서는 없음
+const ORDER_ITEMS = [
+  [1, '출석 확인 — 결의권 있는 회원 이름을 부르고 정족수(직전 5주 평균 출석의 2/3)가 됐는지 확인', '서기'],
+  [2, '개회 선언 — 정족수가 찼음을 알리고 총회 시작', '회장'],
+  [3, '순서 확인 — 오늘 순서를 읽고 이대로 진행해도 되는지 묻기', '회장'],
+  [4, '지난 총회 기록 읽기 — 지난 총회에서 정한 것 확인', '서기'],
+  [5, '새 회원 인사 — 올해 새로 들어온 청년 소개', '새 회원'],
+  [6, '한 해 보고 — 올해 한 일(예배·수련회·팸·새가족·전도)', '총무'],
+  [7, '회계 보고 — 올해 수입·지출과 남은 돈', '회계'],
+  [8, '내년 계획과 예산(안) — 설명 뒤 찬반', '회장 → 회원'],
+  [9, '회칙 개정(안) — 바꿀 조항 설명 뒤 찬반 (정족수의 과반 찬성, 23조)', '회장 → 회원'],
+  [10, '회장·부회장 선출 — 후보 자격자 명단 공개 → 자원·추천 → 무기명 비밀투표 → 과반 득표자 확정·공포 (14조)', '회장·서기'],
+  [11, '새 회장단 인사 — 당선자 인사. 총무·서기·회계는 새 회장단이 정해 뒤에 발표', '새 회장'],
+  [13, '그 밖의 안건 — 회원이 내놓은 안건 토의', '회원'],
+  [14, '알림 — 다음 모임·행사 안내', '총무'],
+  [15, '찬송', '다같이'],
+  [16, '기도·폐회', '담당 교역자']];
+const ORDER_TEMP = [1, 2, 3, 4, 9, 13, 14, 15, 16];
+function defaultOrder(kind) { const items = kind === '임시총회' ? ORDER_ITEMS.filter(x => ORDER_TEMP.includes(x[0])) : ORDER_ITEMS; return items.map((x, i) => `${i + 1}. ${x[1]} (${x[2]})`).join('\n'); }
+function blankAssembly(date) { return { id: date, date, kind: '정기총회', title: `${+date.slice(0, 4)}년 청년부 정기총회`, place: '', overrides: {}, candidates: [], minutes: { opened: '', closed: '', presider: '', secretary: '', attendees: '', order: defaultOrder('정기총회'), agenda: [], votes: [], notes: '', status: 'draft' }, unsaved: true }; }
 function pickAssembly(dd) {
   const list = dd.assemblies.slice().sort((a, b) => a.date < b.date ? 1 : -1);
   let a = list.find(x => x.id === S.sub.asm);
@@ -1822,7 +1841,7 @@ BIND.assembly = () => {
   document.querySelectorAll('[data-attd]').forEach(b => b.onclick = e => { e.stopPropagation(); const s = dd.students.find(x => x.id === b.dataset.attd) || (assemblyJudge(dd, a).list.find(j => j.s.id === b.dataset.attd) || {}).s; if (s) openModal(attEvidencePaper(dd, s, a.date)); });
   document.querySelectorAll('[data-qbasis]').forEach(b => b.onclick = async () => { a.quorumBasis = b.dataset.qbasis; await saveAssembly(dd, a); render(); });
   const ba = $('#as-bapt-all'); if (ba) ba.onclick = async () => { const list = dd.students.filter(s => s.status !== 'left' && !isBaptized(s)); if (!list.length) return; ba.disabled = true; ba.textContent = '표기 중…'; for (const s of list) { s.faithPrev = s.faith || ''; s.faith = '세례'; s.flags = [...(s.flags || []).filter(f => !/신급 임시/.test(f)), `신급 임시 표기(세례) ${today()} — 신급 자료로 확인 필요${s.faithPrev ? ' (원래: ' + s.faithPrev + ')' : ''}`]; await backend.set(`depts/${dd.id}/students/${s.id}`, s); } render(); toast(`${list.length}명을 세례로 임시 표기했습니다`); };
-  const read = () => { const d = $('#as-date'); if (!d) return; const nd = d.value || a.date; Object.assign(a, { kind: $('#as-kind').value, title: $('#as-title').value.trim(), place: $('#as-place').value.trim() }); if (nd !== a.date) { a.date = nd; if (a.unsaved) { a.id = nd; S.sub.newDate = nd; } } };
+  const read = () => { const d = $('#as-date'); if (!d) return; const nd = d.value || a.date; Object.assign(a, { kind: $('#as-kind').value, title: $('#as-title').value.trim(), place: $('#as-place').value.trim() }); if (a.minutes && (!a.minutes.order || [defaultOrder('정기총회'), defaultOrder('임시총회')].includes(a.minutes.order))) a.minutes.order = defaultOrder(a.kind); /* 손대지 않은 기본 순서는 구분에 맞춰 바꿈 */ if (nd !== a.date) { a.date = nd; if (a.unsaved) { a.id = nd; S.sub.newDate = nd; } } };
   const dt = $('#as-date'); if (dt) dt.onchange = () => { read(); if (a.unsaved) { S.sub.asm = 'new'; } render(); };
   const sv = $('#as-save'); if (sv) sv.onclick = async () => { read(); await saveAssembly(dd, a); S.sub = { asm: a.id }; render(); toast('총회를 저장했습니다'); };
   const ca = $('#cd-add'); if (ca) ca.onclick = async () => { read(); const sid = $('#cd-sid').value; const s = dd.students.find(x => x.id === sid); if (!s) return; (a.candidates = a.candidates || []).push({ pos: $('#cd-pos').value, sid, name: s.name, note: $('#cd-note').value.trim() }); await saveAssembly(dd, a); S.sub = { asm: a.id }; render(); };
@@ -1866,7 +1885,7 @@ VIEWS.minutes = async () => {
       <div class="f"><span>성원 여부</span><div style="padding-top:8px">결의권자 ${voters}명 · 정족수 ${J.q.need}명 → ${att ? (att >= J.q.need ? '<span class="pill ok">성원</span>' : '<span class="pill bad">성원 미달</span>') : '<span class="note">참석 수를 넣으면 자동 판정</span>'}</div></div>
     </div></div>
     <div class="grid2">
-      <div class="card"><h2>순서</h2><textarea id="mn-order" style="width:100%;min-height:180px" ${ro}>${esc(m.order || '')}</textarea></div>
+      <div class="card"><h2>순서 ${edit ? `<span class="r"><button class="btn s" id="mn-order-default">${esc(a.kind || '정기총회')} 기본 순서 넣기</button></span>` : ''}</h2><textarea id="mn-order" style="width:100%;min-height:${a.kind === '임시총회' ? 220 : 360}px;line-height:1.6" ${ro}>${esc(m.order || '')}</textarea>${edit ? '<div class="note" style="margin-top:4px">정기총회는 16개 순서 전부, 임시총회는 1·2·3·4·9·13·14·15·16만. 임원 교체는 1월 첫 주에 따로 하므로 이·취임 순서는 없습니다. 줄을 지우거나 고쳐 쓰면 됩니다.</div>' : ''}</div>
       <div class="card"><h2>임원 선거 결과 <span class="r">회칙 14조 · 무기명 비밀투표 과반수</span></h2><div class="tw"><table><thead><tr><th>직위</th><th>후보</th><th class="n">득표</th><th class="n">투표수</th><th>결과</th>${edit ? '<th></th>' : ''}</tr></thead><tbody>${(m.votes || []).map((v, i) => `<tr><td><input type="text" data-v="${i}" data-k="pos" value="${esc(v.pos)}" style="width:70px" ${ro}></td><td><input type="text" data-v="${i}" data-k="name" value="${esc(v.name)}" style="width:90px" ${ro}></td><td class="n"><input type="number" data-v="${i}" data-k="yes" value="${esc(v.yes ?? '')}" style="width:64px" ${ro}></td><td class="n"><input type="number" data-v="${i}" data-k="total" value="${esc(v.total ?? '')}" style="width:64px" ${ro}></td><td>${esc(voteResult(v))}</td>${edit ? `<td><button class="btn s d" data-del-v="${i}">빼기</button></td>` : ''}</tr>`).join('') || '<tr><td colspan="6" class="note">총회 자료에서 후보를 올리면 자동으로 채워집니다.</td></tr>'}</tbody></table></div>
         ${edit ? '<div class="row" style="margin-top:8px"><button class="btn s" id="mv-add">줄 추가</button></div>' : ''}</div>
     </div>
@@ -1883,6 +1902,7 @@ function collectMinutes(a) {
 }
 BIND.minutes = () => {
   const dd = S.data.young; const { a } = pickAssembly(dd); if (!a.minutes) return; const m = a.minutes; bindAsmPicker(dd);
+  const od = $('#mn-order-default'); if (od) od.onclick = () => { if ($('#mn-order').value.trim() && !confirm('지금 적힌 순서를 기본 순서로 바꿉니다. 계속할까요?')) return; $('#mn-order').value = defaultOrder(a.kind); };
   const pr = $('#mn-print'); if (pr) pr.onclick = () => { collectMinutes(a); S.sub = { asm: a.id, print: true }; render(); };
   const bk = $('#mn-back'); if (bk) { bk.onclick = () => { delete S.sub.print; render(); }; $('#mn-pr').onclick = () => window.print(); return; }
   const save = async msg => { collectMinutes(a); await saveAssembly(dd, a); S.sub = { asm: a.id }; render(); if (msg) toast(msg); };
