@@ -212,20 +212,25 @@ const youngUnit = y => +y >= 2027 ? '목장' : '팸';
 const isUnited = r => !!(r.united || /세대통합/.test(r.type || ''));
 
 /* ───────────── 화면 뼈대 ───────────── */
-const NAV_PC = [['home','메인','⌂'],['weekly','보고서','✎'],['roster','출석부','☰'],['ledger','회계','₩'],['assets','물품대장','▢'],['outings','주말학습·차량','⇄'],['archive','보관함','▣'],['tutorial','사용 안내','?']];
+// PC 메뉴 순서: 출석부 · 계획서 · 보고서 · 회계 · 물품대장 · (청년부) 회칙·총회 · DB · 사용 안내
+const NAV_PC = [['home','메인','⌂'],['roster','출석부','☰'],['plan','계획서','▦'],['weekly','보고서','✎'],['ledger','회계','₩'],['assets','물품대장','▢'],['archive','DB','▣'],['tutorial','사용 안내','?']];
 const NAV_MOBILE = [['home','홈'],['attend','출결'],['ledger','회계'],['reports','보고서'],['tutorial','안내']];
 // 휴대폰: 출석부(출석 체크·명단·통계), 회계(열람·영수증)는 위쪽 탭으로 나눈다
 const M_ROSTER_TABS = [['attend', '출석 체크'], ['members', '명단'], ['stats', '통계']];
 const M_MONEY_TABS = [['ledger', '회계 열람'], ['receipt', '영수증']];
-const NAV_COMMITTEE = [['home','메인','⌂'],['reports','보고서 열람','✎'],['assets','물품대장 열람','▢'],['roster','출석부 열람','☰'],['outings','주말학습·차량','⇄'],['scholarship','장학','★'],['archive','보관함','▣'],['backup','백업·복원','⇩'],['tutorial','사용 안내','?']];
+const NAV_COMMITTEE = [['home','메인','⌂'],['roster','출석부 열람','☰'],['plan','계획서','▦'],['reports','보고서 열람','✎'],['assets','물품대장 열람','▢'],['archive','DB','▣'],['tutorial','사용 안내','?']];
 const NAV_COMMITTEE_MOBILE = [['home','메인'],['reports','보고서'],['scholarship','장학'],['tutorial','안내']];
 const VIEWS = {}, BIND = {};
 // 메뉴 묶음: 사이드 메뉴에서 누르면 아래로 펼쳐지는 하위 메뉴 (휴대폰은 화면 위 탭)
 const DOC_TABS = () => [[isCommittee() || isMobile() ? 'reports' : 'weekly', '주일 보고서'], ['monthly', '월간 보고서'], ['plan', '연간계획서']];
-const OUT_TABS = () => [['outings', '주말학습'], ['vehicles', '차량 신청']];
+// 계획서 묶음: 연간계획서 + 주말학습계획서(행사별 계획) + 차량 신청(주말학습계획서 첨부 1)
+const PLAN_TABS = () => [['plan', '연간계획서'], ['outings', '주말학습'], ['vehicles', '차량 신청']];
+const REPORT_TABS = () => [[isCommittee() ? 'reports' : 'weekly', '주일 보고서'], ['monthly', '월간 보고서']];
+// DB 묶음: 쌓아 두는 자료 — 보관함(지난 문서), 교육위원회는 장학·백업·복원까지
+const DB_TABS = () => [['archive', '보관함'], ...(isCommittee() ? [['scholarship', '장학'], ['backup', '백업·복원']] : [])];
 const YOUNG_TABS = () => [['bylaws', '회칙·헌장'], ['assembly', '총회 자료'], ['minutes', '총회 회의록']];
 const ROSTER_TABS = () => [['roster', isCommittee() ? '출석부 열람' : '출석부'], ['attlog', '출석 기록'], ...(isCommittee() ? [] : [['stats', '출석 통계']]), ...(isCommittee() ? [] : [['care', isCare() ? '♥ 심방 카드' : '🔒 심방 카드']])];
-const NAV_GROUPS = () => isMobile() ? (isCommittee() ? [{ id: 'docs', items: DOC_TABS() }] : [{ id: 'docs', items: DOC_TABS() }, { id: 'mroster', items: M_ROSTER_TABS }, { id: 'mmoney', items: M_MONEY_TABS }]) : [{ id: 'docs', items: DOC_TABS() }, { id: 'roster', items: ROSTER_TABS() }, { id: 'out', items: OUT_TABS() }, { id: 'young', items: YOUNG_TABS() }];
+const NAV_GROUPS = () => isMobile() ? (isCommittee() ? [{ id: 'docs', items: DOC_TABS() }] : [{ id: 'docs', items: DOC_TABS() }, { id: 'mroster', items: M_ROSTER_TABS }, { id: 'mmoney', items: M_MONEY_TABS }]) : [{ id: 'roster', items: ROSTER_TABS() }, { id: 'plans', items: PLAN_TABS() }, { id: 'docs', items: REPORT_TABS() }, { id: 'young', items: YOUNG_TABS() }, ...(DB_TABS().length > 1 ? [{ id: 'db', items: DB_TABS() }] : [])];
 const groupOfView = v => NAV_GROUPS().find(g => g.items.some(t => t[0] === v));
 const navKeyOf = v => { const g = groupOfView(v); return g ? g.items[0][0] : v; };
 const docTabBar = () => { const g = groupOfView(S.view); return g ? `<div class="doc-tabs no-print">${g.items.map(([k, l]) => `<button data-doctab="${esc(k)}" class="${S.view === k ? 'on' : ''}">${l}</button>`).join('')}</div>` : ''; };
@@ -261,7 +266,7 @@ async function render() {
   if (!S.user) { root.innerHTML = loginView(); bindLogin(); return; }
   const mob = isMobile();
   let nav = isCommittee() ? (mob ? NAV_COMMITTEE_MOBILE : NAV_COMMITTEE) : (mob ? NAV_MOBILE : NAV_PC);
-  if (!mob && (S.dept === 'young' || isCommittee())) { const at = nav.findIndex(n => n[0] === (isCommittee() ? 'scholarship' : 'archive')); nav = [...nav.slice(0, at), ['bylaws', isCommittee() ? '청년부 회칙·총회' : '회칙·총회', '§'], ...nav.slice(at)]; }
+  if (!mob && (S.dept === 'young' || isCommittee())) { const at = nav.findIndex(n => n[0] === 'archive'); nav = [...nav.slice(0, at), ['bylaws', isCommittee() ? '청년부 회칙·총회' : '회칙·총회', '§'], ...nav.slice(at)]; }
   if (!nav.some(n => n[0] === navKeyOf(S.view))) S.view = 'home';
   let body = '';
   try { await loadCommittee(); if (S.dept) await loadDept(S.dept); body = await (VIEWS[S.view] ? VIEWS[S.view]() : ''); if (mob && groupOfView(S.view)) body = docTabBar() + body; } catch (e) { console.error(e); body = `<div class="hint">화면을 그리는 중 문제가 생겼습니다: ${esc(e.message)}</div>`; }

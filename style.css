@@ -501,14 +501,19 @@ td.ie-on:hover{outline:2px dashed var(--accent);outline-offset:-3px;background:v
 /* 회칙 판 비교 */
 .bylaw-text ins.bl-add,.bl-diffbar ins.bl-add{text-decoration:none;color:#0b6b3a;background:#e3f4ea;border-radius:2px;padding:0 2px;font-weight:600}
 .bylaw-text del.bl-del,.bl-diffbar del.bl-del{color:#b42318;background:#fdecea;text-decoration:line-through;border-radius:2px;padding:0 2px}
-.bylaw-text .bl-chg{border-left:3px solid #2e9d5b;padding-left:8px;margin-left:-11px}
+/* 바뀐 문단 표시: 들여쓰기(가·나·다, 1항)를 건드리지 않도록 문단 왼쪽 바깥에 초록 막대만 그린다 */
+.bylaw-text{position:relative}
+.bylaw-text .bl-chg{position:relative}
+.bylaw-text .bl-chg::before{content:'';position:absolute;top:2px;bottom:2px;left:-10px;width:3px;border-radius:2px;background:#2e9d5b}
+.bylaw-text .bl-cl1.bl-chg::before{left:calc(-1em - 10px)}
+.bylaw-text .bl-cl2.bl-chg::before{left:calc(-2.2em - 10px)}
 .bl-diffbar{font-size:12.5px;line-height:1.6;padding:8px 10px;margin:0 0 12px;border:1px dashed var(--line);border-radius:6px;background:var(--bg)}
 .bl-diffbar .lg{margin:0 8px;font-size:12px}
 .bl-diffbar .btn{margin-left:4px}
 .bl-gone{margin:4px 0;font-size:13px}
 [data-theme="dark"] .bylaw-text ins.bl-add,[data-theme="dark"] .bl-diffbar ins.bl-add{color:#7fe0a6;background:#123a24}
 [data-theme="dark"] .bylaw-text del.bl-del,[data-theme="dark"] .bl-diffbar del.bl-del{color:#ff9b91;background:#3d1714}
-@media print{.bylaw-text .bl-chg{border-left:0;padding-left:0;margin-left:0}.bylaw-text ins.bl-add{color:inherit;background:none;font-weight:inherit}.bylaw-text del.bl-del{display:none}}
+@media print{.bylaw-text .bl-chg::before{display:none}.bylaw-text ins.bl-add{color:inherit;background:none;font-weight:inherit}.bylaw-text del.bl-del{display:none}}
 .bl-chgcard .bl-cg{padding:8px 0;border-top:1px dotted var(--line)}
 .bl-chgcard .bl-cg:first-of-type{border-top:0}
 .bl-cg-h{font-weight:700;font-size:13px;margin-bottom:3px;display:flex;gap:6px;align-items:center}
