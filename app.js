@@ -267,7 +267,7 @@ async function render() {
   const mob = isMobile();
   let nav = isCommittee() ? (mob ? NAV_COMMITTEE_MOBILE : NAV_COMMITTEE) : (mob ? NAV_MOBILE : NAV_PC);
   if (!mob && (S.dept === 'young' || isCommittee())) { const at = nav.findIndex(n => n[0] === 'archive'); nav = [...nav.slice(0, at), ['bylaws', isCommittee() ? '청년부 회칙·총회' : '회칙·총회', '§'], ...nav.slice(at)]; }
-  if (!nav.some(n => n[0] === navKeyOf(S.view))) S.view = 'home';
+  if (!nav.some(n => n[0] === navKeyOf(S.view)) && !(S.view && VIEWS[S.view] && (S.sub.print || S.keepView))) S.view = 'home';
   let body = '';
   try { await loadCommittee(); if (S.dept) await loadDept(S.dept); body = await (VIEWS[S.view] ? VIEWS[S.view]() : ''); if (mob && groupOfView(S.view)) body = docTabBar() + body; } catch (e) { console.error(e); body = `<div class="hint">화면을 그리는 중 문제가 생겼습니다: ${esc(e.message)}</div>`; }
   root.innerHTML = `<div class="app ${mob ? 'ro' : ''}">
@@ -305,7 +305,15 @@ async function render() {
 }
 // 튜토리얼: 체험 모드에서만 돈다(실제 자료 화면에서는 체험 모드를 새 창으로 연다)
 function startTour() { if (!DEMO) { window.open(location.pathname + '?demo=1&tour=1', '_blank'); return; } if (window.CBCS_TOUR) window.CBCS_TOUR.start(); }
-matchMedia('(max-width:760px)').addEventListener('change', () => { if (S.user) render(); });
+// 화면 폭이 바뀌면(휴대폰 ↔ PC 화면) 다시 그린다. 단, 인쇄 중에는 다시 그리지 않는다:
+// 인쇄할 때 브라우저가 종이 폭(A4 약 720px)으로 다시 배치하면서 "휴대폰 폭"으로 바뀌었다고 알려 와,
+// 휴대폰 메뉴에 없는 화면(총회 자료 등)이 메인으로 바뀌어 메인 페이지가 인쇄되던 문제
+S.printing = false;
+window.addEventListener('beforeprint', () => { S.printing = true; });
+window.addEventListener('afterprint', () => { S.printing = false; if (S.user && S.mqStale) { S.mqStale = false; render(); } });
+const doPrint = () => { S.printing = true; window.print(); setTimeout(() => { S.printing = false; }, 1500); };
+// 폭이 바뀌어 다시 그릴 때는 보던 화면을 그대로 둔다(휴대폰 메뉴에 없는 화면이어도 메인으로 보내지 않음)
+matchMedia('(max-width:760px)').addEventListener('change', () => { if (!S.user) return; if (S.printing) { S.mqStale = true; return; } S.keepView = true; render().finally(() => { S.keepView = false; }); });
 
 /* ───────────── 로그인 ───────────── */
 const acctName = d => d === 'committee' ? '교육위원회' : DEPTS[d] || '';
@@ -689,7 +697,7 @@ BIND.attlog = () => {
   $('#al-year').onchange = e => { S.sub.year = +e.target.value; S.sub.mon = 0; render(); };
   document.querySelectorAll('[data-mon]').forEach(b => b.onclick = () => { S.sub.mon = +b.dataset.mon; renderHere(); });
   document.querySelectorAll('[data-alsort]').forEach(b => b.onclick = () => { S.sub.sort = b.dataset.alsort; renderHere(); });
-  const pr = $('#al-print'); if (pr) pr.onclick = () => window.print();
+  const pr = $('#al-print'); if (pr) pr.onclick = doPrint;
 };
 VIEWS.dropouts = async () => { S.view = 'roster'; S.sub.show = 'left'; return VIEWS.roster(); };
 function studentCard(dd, s) {
@@ -739,7 +747,7 @@ BIND.dropouts = () => BIND.roster();
 BIND.roster = () => {
   const dd = isCommittee() ? S.data[S.sub.dept || 'kinder'] : D();
   const po = $('#pp-open'); if (po) po.onclick = () => { S.sub.promoPrint = true; render(); };
-  const pb = $('#pp-back'); if (pb) { pb.onclick = () => { delete S.sub.promoPrint; render(); }; $('#pp-print').onclick = () => window.print(); return; }
+  const pb = $('#pp-back'); if (pb) { pb.onclick = () => { delete S.sub.promoPrint; render(); }; $('#pp-print').onclick = doPrint; return; }
   const pr = $('#pp-receive'); if (pr) pr.onclick = async () => {
     const nextYear = YEAR + 1; const inc = (S.promotions || []).filter(p => p.toDept === dd.id && p.year === nextYear && !p.received);
     for (const x of inc) {
@@ -757,7 +765,7 @@ BIND.roster = () => {
   document.querySelectorAll('[data-group]').forEach(b => b.onclick = () => { S.sub.group = b.dataset.group; if (S.sub.show === 'away' || S.sub.show === 'married') S.sub.show = 'active'; render(); });
   const ya = $('#ya-import'); if (ya) ya.onclick = () => importYoungAttendance(dd);
   const lp = $('#lf-print'); if (lp) lp.onclick = () => { S.sub.leftPrint = true; render(); };
-  const lb = $('#lf-back'); if (lb) { lb.onclick = () => { delete S.sub.leftPrint; render(); }; $('#lf-pr').onclick = () => window.print(); return; }
+  const lb = $('#lf-back'); if (lb) { lb.onclick = () => { delete S.sub.leftPrint; render(); }; $('#lf-pr').onclick = doPrint; return; }
   { const boxes = [...document.querySelectorAll('[data-rs]')]; const bt = $('#rs-batch'), cnt = $('#rs-count');
     const upd = () => { const n = boxes.filter(x => x.checked).length; if (bt) bt.disabled = !n; if (cnt) cnt.textContent = n ? `${n}명 선택됨` : '복적할 학생을 체크하세요'; boxes.forEach(x => x.closest('tr').classList.toggle('sel', x.checked)); };
     boxes.forEach(x => { x.onclick = e => e.stopPropagation(); x.onchange = upd; });
@@ -997,7 +1005,7 @@ VIEWS.reports = async () => {
   return reportList(dd, { title: ' — ' + esc(dd.doc.name), pick });
 };
 BIND.reports = () => { if (S.sub.preview) { bindPaper(); return; } document.querySelectorAll('[data-dept]').forEach(b => b.onclick = () => { S.sub = { dept: b.dataset.dept }; render(); }); document.querySelectorAll('[data-prev]').forEach(b => b.onclick = () => { S.sub.preview = b.dataset.prev; render(); }); };
-function bindPaper() { const b = $('#p-back'); if (b) b.onclick = () => { delete S.sub.preview; render(); }; const p = $('#p-print'); if (p) p.onclick = () => window.print(); const e = $('#p-edit'); if (e) e.onclick = () => { S.view = 'weekly'; S.sub = { date: S.sub.preview }; render(); }; }
+function bindPaper() { const b = $('#p-back'); if (b) b.onclick = () => { delete S.sub.preview; render(); }; const p = $('#p-print'); if (p) p.onclick = doPrint; const e = $('#p-edit'); if (e) e.onclick = () => { S.view = 'weekly'; S.sub = { date: S.sub.preview }; render(); }; }
 
 /* 보고서 종이 */
 function reportPaper(dd, r, withBar) {
@@ -1063,7 +1071,7 @@ VIEWS.ledger = async () => {
 };
 BIND.ledger = () => {
   const dd = D(); const lid = S.sub.ledger || (dd.doc.ledgers[0] || {}).id; const L = dd.doc.ledgers.find(l => l.id === lid);
-  if (S.sub.voucherView) { $('#v-back').onclick = () => { delete S.sub.voucherView; render(); }; $('#v-print').onclick = () => window.print(); $('#v-edit').onclick = () => { S.sub.voucherEdit = S.sub.voucherView; delete S.sub.voucherView; render(); }; return; }
+  if (S.sub.voucherView) { $('#v-back').onclick = () => { delete S.sub.voucherView; render(); }; $('#v-print').onclick = doPrint; $('#v-edit').onclick = () => { S.sub.voucherEdit = S.sub.voucherView; delete S.sub.voucherView; render(); }; return; }
   if (S.sub.voucherEdit) { bindVoucherForm(); $('#v-cancel').onclick = () => { delete S.sub.voucherEdit; render(); };
     $('#v-save').onclick = async () => { const isNew = S.sub.voucherEdit === 'new'; const e = isNew ? { id: 'e_' + uid(), dept: dd.id, approver: '', settled: '', source: '지출결의서' } : dd.expenses.find(x => x.id === S.sub.voucherEdit); readVoucherForm(e); if (!e.amount || !e.desc) { toast('적요와 금액을 넣어 주세요'); return; } await backend.set(`depts/${dd.id}/expenses/${e.id}`, e); if (isNew) dd.expenses.push(e); const na = await syncAssetsFromExpense(dd, e); S.sub = { ledger: e.ledgerId, month: ym(e.date), voucherView: e.id }; render(); toast('저장했습니다' + (na ? ` · 물품대장 ${na}건 등록` : '') + ' — 결의서를 인쇄하세요'); };
     return; }
@@ -1227,7 +1235,7 @@ BIND.assets = () => {
   const dd = isCommittee() ? S.data[S.sub.dept || 'kinder'] : D();
   document.querySelectorAll('[data-dept]').forEach(b => b.onclick = () => { S.sub = { dept: b.dataset.dept }; render(); });
   const op = $('#as-open-print'); if (op) op.onclick = () => { S.sub.print = true; render(); };
-  const bk = $('#as-back'); if (bk) { bk.onclick = () => { delete S.sub.print; render(); }; $('#as-print').onclick = () => window.print(); return; }
+  const bk = $('#as-back'); if (bk) { bk.onclick = () => { delete S.sub.print; render(); }; $('#as-print').onclick = doPrint; return; }
   const qi = $('#as-q'); if (qi) qi.onchange = () => { S.sub.q = qi.value; render(); };
   const cf = $('#as-cat-f'); if (cf) cf.onchange = () => { S.sub.cat = cf.value; render(); };
   document.querySelectorAll('[data-st]').forEach(b => b.onclick = () => { S.sub.st = b.dataset.st; render(); });
@@ -1286,7 +1294,7 @@ function monthlyPaper(dd, m) {
     <div class="ft"><b>중앙성서교회 교육위원회</b><span>CBCS에서 생성 · ${esc(dd.doc.name)}-${m}-월간.pdf · 부장·총무·회계 확인 후 월례회 제출</span></div>
   </section>`;
 }
-BIND.monthly = () => { bindMonthNav(); const p = $('#m-print'); if (p) p.onclick = () => window.print(); if (isCommittee()) { document.querySelectorAll('[data-dept]').forEach(b => b.onclick = () => { S.sub.dept = b.dataset.dept; render(); }); return; } const dd = D(); const m = S.sub.month || prevMonth(today().slice(0, 7)); const sv = $('#m-save'); if (sv) sv.onclick = async () => { dd.doc.monthlyPlans[nextMonth(m)] = $('#m-plan').value; await saveDeptDoc(dd.id); render(); toast('계획 저장'); }; };
+BIND.monthly = () => { bindMonthNav(); const p = $('#m-print'); if (p) p.onclick = doPrint; if (isCommittee()) { document.querySelectorAll('[data-dept]').forEach(b => b.onclick = () => { S.sub.dept = b.dataset.dept; render(); }); return; } const dd = D(); const m = S.sub.month || prevMonth(today().slice(0, 7)); const sv = $('#m-save'); if (sv) sv.onclick = async () => { dd.doc.monthlyPlans[nextMonth(m)] = $('#m-plan').value; await saveDeptDoc(dd.id); render(); toast('계획 저장'); }; };
 
 /* ───────────── 연간 계획 ───────────── */
 /* ───────────── 연간 계획서 ───────────── */
@@ -1364,7 +1372,7 @@ BIND.plan = () => {
   document.querySelectorAll('[data-dept]').forEach(b => b.onclick = () => { S.sub = { dept: b.dataset.dept, year: S.sub.year }; render(); });
   $('#pl-year').onchange = e => { collectPlan(plan); S.sub.year = +e.target.value; render(); };
   const op = $('#pl-open-print'); if (op) op.onclick = () => { collectPlan(plan); S.sub.print = true; render(); };
-  const bk = $('#pl-back'); if (bk) { bk.onclick = () => { delete S.sub.print; render(); }; $('#pl-print').onclick = () => window.print(); return; }
+  const bk = $('#pl-back'); if (bk) { bk.onclick = () => { delete S.sub.print; render(); }; $('#pl-print').onclick = doPrint; return; }
   const sv = $('#pl-save'); if (sv) sv.onclick = async () => { collectPlan(plan); await savePlan(dd, plan); toast('저장했습니다'); };
   const cf = $('#pl-confirm'); if (cf) cf.onclick = () => { collectPlan(plan); if (!plan.slogan) { toast('표어를 넣어 주세요'); return; }
     openModal(`<h2>${year}년 연간계획서 확정<button class="btn s" id="modal-close">닫기</button></h2><p>확정하면 수정이 잠기고, ${esc(dd.doc.name)} 메인 화면과 교육위원회 메인에 계획서 내용(표어·말씀·목표·이달 행사)이 알려집니다. 예산 합계 ${won(plan.budget.reduce((a, b) => a + (+b.amount || 0), 0))}원이 ${year}년 장부 연간 예산이 됩니다.</p><div class="row"><button class="btn p" id="pl-yes">확정</button><button class="btn" id="pl-no">취소</button></div>`);
@@ -1872,7 +1880,7 @@ BIND.bylaws = () => {
   const pr = $('#bl-print'); if (pr) pr.onclick = () => { S.sub.print = true; render(); };
   const up = $('#bl-upload'); if (up) up.onclick = () => bylawUploadDialog(dd, b);
   const dn = $('#bl-down'); if (dn) dn.onclick = async () => { const f = await backend.get(`depts/young/bylawFiles/${b.id}`); if (!f || !f.data) { toast('원본 파일을 찾지 못했습니다'); return; } const bin = atob(f.data); const u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([u8], { type: f.type || 'application/octet-stream' })); a.download = f.name || 'bylaw'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); };
-  const bk = $('#bl-back'); if (bk) { bk.onclick = () => { delete S.sub.print; render(); }; $('#bl-pr').onclick = () => window.print(); return; }
+  const bk = $('#bl-back'); if (bk) { bk.onclick = () => { delete S.sub.print; render(); }; $('#bl-pr').onclick = doPrint; return; }
   const dl = $('#bl-del'); if (dl) dl.onclick = () => {
     const DOCN = RULE_DOCS[kind].name; const same = bylawsOf(dd, kind); const isCur = b.status === 'current' && kind === 'young';
     openModal(`<h2>${esc(DOCN)} 판 삭제<button class="btn s" id="modal-close">닫기</button></h2><p>"${esc(b.revision || DOCN)}"${b.date ? ' (' + esc(b.date) + ')' : ''}을(를) 지울까요? 본문과 올린 원본 파일이 함께 지워지고 되돌릴 수 없습니다.</p>${isCur ? `<div class="hint">지금 <b>현행</b> 회칙입니다. 지우면 총회 자료의 자동 판정은 남은 판${same.length > 1 ? ' 중 하나' : '이 없어 기본 기준값'}을 따릅니다. 새 현행을 먼저 지정하는 것이 좋습니다.</div>` : ''}<div class="row" style="margin-top:10px"><button class="btn d" id="bd-yes">삭제</button><button class="btn" id="bd-no">취소</button></div>`);
@@ -1949,7 +1957,8 @@ function saveBlob(blob, name) { const url = URL.createObjectURL(blob); const el 
 function printAsPDF(fileName) {
   const old = document.title; document.title = String(fileName || old).replace(/\.pdf$/i, '');
   const back = () => { document.title = old; window.removeEventListener('afterprint', back); }; window.addEventListener('afterprint', back);
-  toast('인쇄 창에서 대상(프린터)을 "PDF로 저장"으로 고르면 PDF 파일이 됩니다'); setTimeout(() => window.print(), 250);
+  toast('인쇄 창에서 대상(프린터)을 "PDF로 저장"으로 고르면 PDF 파일이 됩니다');
+  S.printing = true; setTimeout(() => { window.print(); setTimeout(() => { S.printing = false; }, 1500); }, 250); // 휴대폰 브라우저는 인쇄 전후 알림을 안 주기도 해서 직접 표시
 }
 async function exportAssemblyXLSX(dd, a, J) {
   const X = await loadLib('xlsx', 'XLSX');
@@ -2123,7 +2132,7 @@ BIND.minutes = () => {
   const dd = S.data.young; const { a } = pickAssembly(dd); if (!a.minutes) return; const m = a.minutes; bindAsmPicker(dd);
   const od = $('#mn-order-default'); if (od) od.onclick = () => { if ($('#mn-order').value.trim() && !confirm('지금 적힌 순서를 기본 순서로 바꿉니다. 계속할까요?')) return; $('#mn-order').value = defaultOrder(a.kind); };
   const pr = $('#mn-print'); if (pr) pr.onclick = () => { collectMinutes(a); S.sub = { asm: a.id, print: true }; render(); };
-  const bk = $('#mn-back'); if (bk) { bk.onclick = () => { delete S.sub.print; render(); }; $('#mn-pr').onclick = () => window.print(); return; }
+  const bk = $('#mn-back'); if (bk) { bk.onclick = () => { delete S.sub.print; render(); }; $('#mn-pr').onclick = doPrint; return; }
   const save = async msg => { collectMinutes(a); await saveAssembly(dd, a); S.sub = { asm: a.id }; render(); if (msg) toast(msg); };
   const sv = $('#mn-save'); if (sv) sv.onclick = () => save('저장했습니다');
   const at = $('#mn-att'); if (at) at.onchange = () => save();
@@ -2476,7 +2485,7 @@ BIND.care = () => {
   const dd = D(); const ul = $('#care-unlock'); if (ul) { ul.onclick = () => adminModeDialog(dd); return; }
   if (!isCare()) return;
   const pw = $('#cr-pw'); if (pw) pw.onclick = () => changeCarePassword(dd);
-  const bk = $('#cr-back'); if (bk) { bk.onclick = () => { delete S.sub.print; render(); }; $('#cr-print').onclick = () => window.print(); return; }
+  const bk = $('#cr-back'); if (bk) { bk.onclick = () => { delete S.sub.print; render(); }; $('#cr-print').onclick = doPrint; return; }
   document.querySelectorAll('[data-show]').forEach(b => b.onclick = () => { S.sub.show = b.dataset.show; render(); });
   $('#cr-sort').onclick = () => { S.sub.sort = S.sub.sort === 'visit' ? '' : 'visit'; render(); };
   const im = $('#cr-import'); if (im) im.onclick = () => importYoungHistory(dd);
@@ -2909,7 +2918,7 @@ VIEWS.vehicles = async () => {
 };
 BIND.vehicles = () => {
   const c = S.committee; const me = isCommittee() ? 'committee' : S.dept;
-  const vb = $('#vh-back'); if (vb) { vb.onclick = () => { delete S.sub.vehPrint; render(); }; $('#vh-print').onclick = () => window.print(); return; }
+  const vb = $('#vh-back'); if (vb) { vb.onclick = () => { delete S.sub.vehPrint; render(); }; $('#vh-print').onclick = doPrint; return; }
   bindMonthNav();
   document.querySelectorAll('[data-vh-print]').forEach(b => b.onclick = () => { S.sub.vehPrint = b.dataset.vhPrint; render(); });
   document.querySelectorAll('[data-vh-edit]').forEach(b => b.onclick = () => { S.sub.vehEdit = b.dataset.vhEdit; render().then(() => { const f = $('#vh-form'); if (f) f.scrollIntoView({ block: 'start' }); }); });
