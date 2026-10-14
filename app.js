@@ -1749,7 +1749,7 @@ async function hwpxToText(buf) {
 }
 async function pdfToText(buf) {
   const lib = await loadLib('pdf', 'pdfjsLib'); lib.GlobalWorkerOptions.workerSrc = LIBS.pdfw;
-  const pdf = await lib.getDocument({ data: new Uint8Array(buf) }).promise; const lines = [];
+  const pdf = await lib.getDocument({ data: new Uint8Array(buf.slice(0)) }).promise; /* 복사본을 넘긴다 — PDF 읽기 도구가 넘겨받은 자료를 가져가 버려서 원본 파일 보관(저장)이 실패하던 문제 */ const lines = [];
   for (let p = 1; p <= pdf.numPages; p++) { const tc = await (await pdf.getPage(p)).getTextContent(); let line = '', y = null; tc.items.forEach(it => { const yy = Math.round(it.transform[5]); if (y !== null && Math.abs(yy - y) > 2) { lines.push(line); line = ''; } line += it.str; y = yy; if (it.hasEOL) { lines.push(line); line = ''; y = null; } }); if (line) lines.push(line); }
   return lines.join('\n');
 }
@@ -2994,16 +2994,19 @@ BIND.meetings = () => {
   const up = $('#mt-up'); if (up) up.onclick = () => { $('#mt-upbox').hidden = false; $('#mt-upbox').scrollIntoView({ block: 'start' }); };
   const fi = $('#mt-files'); if (fi) fi.onchange = async () => { const box = $('#mt-prev'); const files = [...fi.files]; if (!files.length) return; box.innerHTML = `<div class="note">${files.length}개 파일을 읽는 중…</div>`;
     const L = S.meetings[S.dept]; const items = [];
-    for (const f of files) { try { const buf = await f.arrayBuffer(); const raw = cleanBylawText(await fileToRuleText(f, buf)); const p = parseMeetingText(raw, f.name); const dup = L.find(x => x.date === p.date && (x.topic || '') === (p.topic || '')); items.push({ f, buf, p, raw, dup, ok: !!p.date }); } catch (e) { items.push({ f, err: e.message || '읽기 실패' }); } }
+    for (const f of files) { try { const buf = await f.arrayBuffer(); const raw = cleanBylawText(await fileToRuleText(f, buf)); const p = parseMeetingText(raw, f.name); const dup = L.find(x => x.date === p.date && (x.topic || '') === (p.topic || '')) || items.find(y => y.p && y.p.date === p.date && (y.p.topic || '') === (p.topic || '')); items.push({ f, buf, p, raw, dup, ok: !!p.date }); } catch (e) { items.push({ f, err: e.message || '읽기 실패' }); } }
     const good = items.filter(x => !x.err && x.ok && !x.dup);
     box.innerHTML = `<div class="tw"><table><thead><tr><th>파일</th><th>날짜</th><th>주요안건</th><th>작성자</th><th class="n">참석</th><th>읽은 칸</th><th>처리</th></tr></thead><tbody>${items.map(x => x.err ? `<tr><td>${esc(x.f.name)}</td><td colspan="5" class="note">${esc(x.err)}</td><td><span class="pill bad">못 읽음</span></td></tr>` : `<tr><td class="wrap">${esc(x.f.name)}</td><td>${esc(x.p.date || '?')}</td><td class="wrap">${esc(x.p.topic)}</td><td>${esc(x.p.writer)}</td><td class="n">${x.p.attendees.length}</td><td class="note">${x.p.found.length}/9</td><td>${!x.ok ? '<span class="pill warn">날짜 없음 — 건너뜀</span>' : x.dup ? '<span class="pill mute">이미 있음 — 건너뜀</span>' : '<span class="pill ok">새로 넣음</span>'}</td></tr>`).join('')}</tbody></table></div>
-      <div class="row" style="margin-top:8px"><button class="btn p" id="mt-import" ${good.length ? '' : 'disabled'}>${good.length}건 저장</button><span class="note">날짜를 못 찾은 파일은 "새 회의록"으로 직접 넣어 주세요. 저장한 뒤에도 각 회의록에서 고칠 수 있습니다.</span></div>`;
-    const go = $('#mt-import'); if (go) go.onclick = async () => { go.disabled = true; let n = 0;
-      for (const x of good) { const id = 'mt_' + uid(); const small = x.buf.byteLength < 650 * 1024; const o = { id, dept: S.dept, kind: meetLabel(S.dept), created: today(), ...x.p, fileName: x.f.name, imported: true, hasFile: small }; delete o.found;
-        await backend.set(`depts/${S.dept}/meetings/${id}`, o);
-        if (small) { const u8 = new Uint8Array(x.buf); let bin = ''; for (let i = 0; i < u8.length; i += 0x8000) bin += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); await backend.set(`depts/${S.dept}/meetingFiles/${id}`, { name: x.f.name, type: x.f.type || '', size: x.f.size, data: btoa(bin) }).catch(() => { o.hasFile = false; }); }
-        L.push(o); n++; }
-      render(); toast(`회의록 ${n}건을 넣었습니다`); }; };
+      <div class="row" style="margin-top:8px"><button class="btn p" id="mt-import" ${good.length ? '' : 'disabled'}>${good.length}건 저장</button><span class="note">날짜를 못 찾은 파일은 "새 회의록"으로 직접 넣어 주세요. 저장한 뒤에도 각 회의록에서 고칠 수 있습니다.</span></div><pre class="progress" id="mt-prog"></pre>`;
+    const go = $('#mt-import'); if (go) go.onclick = async () => { go.disabled = true; let n = 0; const fails = []; const prog = $('#mt-prog');
+      for (const x of good) { prog.textContent = `저장 중 ${n + fails.length + 1}/${good.length} · ${x.f.name}`;
+        try { const id = 'mt_' + uid(); const o = { id, dept: S.dept, kind: meetLabel(S.dept), created: today(), ...x.p, fileName: x.f.name, imported: true, hasFile: false }; delete o.found;
+          // 원본 파일 먼저(650KB 이하만) — 실패해도 회의록 내용은 저장한다
+          if (x.f.size < 650 * 1024) { try { const u8 = new Uint8Array(await x.f.arrayBuffer()); let bin = ''; for (let i = 0; i < u8.length; i += 0x8000) bin += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); await backend.set(`depts/${S.dept}/meetingFiles/${id}`, { name: x.f.name, type: x.f.type || '', size: x.f.size, data: btoa(bin) }); o.hasFile = true; } catch (e) { console.warn('원본 보관 실패', x.f.name, e); } }
+          await backend.set(`depts/${S.dept}/meetings/${id}`, o); L.push(o); n++;
+        } catch (e) { fails.push(`${x.f.name}: ${e.code || e.message}`); } }
+      if (fails.length) { prog.textContent = `${n}건 저장, ${fails.length}건 실패\n` + fails.join('\n'); toast(`${n}건 저장 · ${fails.length}건 실패 — 아래 내용을 확인하세요`, 5000); setTimeout(() => render(), 6000); }
+      else { render(); toast(`회의록 ${n}건을 넣었습니다`); } }; };
 };
 
 /* ───────────── 주말학습 (교회 양식 "주말학습계획서" + 첨부 1 차량신청서 + 첨부 2 결과보고서) ─────────────
