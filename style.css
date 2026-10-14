@@ -591,3 +591,5 @@ details.card.principle>summary:hover .pr-tg{border-color:var(--accent);color:var
   .side:hover .nav button,.side:focus-within .nav button{font-size:14px;justify-content:flex-start;padding:9px 10px}
   .side:hover .brand,.side:focus-within .brand{font-size:revert;text-align:left}
 }
+.btn.ok-on{background:var(--ok-soft);color:var(--ok);border-color:currentColor;font-weight:600}
+.cls h3 .btn.s{margin-left:6px;vertical-align:middle}

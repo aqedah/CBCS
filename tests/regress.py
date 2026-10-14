@@ -238,5 +238,83 @@ with sync_playwright() as p:
         except Exception: pass
 
 
+    # ── 업무 잇기 기능 (2026-10-14 사용자 승인) ──
+    def t_R15():
+        pg = login(b, 'elem')
+        LS = pg.evaluate("()=>{const d=new Date(); d.setDate(d.getDate()-d.getDay()); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}")
+        go(pg, 'weekly', f"{{date:'{LS}'}}")
+        n = pg.evaluate("()=>document.querySelectorAll('[data-famdone]').length")
+        pg.click('[data-famdone]'); pg.wait_for_timeout(1200)
+        fd = pg.evaluate(f"async()=>Object.keys(((await window.CBCS_APP.backend.get('depts/elem/reports/{LS}'))||{{}}).famDone||{{}}).length")
+        go(pg, 'home'); pg.wait_for_timeout(800); t = pg.inner_text('.main')
+        ok = n > 0 and fd == 1 and ('출석 확인 1/' in t)
+        rec('R15 반·팸별 출석 확인 완료와 홈 표시', ok, f'단추={n}, 저장={fd}, 홈 표시={"출석 확인 1/" in t}')
+        pg.close()
+    try: t_R15()
+    except Exception as e: rec('R15 (실행 오류)', False, str(e)[:160])
+
+    def t_R16():
+        pg = login(b, 'elem')
+        pg.evaluate("""async()=>{const A=window.CBCS_APP, dd=A.S.data.elem; const e={id:'ev_t16',date:'2026-10-25',end:'',title:'가상 가을소풍',note:''}; await A.backend.set('depts/elem/events/ev_t16', e); dd.events.push({_id:e.id,...e});}""")
+        go(pg, 'monthly', "{month:'2026-09'}")
+        pg.click('#m-ev'); pg.wait_for_timeout(500); pg.click('#mev-go'); pg.wait_for_timeout(500)
+        v = pg.input_value('#m-plan')
+        rec('R16 월간 계획에 연간 일정 불러오기', '10/25: 가상 가을소풍' in v, repr(v[-60:]))
+        pg.close()
+    try: t_R16()
+    except Exception as e: rec('R16 (실행 오류)', False, str(e)[:160])
+
+    def t_R17():
+        pg = login(b, 'elem'); go(pg, 'monthly', "{month:'2026-09'}")
+        pg.click('#m-snap'); pg.wait_for_timeout(600)
+        if pg.query_selector('#ms-yes'): pg.click('#ms-yes')
+        pg.wait_for_timeout(1200)
+        saved = pg.evaluate("async()=>!!(await window.CBCS_APP.backend.get('depts/elem/monthlySnaps/2026-09'))")
+        pg.evaluate("()=>{const A=window.CBCS_APP; const r=Object.values(A.S.data.elem.reports).find(x=>x.date.startsWith('2026-09')); r.offering.sunday=9876543; return A.render()}"); pg.wait_for_timeout(1200)
+        fixed = '9,876,543' not in pg.inner_text('.main')
+        pg.click('#m-live'); pg.wait_for_timeout(1000); live = '9,876,543' in pg.inner_text('.main')
+        rec('R17 월간 제출본 고정', saved and fixed and live, f'저장={saved}, 제출본 그대로={fixed}, 지금 자료 반영={live}')
+        pg.close()
+    try: t_R17()
+    except Exception as e: rec('R17 (실행 오류)', False, str(e)[:160])
+
+    def t_R18():
+        pg = login(b, 'elem'); Y = pg.evaluate("()=>window.CBCS_YEAR||2026")
+        pg.evaluate(f"""async()=>{{const A=window.CBCS_APP, dd=A.S.data.elem; const p={{year:{Y},status:'confirmed',slogan:'가상표어',verse:'',verseRef:'',goals:['가상목표 하나'],methods:'가상 방법',ministry:'',worship:'',notes:'',budget:[{{category:'교육',item:'가상교재',amount:10000,note:''}}]}}; await A.backend.set('depts/elem/plans/{Y}', p); dd.plans=dd.plans||{{}}; dd.plans[{Y}]=p; delete dd.plans[{Y+1}];}}""")
+        go(pg, 'plan', f"{{year:{Y + 1}}}")
+        pg.click('#pl-copy'); pg.wait_for_timeout(800); pg.click('#pc-go'); pg.wait_for_timeout(1500)
+        g = pg.evaluate(f"async()=>{{const p=await window.CBCS_APP.backend.get('depts/elem/plans/{Y + 1}')||{{}}; return {{goals:p.goals||[], budget:(p.budget||[]).map(x=>x.item), slogan:p.slogan||''}}}}")
+        rec('R18 전년도 계획서에서 골라 가져오기', '가상목표 하나' in g['goals'] and '가상교재' in g['budget'] and g['slogan'] == '', str(g))
+        pg.close()
+    try: t_R18()
+    except Exception as e: rec('R18 (실행 오류)', False, str(e)[:160])
+
+    def t_R19():
+        pg = login(b, 'elem')
+        prev = pg.evaluate("()=>{const r=Object.values(window.CBCS_APP.S.data.elem.reports).filter(x=>x.date<'2027-01-10'&&x.preacher).sort((a,b)=>a.date<b.date?1:-1)[0]; return r?r.preacher:''}")
+        go(pg, 'weekly', "{date:'2027-01-10'}")
+        pg.click('#w-prev'); pg.wait_for_timeout(500); pg.click('#wp-go'); pg.wait_for_timeout(400)
+        v = pg.input_value('#r-preacher'); off = pg.input_value('#o-sunday')
+        rec('R19 지난주 보고서에서 고정 칸만 가져오기', bool(prev) and v == prev and off == '', f'지난 설교자={prev!r}, 채운 값={v!r}, 헌금칸={off!r}')
+        pg.close()
+    try: t_R19()
+    except Exception as e: rec('R19 (실행 오류)', False, str(e)[:160])
+
+    def t_R20():
+        pg = login(b, 'elem'); go(pg, 'outings')
+        pg.evaluate("""async()=>{const A=window.CBCS_APP; const o={id:'ot_t20',dept:'elem',title:'가상 야외모임',place:'가상 공원',start:'2026-11-07T10:00',end:'2026-11-07T15:00',status:'완료',manager:'가상담당',budget:[],result:{attend:'26명',content:'목장별 나눔',eval:'',spend:[{item:'식비',desc:'점심',amount:'260000'}]}};
+          await A.backend.set('depts/elem/outings/ot_t20', o); A.S.outings.elem.push(o); A.S.sub={outEdit:'ot_t20'}; return A.render();}""")
+        pg.wait_for_timeout(1200)
+        pg.click('#ot-to-rep'); pg.wait_for_timeout(1500); pg.click('#ot-to-rep'); pg.wait_for_timeout(1500)
+        act = pg.evaluate("async()=>((await window.CBCS_APP.backend.get('depts/elem/reports/2026-11-08'))||{}).activity||''")
+        pg.click('#ot-to-exp'); pg.wait_for_timeout(800); pg.click('#oe-go'); pg.wait_for_timeout(1200)
+        pg.click('#ot-to-exp'); pg.wait_for_timeout(800); again = pg.query_selector('#oe-go') is not None
+        if pg.query_selector('#modal-close'): pg.click('#modal-close')
+        ex = pg.evaluate("async()=>(await window.CBCS_APP.backend.list('depts/elem/expenses')).filter(e=>e.outingId==='ot_t20').map(e=>e.amount)")
+        rec('R20 주말학습 결과 → 보고서 활동·지출 초안 (중복 없음)', act.count('가상 야외모임') == 1 and ex == [260000] and not again, f'활동 줄 수={act.count("가상 야외모임")}, 지출={ex}, 두 번째 넣기 가능={again}')
+        pg.close()
+    try: t_R20()
+    except Exception as e: rec('R20 (실행 오류)', False, str(e)[:160])
+
 print(json.dumps(results, ensure_ascii=False, indent=1))
 sys.exit(0 if all(r['pass'] for r in results) else 1)

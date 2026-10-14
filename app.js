@@ -387,7 +387,7 @@ function calendarHTML(m, events) {
 }
 function allEvents(dd) { const c = S.committee ? S.committee.events.map(e => ({ ...e, c: true })) : []; return [...c, ...(dd ? dd.events : [])]; }
 function monthNav(m) { return `<div class="row" style="margin-bottom:8px"><button class="btn s" data-month="${prevMonth(m)}">‹ 이전 달</button><button class="btn s" data-month="${today().slice(0,7)}">이번 달</button><button class="btn s" data-month="${nextMonth(m)}">다음 달 ›</button><span class="note">${m.replace('-','년 ')}월</span></div>`; }
-function bindMonthNav() { document.querySelectorAll('[data-month]').forEach(b => b.onclick = () => { S.sub.month = b.dataset.month; render(); }); }
+function bindMonthNav() { document.querySelectorAll('[data-month]').forEach(b => b.onclick = () => { S.sub.month = b.dataset.month; delete S.sub.mLive; render(); }); }
 function eventListHTML(events, m) { const ev = events.filter(e => ym(e.date) === m || (e.end && e.date <= m+'-31' && e.end >= m+'-01')).sort((a,b) => a.date < b.date ? -1 : 1); return `<div class="list">${ev.map(e => `<div class="item"><div><div class="t">${esc(e.title)}</div><div class="d">${fmtK(e.date)}${e.end ? ' ~ ' + fmtK(e.end) : ''}${e.note ? ' · ' + esc(e.note) : ''}</div></div>${e.c ? '<span class="pill mute">교육위원회</span>' : ''}</div>`).join('') || '<div class="note">이달 일정이 없습니다.</div>'}</div>`; }
 
 /* ───────────── 패치 현황 전광판 ───────────── */
@@ -415,6 +415,7 @@ async function todoCard(dd) {
   const item = (cls, title, desc, btn) => `<div class="todo ${cls}"><div><div class="t">${title}</div><div class="d">${desc}</div></div>${btn || ''}</div>`;
   return `<div class="card todo-card"><h2>오늘 할 일 <span class="r">${fmtK(today())}</span></h2><div class="todo-list">
     ${item(r ? 'ok' : 'warn', `${isSun ? '오늘' : '지난'} 주일 출석 ${r ? `${att}명 체크` : '아직 없음'}`, `${fmtK(ls)} · 재적 ${reg}명`, `<button class="btn s" data-goto="${isMobile() ? 'attend' : 'roster'}">출석 체크 ›</button>`)}
+    ${(() => { const f = famDoneCount(dd, r); if (!r || !f.ids.length) return ''; const L = dd.doc.classLabel; return item(f.wait.length ? 'warn' : 'ok', f.wait.length ? `${L} 출석 확인 ${f.done.length}/${f.ids.length}` : `${L} 출석 모두 확인 (${f.ids.length}개)`, f.wait.length ? '기다리는 ' + L + ': ' + f.wait.map(c => esc(c.name)).join(', ') : '서기는 보고서를 마무리하면 됩니다', f.wait.length ? `<button class="btn s" data-goto="${isMobile() ? 'attend' : 'report'}" data-date="${esc(ls)}">출석 보기 ›</button>` : ''); })()}
     ${item(todo.length ? 'warn' : 'ok', todo.length ? `끝내지 않은 주일 보고서 ${todo.length}건` : '최근 8주 보고서 모두 작성 완료', todo.length ? todo.slice(-4).reverse().map(d => d.slice(5).replace('-', '/')).join(' · ') + (todo.length > 4 ? ' 외' : '') : '수고하셨습니다', todo.length && canEdit() ? `<button class="btn s" data-goto="report" data-date="${esc(todo[todo.length - 1])}">보고서 쓰기 ›</button>` : '')}
     ${item(pend.length ? 'warn' : 'ok', pend.length ? `회계에 안 붙인 영수증 ${pend.length}장` : '처리할 영수증 없음', pend.length ? pend.slice(0, 3).map(x => `${(x.date || '').slice(5).replace('-', '/')} ${esc(x.vendor || x.memo || '')} ${x.amount ? won(x.amount) + '원' : ''}`.trim()).join(' · ') : '사진으로 올린 영수증은 회계 지출에 붙이면 사라집니다', pend.length ? `<button class="btn s" data-goto="ledger">회계로 ›</button>` : '')}
   </div></div>`;
@@ -856,7 +857,7 @@ BIND.roster = () => {
 };
 
 /* ───────────── 주일 보고서 ───────────── */
-function blankReport(dd, date) { return { dept: dd.id, date, united: false, weekLabel: `${+date.slice(5,7)}월 ${weekIndex(date)}주`, type: `${dd.doc.name} 주일예배`, presider: '', prayer: '', text: '', title: '', preacher: '', notice: '', counts: {}, att: {}, attUnmatched: {}, absent: {}, newcomers: [], offering: { sunday: 0, tithe: 0, thanks: 0, other: 0 }, teachersPresent: [], teachersAbsent: {}, activity: '', meeting: '', special: '', schedule: [], classRows: [], writer: '', flags: [], status: 'draft', source: '앱 입력' }; }
+function blankReport(dd, date) { return { dept: dd.id, date, united: false, weekLabel: `${+date.slice(5,7)}월 ${weekIndex(date)}주`, type: `${dd.doc.name} 주일예배`, presider: '', prayer: '', text: '', title: '', preacher: '', notice: '', counts: {}, att: {}, attUnmatched: {}, absent: {}, newcomers: [], offering: { sunday: 0, tithe: 0, thanks: 0, other: 0 }, teachersPresent: [], teachersAbsent: {}, famDone: {}, activity: '', meeting: '', special: '', schedule: [], classRows: [], writer: '', flags: [], status: 'draft', source: '앱 입력' }; }
 /* 주일 보고서 저장 — 처음 저장은 통째로, 그다음부터는 바뀐 칸만(출석·결석 사유는 학생 한 명 단위).
    교사 여러 명이 휴대폰으로 같은 주일 출석을 동시에 체크해도 서로 덮어쓰지 않는다. 저장 뒤 서버 것을 다시 읽어 남이 바꾼 것도 합친다. */
 const jsonEq = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
@@ -870,7 +871,7 @@ async function saveReport(dd, r) {
     Object.keys(cur).forEach(k => { if (!jsonEq(cur[k], blank[k])) first[k] = cur[k]; });
     await backend.setMerge(p, first); }
   else {
-    const ch = []; const MAPS = ['att', 'absent'];
+    const ch = []; const MAPS = ['att', 'absent', 'famDone', 'outingLinks'];
     new Set([...Object.keys(base), ...Object.keys(cur)]).forEach(k => {
       if (k === '_id') return;
       if (MAPS.includes(k) && cur[k] && typeof cur[k] === 'object' && base[k] && typeof base[k] === 'object') { new Set([...Object.keys(base[k]), ...Object.keys(cur[k])]).forEach(id => { if (!jsonEq(base[k][id], cur[k][id])) ch.push([[k, id], cur[k][id] === undefined ? DEL : cur[k][id]]); }); }
@@ -928,13 +929,17 @@ function myClassIds(dd) {
   let v = ''; try { v = localStorage.getItem('cbcs-myclass-' + dd.id) || ''; } catch (e) {}
   return v && dd.doc.classes.some(c => c.id === v) ? [v] : [];
 }
+/* 팸(반·목장)별 출석 확인 완료: 담당 교사가 자기 팸 출석을 다 확인했으면 누른다. 서기는 아직 안 끝난 팸만 기다리면 된다 */
+function famDoneBtn(dd, r, id) { const v = (r.famDone || {})[id]; return `<button class="btn s ${v ? 'ok-on' : ''}" data-famdone="${esc(id)}" title="${v ? '확인 완료 ' + esc(v) + ' — 누르면 되돌림' : '이 ' + esc(dd.doc.classLabel) + ' 출석을 다 확인했으면 누르세요'}">${v ? '✓ 확인 완료' : '확인 완료'}</button>`; }
+function famDoneCount(dd, r) { const ids = dd.doc.classes.filter(c => classStudents(dd, c.id).length).map(c => c.id); const done = ids.filter(id => (r && r.famDone || {})[id]); return { ids, done, wait: dd.doc.classes.filter(c => ids.includes(c.id) && !done.includes(c.id)) }; }
 function attButtons(r, st) { return st.map(x => { const a = r.att[x.id] || ''; return `<div class="s ${a === 'P' ? 'p' : a === 'O' ? 'o' : ''}"><button data-att="${esc(x.id)}">${esc(x.name)}</button>${a ? `<span class="m">${a === 'P' ? '출석' : '온라인·본당'}</span>` : ''}</div>`; }).join('') || '<div class="note">학생 없음</div>'; }
 // 휴대폰 출석 체크: 반마다 접어 두고, 내 반만 펼침. 결석 사유도 반 안에서 적음
 function attSectionMobile(dd, r) {
   const s = reportStats(dd, r); const mine = myClassIds(dd); S.attOpen = S.attOpen || {};
   const group = (id, name, sub, st) => { const open = S.attOpen[id] ?? mine.includes(id); const abs = st.filter(x => !r.att[x.id]);
-    return `<details class="cls m-cls" data-cls="${esc(id)}" ${open ? 'open' : ''}><summary><h3>${esc(name)}${mine.includes(id) ? ' <span class="pill info">내 반</span>' : ''} <span>${esc(sub)} · ${st.filter(x => r.att[x.id]).length}/${st.length}</span></h3></summary>
+    return `<details class="cls m-cls" data-cls="${esc(id)}" ${open ? 'open' : ''}><summary><h3>${esc(name)}${mine.includes(id) ? ' <span class="pill info">내 반</span>' : ''} <span>${esc(sub)} · ${st.filter(x => r.att[x.id]).length}/${st.length}${(r.famDone || {})[id] ? ' · ✓' : ''}</span></h3></summary>
       <div class="att">${attButtons(r, st)}</div>
+      ${id !== '__none' ? `<div class="row" style="margin:6px 0">${famDoneBtn(dd, r, id)}</div>` : ''}
       ${abs.length ? `<div class="m-abs"><div class="note">결석 사유</div>${abs.map(x => `<label class="m-abs-row"><span>${esc(x.name)}</span><input type="text" data-abs="${esc(x.id)}" value="${esc(r.absent[x.id] || '')}" placeholder="사유"></label>`).join('')}</div>` : ''}</details>`; };
   const loose = activeStudents(dd).filter(x => !dd.doc.classes.some(c => c.id === x.classId));
   return `<div class="card"><h2>출석 체크 <span class="r">한 번 누르면 출석, 두 번 온라인·본당, 세 번 결석</span></h2>
@@ -949,8 +954,9 @@ function attSection(dd, r, mobileOnly) {
   const s = reportStats(dd, r);
   const unmatched = Object.keys(r.attUnmatched || {});
   return `<div class="card"><h2>${mobileOnly ? '출석 체크' : '2. 출석 체크'} <span class="r">한 번 누르면 출석, 두 번 누르면 온라인·본당, 세 번 누르면 결석</span></h2>
+      ${(() => { const f = famDoneCount(dd, r); return f.ids.length ? `<div class="note" style="margin:-4px 0 8px">${esc(dd.doc.classLabel)} 출석 확인 ${f.done.length}/${f.ids.length}${f.wait.length ? ' · 기다리는 ' + esc(dd.doc.classLabel) + ': ' + f.wait.map(c => esc(c.name)).join(', ') : ' · 모두 확인'}</div>` : ''; })()}
       <div class="tiles" style="margin-bottom:12px"><div class="tile"><div class="v">${s.p}</div><div class="l">출석 / 재적 ${s.total}</div></div><div class="tile"><div class="v">${s.m} · ${s.f}</div><div class="l">남 · 여</div></div><div class="tile"><div class="v">${s.site} + ${s.on}</div><div class="l">현장 + 온라인·본당</div></div><div class="tile"><div class="v">${s.rate}%</div><div class="l">출석률 <span class="tag">자동</span></div></div></div>
-      ${dd.doc.classes.map(c => { const st = classStudents(dd, c.id); return `<div class="cls"><h3>${esc(c.name)} <span>${esc(c.teacher || '')} · ${st.filter(x => r.att[x.id]).length}/${st.length}</span></h3><div class="att">
+      ${dd.doc.classes.map(c => { const st = classStudents(dd, c.id); return `<div class="cls"><h3>${esc(c.name)} <span>${esc(c.teacher || '')} · ${st.filter(x => r.att[x.id]).length}/${st.length}</span> ${st.length ? famDoneBtn(dd, r, c.id) : ''}</h3><div class="att">
         ${st.map(x => { const a = r.att[x.id] || ''; return `<div class="s ${a === 'P' ? 'p' : a === 'O' ? 'o' : ''}"><button data-att="${esc(x.id)}">${esc(x.name)}</button>${a ? `<span class="m">${a === 'P' ? '출석' : '온라인·본당'}</span>` : ''}</div>`; }).join('') || '<div class="note">학생 없음</div>'}
       </div></div>`; }).join('')}
       ${(() => { const st = activeStudents(dd).filter(x => !dd.doc.classes.some(c => c.id === x.classId)); return st.length ? `<div class="cls"><h3>반 미배정</h3><div class="att">${st.map(x => { const a = r.att[x.id] || ''; return `<div class="s ${a === 'P' ? 'p' : a === 'O' ? 'o' : ''}"><button data-att="${esc(x.id)}">${esc(x.name)}</button>${a ? `<span class="m">${a === 'P' ? '출석' : '온라인·본당'}</span>` : ''}</div>`; }).join('')}</div></div>` : ''; })()}
@@ -966,7 +972,7 @@ function editor(dd, r) {
   return `<div class="topbar"><div><h1>${fmtK(r.date)} 주일 보고서</h1><div class="sub">${esc(dd.doc.name)} · ${+r.date.slice(5,7)}월 ${weekIndex(r.date)}주${r.imported ? ' · HWP에서 변환된 자료' : ''}</div></div><div class="row"><button class="btn" id="w-back">목록</button><button class="btn" id="w-save">임시 저장</button><button class="btn p" id="w-done">작성 완료</button></div></div>
   ${r.flags && r.flags.length ? `<div class="flags" style="margin-bottom:12px">확인 필요: ${r.flags.map(esc).join(' / ')} <button class="btn s" id="w-clear-flags">확인했음</button></div>` : ''}
   <div class="stack">
-    <div class="card"><h2>1. 예배 현황</h2><div class="fields">
+    <div class="card"><h2>1. 예배 현황 <span class="r"><button class="btn s" id="w-prev">지난주에서 가져오기</button></span></h2><div class="fields">
       <label class="f"><span>예배 종류</span><input type="text" id="r-type" value="${esc(r.type)}"></label>
       <label class="f"><span>세대통합예배</span><label class="row" style="padding:7px 0;font-size:13px;color:var(--fg)"><input type="checkbox" id="r-united" ${isUnited(r) ? 'checked' : ''}> 본당 세대통합예배로 드림</label></label>
       <label class="f"><span>사회자</span><input type="text" id="r-presider" value="${esc(r.presider)}"></label>
@@ -1010,6 +1016,7 @@ function collect(dd, r) {
   document.querySelectorAll('[data-tabs]').forEach(i => { if (i.value.trim()) r.teachersAbsent[i.dataset.tabs] = i.value.trim(); else delete r.teachersAbsent[i.dataset.tabs]; });
 }
 function bindAttButtons(dd, r, keep) {
+  document.querySelectorAll('[data-famdone]').forEach(b => b.onclick = async e => { e.preventDefault(); e.stopPropagation(); keep(); const id = b.dataset.famdone; r.famDone = { ...(r.famDone || {}) }; if (r.famDone[id]) delete r.famDone[id]; else r.famDone[id] = new Date().toISOString().slice(0, 16).replace('T', ' '); await saveReport(dd, r); renderHere(); });
   document.querySelectorAll('[data-att]').forEach(b => b.onclick = async () => { keep(); const id = b.dataset.att; const a = r.att[id]; if (!a) r.att[id] = 'P'; else if (a === 'P') r.att[id] = 'O'; else delete r.att[id]; if (r.att[id]) delete r.absent[id]; await saveReport(dd, r); renderHere(); });
 }
 BIND.weekly = () => {
@@ -1020,6 +1027,12 @@ BIND.weekly = () => {
   const keep = () => collect(dd, r);
   $('#w-back').onclick = async () => { keep(); await saveReport(dd, r); S.sub = {}; render(); };
   $('#w-save').onclick = async () => { keep(); await saveReport(dd, r); toast('임시 저장했습니다'); };
+  // 지난주에서 가져오기: 매주 비슷한 칸(예배 종류·사회자·기도·설교자·작성자)만 골라 채운다. 출석·헌금·새친구·완료 상태는 가져오지 않는다
+  const wp = $('#w-prev'); if (wp) wp.onclick = () => { keep(); const prev = Object.values(dd.reports).filter(x => x.date < r.date && (x.preacher || x.presider || x.prayer || x.writer)).sort((a, b) => a.date < b.date ? 1 : -1)[0];
+    if (!prev) { toast('가져올 지난 보고서가 없습니다'); return; }
+    const F = [['type', '예배 종류'], ['presider', '사회자'], ['prayer', '대표기도'], ['preacher', '설교자'], ['writer', '작성자']].filter(([k]) => String(prev[k] || '').trim());
+    openModal(`<h2>${fmtK(prev.date)} 보고서에서 가져오기<button class="btn s" id="modal-close">닫기</button></h2><p class="note">고른 칸만 채웁니다. 이미 적은 칸은 덮어씁니다. 출석·헌금·새친구는 가져오지 않습니다.</p><div class="list">${F.map(([k, l]) => `<label class="item"><input type="checkbox" data-wp="${k}" ${k === 'prayer' ? '' : 'checked'}> <b style="min-width:70px;display:inline-block">${l}</b> ${esc(prev[k])}${r[k] && r[k] !== prev[k] ? ` <span class="note">(지금: ${esc(r[k])})</span>` : ''}</label>`).join('')}</div><div class="row" style="margin-top:10px"><button class="btn p" id="wp-go">채우기</button></div>`);
+    $('#modal-close').onclick = closeModal; $('#wp-go').onclick = () => { document.querySelectorAll('[data-wp]:checked').forEach(x => { const el = $('#r-' + x.dataset.wp); if (el) el.value = prev[x.dataset.wp]; }); S.dirty = true; closeModal(); toast('채웠습니다 — 확인 후 저장하세요'); }; };
   $('#w-done').onclick = async () => { keep();
     const st = reportStats(dd, r); const miss = [!String(r.title || '').trim() && '설교 제목', !String(r.preacher || '').trim() && '설교자', !st.p && '출석(아무도 체크 안 됨)', !st.offSum && '헌금(모두 0원)'].filter(Boolean);
     if (miss.length && !r._doneOk) { openModal(`<h2>작성 완료 전 확인<button class="btn s" id="modal-close">닫기</button></h2><p>아래 칸이 비어 있습니다.</p><ul>${miss.map(x => `<li>${esc(x)}</li>`).join('')}</ul><p class="note">정말 없는 경우(예배 없음, 헌금 없음 등)에는 "그래도 완료"를 누르세요. 비어 있는 그대로 완료됩니다.</p><div class="row"><button class="btn" id="wd-back">돌아가서 채우기</button><button class="btn p" id="wd-go">그래도 완료</button></div>`);
@@ -1306,17 +1319,23 @@ BIND.assets = () => {
 };
 
 /* ───────────── 월간 보고서 ───────────── */
+/* 월간 보고서 제출본 고정: 제출한 날의 보고서를 그대로 저장해 둔다. 뒤에 주일 보고서·장부를 고쳐도 제출본은 바뀌지 않는다 */
+async function monthSnap(dd, m) { dd.msnap = dd.msnap || {}; if (!(m in dd.msnap)) { try { dd.msnap[m] = await backend.get(`depts/${dd.id}/monthlySnaps/${m}`); } catch (e) { dd.msnap[m] = null; } } return dd.msnap[m]; }
+function monthlyShown(dd, m, snap, edit) {
+  if (snap && !S.sub.mLive) return `<div class="card no-print" style="border-left:4px solid var(--ok)"><b>제출본</b> — ${esc(snap.at)}에 고정한 보고서입니다. 그 뒤 주일 보고서·장부를 고쳐도 이 내용은 바뀌지 않습니다. <span class="row" style="display:inline-flex;gap:6px;margin-left:8px"><button class="btn s" id="m-live">지금 자료로 보기</button>${edit ? '<button class="btn s d" id="m-unsnap">고정 풀기</button>' : ''}</span></div>${snap.html}`;
+  return `${snap ? `<div class="card no-print"><b>지금 자료로 보는 중</b> — ${esc(snap.at)}에 고정한 제출본이 따로 있습니다. <button class="btn s" id="m-snapview">제출본 보기</button></div>` : ''}${monthlyPaper(dd, m)}`;
+}
 VIEWS.monthly = async () => {
   const m = S.sub.month || prevMonth(today().slice(0, 7));
   if (isCommittee()) {
-    const d = S.sub.dept || 'kinder'; const dd = await loadDept(d);
-    return `<div class="topbar no-print"><div><h1>월간 보고서</h1><div class="sub">부서를 고르면 그 달 보고서가 보입니다</div></div>${canEdit() ? '<button class="btn p" id="m-print">PDF로 저장 / 인쇄</button>' : ''}</div><div class="stack">${monthNav(m)}<div class="row no-print">${Object.entries(DEPTS).map(([k,v]) => `<button class="btn ${d === k ? 'p' : ''}" data-dept="${esc(k)}">${v}</button>`).join('')}</div>${monthlyPaper(dd, m)}</div>`;
+    const d = S.sub.dept || 'kinder'; const dd = await loadDept(d); const snap = await monthSnap(dd, m);
+    return `<div class="topbar no-print"><div><h1>월간 보고서</h1><div class="sub">부서를 고르면 그 달 보고서가 보입니다${snap ? ' · 이 달은 제출본이 고정되어 있습니다' : ''}</div></div>${canEdit() ? '<button class="btn p" id="m-print">PDF로 저장 / 인쇄</button>' : ''}</div><div class="stack">${monthNav(m)}<div class="row no-print">${Object.entries(DEPTS).map(([k,v]) => `<button class="btn ${d === k ? 'p' : ''}" data-dept="${esc(k)}">${v}</button>`).join('')}</div>${monthlyShown(dd, m, snap, false)}</div>`;
   }
-  const dd = D();
+  const dd = D(); const snap = await monthSnap(dd, m);
   return `<div class="topbar no-print"><div><h1>월간 보고서</h1><div class="sub">주일 보고서와 회계에서 자동으로 모입니다. 다음 달 계획만 적으면 됩니다.</div></div>${canEdit() ? '<button class="btn p" id="m-print">PDF로 저장 / 인쇄</button>' : ''}</div>
   <div class="stack">${monthNav(m)}
-    <div class="card edit-only"><h2>${+nextMonth(m).slice(5)}월 계획 <span class="r">부장 입력 · 한 줄에 한 주</span></h2><textarea id="m-plan" placeholder="1주: …&#10;2주: …">${esc(dd.doc.monthlyPlans[nextMonth(m)] || '')}</textarea><div class="row" style="margin-top:8px"><button class="btn" id="m-save">저장</button></div></div>
-    ${monthlyPaper(dd, m)}
+    <div class="card edit-only"><h2>${+nextMonth(m).slice(5)}월 계획 <span class="r">부장 입력 · 한 줄에 한 주</span></h2><textarea id="m-plan" placeholder="1주: …&#10;2주: …">${esc(dd.doc.monthlyPlans[nextMonth(m)] || '')}</textarea><div class="row" style="margin-top:8px"><button class="btn" id="m-save">저장</button><button class="btn" id="m-ev">연간 일정 불러오기</button>${canEdit() ? `<button class="btn" id="m-snap">${snap ? '제출본 다시 고정' : '제출본으로 고정'}</button>` : ''}<span class="note">제출할 때 "제출본으로 고정"을 누르면 그날 내용이 그대로 남습니다</span></div></div>
+    ${monthlyShown(dd, m, snap, canEdit())}
   </div>`;
 };
 function monthlyPaper(dd, m) {
@@ -1346,7 +1365,24 @@ function monthlyPaper(dd, m) {
     <div class="ft"><b>중앙성서교회 교육위원회</b><span>CBCS에서 생성 · ${esc(dd.doc.name)}-${m}-월간.pdf · 부장·총무·회계 확인 후 월례회 제출</span></div>
   </section>`;
 }
-BIND.monthly = () => { bindMonthNav(); const p = $('#m-print'); if (p) p.onclick = doPrint; if (isCommittee()) { document.querySelectorAll('[data-dept]').forEach(b => b.onclick = () => { S.sub.dept = b.dataset.dept; render(); }); return; } const dd = D(); const m = S.sub.month || prevMonth(today().slice(0, 7)); const sv = $('#m-save'); if (sv) sv.onclick = async () => { dd.doc.monthlyPlans[nextMonth(m)] = $('#m-plan').value; await saveDeptDoc(dd.id); render(); toast('계획 저장'); }; };
+BIND.monthly = () => { bindMonthNav(); const p = $('#m-print'); if (p) p.onclick = doPrint;
+  const lv = $('#m-live'); if (lv) lv.onclick = () => { S.sub.mLive = true; renderHere(); }; const sv0 = $('#m-snapview'); if (sv0) sv0.onclick = () => { delete S.sub.mLive; renderHere(); };
+  if (isCommittee()) { document.querySelectorAll('[data-dept]').forEach(b => b.onclick = () => { S.sub.dept = b.dataset.dept; delete S.sub.mLive; render(); }); return; }
+  const dd = D(); const m = S.sub.month || prevMonth(today().slice(0, 7)); const nm = nextMonth(m);
+  const sv = $('#m-save'); if (sv) sv.onclick = async () => { dd.doc.monthlyPlans[nm] = $('#m-plan').value; await saveDeptDoc(dd.id); render(); toast('계획 저장'); };
+  // 다음 달 연간 일정 불러오기: 고른 일정만 "월/일: 제목" 줄로 계획 칸 끝에 붙인다(이미 있는 줄은 건너뜀). 저장은 직접
+  const ev = $('#m-ev'); if (ev) ev.onclick = () => { const list = dd.events.filter(e => ym(e.date) === nm).sort((a, b) => a.date < b.date ? -1 : 1);
+    const line = e => `${+e.date.slice(5, 7)}/${+e.date.slice(8, 10)}: ${e.title}`; const cur = $('#m-plan').value;
+    openModal(`<h2>${+nm.slice(5)}월 연간 일정 불러오기<button class="btn s" id="modal-close">닫기</button></h2>${list.length ? `<p class="note">계획 칸 끝에 붙일 일정을 고르세요. 붙인 뒤 문장을 다듬고 "저장"을 누르세요.</p><div class="list">${list.map((e, i) => `<label class="item"><input type="checkbox" data-mev="${i}" ${cur.includes(line(e)) ? 'disabled' : 'checked'}> ${esc(line(e))}${cur.includes(line(e)) ? ' <span class="note">(이미 있음)</span>' : ''}</label>`).join('')}</div><div class="row" style="margin-top:10px"><button class="btn p" id="mev-go">계획 칸에 붙이기</button></div>` : `<p>${+nm.slice(5)}월에 연간계획 일정이 없습니다. 연간계획서에서 일정을 먼저 넣어 주세요.</p>`}`);
+    $('#modal-close').onclick = closeModal; const go = $('#mev-go'); if (go) go.onclick = () => { const add = [...document.querySelectorAll('[data-mev]:checked')].map(x => line(list[+x.dataset.mev])); const ta = $('#m-plan'); ta.value = [ta.value.replace(/\s+$/, ''), ...add].filter(Boolean).join('\n'); S.dirty = true; closeModal(); toast(`${add.length}개 붙였습니다 — 저장을 눌러 주세요`); }; };
+  const sn = $('#m-snap'); if (sn) sn.onclick = async () => { const reps = monthReports(dd, m); const draft = reps.filter(r => r.status !== 'done').length;
+    const html = monthlyPaper(dd, m); const doc = { month: m, at: today(), html, reports: reps.length, draft };
+    const fix = async () => { await backend.set(`depts/${dd.id}/monthlySnaps/${m}`, doc); dd.msnap = dd.msnap || {}; dd.msnap[m] = doc; delete S.sub.mLive; renderHere(); toast('제출본으로 고정했습니다'); };
+    if (!draft) return fix();
+    openModal(`<h2>제출본으로 고정<button class="btn s" id="modal-close">닫기</button></h2><p>작성 중인 주일 보고서 ${draft}장이 들어 있습니다. 주일 보고서를 먼저 끝내는 것이 좋습니다. 그래도 지금 내용으로 고정할까요?</p><div class="row"><button class="btn" id="ms-no">돌아가기</button><button class="btn p" id="ms-yes">그래도 고정</button></div>`);
+    $('#modal-close').onclick = closeModal; $('#ms-no').onclick = closeModal; $('#ms-yes').onclick = () => { closeModal(); fix(); }; };
+  const us = $('#m-unsnap'); if (us) us.onclick = async () => { await backend.del(`depts/${dd.id}/monthlySnaps/${m}`); dd.msnap[m] = null; renderHere(); toast('고정을 풀었습니다 — 지금 자료로 보입니다'); };
+};
 
 /* ───────────── 연간 계획 ───────────── */
 /* ───────────── 연간 계획서 ───────────── */
@@ -1385,7 +1421,7 @@ VIEWS.plan = async () => {
   const pick = isCommittee() ? `<div class="row" style="margin-bottom:10px">${Object.entries(DEPTS).map(([k, v]) => `<button class="btn ${dd.id === k ? 'p' : ''}" data-dept="${esc(k)}">${v}</button>`).join('')}</div>` : '';
   const ro = (v, ml) => edit ? '' : 'readonly';
   return `<div class="topbar"><div><h1>${year}년 연간계획서${isCommittee() ? ' — ' + esc(dd.doc.name) : ''}</h1><div class="sub">${plan.status === 'confirmed' ? `<span class="pill ok">확정</span> ${esc(plan.confirmedAt)} · 메인 화면에 알림` : '<span class="pill warn">작성 중</span> 확정하면 메인 화면에 알려집니다'}</div></div>
-    <div class="row"><select id="pl-year" style="width:auto">${[YEAR - 1, YEAR, YEAR + 1].map(y => `<option ${y === year ? 'selected' : ''}>${y}</option>`).join('')}</select>${canEdit() ? '<button class="btn" id="pl-open-print">계획서 출력</button>' : ''}${canEdit() && !isCommittee() ? (plan.status === 'confirmed' ? '<button class="btn" id="pl-unconfirm">확정 취소(수정)</button>' : '<button class="btn" id="pl-save">저장</button><button class="btn p" id="pl-confirm">확정</button>') : ''}</div></div>
+    <div class="row"><select id="pl-year" style="width:auto">${[YEAR - 1, YEAR, YEAR + 1].map(y => `<option ${y === year ? 'selected' : ''}>${y}</option>`).join('')}</select>${canEdit() ? '<button class="btn" id="pl-open-print">계획서 출력</button>' : ''}${canEdit() && !isCommittee() ? (plan.status === 'confirmed' ? '<button class="btn" id="pl-unconfirm">확정 취소(수정)</button>' : `<button class="btn" id="pl-copy">${year - 1}년에서 가져오기</button><button class="btn" id="pl-save">저장</button><button class="btn p" id="pl-confirm">확정</button>`) : ''}</div></div>
   ${pick}
   <div class="stack">
     <div class="card"><h2>1. 개요</h2><div class="fields">
@@ -1433,6 +1469,19 @@ BIND.plan = () => {
     openModal(`<h2>${year}년 연간계획서 확정<button class="btn s" id="modal-close">닫기</button></h2><p>확정하면 수정이 잠기고, ${esc(dd.doc.name)} 메인 화면과 교육위원회 메인에 계획서 내용(표어·말씀·목표·이달 행사)이 알려집니다. 예산 합계 ${won(plan.budget.reduce((a, b) => a + (+b.amount || 0), 0))}원이 ${year}년 장부 연간 예산이 됩니다.</p><div class="row"><button class="btn p" id="pl-yes">확정</button><button class="btn" id="pl-no">취소</button></div>`);
     $('#pl-no').onclick = closeModal; $('#pl-yes').onclick = async () => { plan.status = 'confirmed'; plan.confirmedAt = today(); await savePlan(dd, plan); if (year === YEAR) { const main = dd.doc.ledgers.find(l => l.kind === 'budget'); if (main) { main.budget = plan.budget.reduce((a, b) => a + (+b.amount || 0), 0); await saveDeptDoc(dd.id); } } closeModal(); render(); toast('확정했습니다 — 메인 화면에 알립니다'); }; };
   const uc = $('#pl-unconfirm'); if (uc) uc.onclick = async () => { plan.status = 'draft'; await savePlan(dd, plan); render(); toast('확정을 풀었습니다. 수정 후 다시 확정하세요'); };
+  // 전년도 계획서에서 가져오기: 고른 항목만. 빈 칸은 채우고, 글이 있으면 아래에 덧붙임. 일정은 같은 요일이 되도록 52주 뒤 날짜로(확인 필요)
+  const pc = $('#pl-copy'); if (pc) pc.onclick = async () => { collectPlan(plan); const prev = await loadPlan(dd, year - 1);
+    if (!prev) { toast(`${year - 1}년 계획서가 없습니다`); return; }
+    const pevs = planEvents(dd, year - 1); const shift = d => { const t = new Date(d + 'T00:00:00'); t.setDate(t.getDate() + 364); return iso(t); };
+    const F = [['slogan', '표어', prev.slogan, false], ['verse', '주제 말씀', [prev.verse, prev.verseRef].filter(Boolean).join(' '), false], ['goals', '교육 목표', (prev.goals || []).join(' / '), true], ['methods', '교육 방법·실천 방안', prev.methods, true], ['ministry', '세부 사역', prev.ministry, true], ['worship', '예배 순서', prev.worship, true], ['notes', '비고', prev.notes, false], ['budget', `예산 항목 ${(prev.budget || []).length}개`, (prev.budget || []).map(b => b.item).join(', '), true], ['events', `연중 일정 ${pevs.length}건 (날짜는 같은 요일로 옮김 — 꼭 확인)`, pevs.slice(0, 6).map(e => e.title).join(', ') + (pevs.length > 6 ? ' …' : ''), false]].filter(x => String(x[2] || '').trim());
+    openModal(`<h2>${year - 1}년 계획서에서 가져오기<button class="btn s" id="modal-close">닫기</button></h2><p class="note">고른 항목만 가져옵니다. 비어 있는 칸은 채우고, 이미 쓴 칸은 그 아래에 덧붙입니다. 예산은 같은 이름의 항목이 없을 때만 넣습니다. 가져온 뒤 올해에 맞게 고치세요.</p><div class="list">${F.map(([k, l, v, on]) => `<label class="item" style="align-items:flex-start"><input type="checkbox" data-pc="${k}" ${on ? 'checked' : ''}> <div><b>${esc(l)}</b><div class="note">${esc(String(v).slice(0, 140))}</div></div></label>`).join('')}</div><div class="row" style="margin-top:10px"><button class="btn p" id="pc-go">가져오기</button></div>`);
+    $('#modal-close').onclick = closeModal; $('#pc-go').onclick = async () => { const pick = new Set([...document.querySelectorAll('[data-pc]:checked')].map(x => x.dataset.pc)); const join = (a, b) => !String(a || '').trim() ? (b || '') : !String(b || '').trim() || String(a).includes(b) ? a : a + '\n' + b;
+      if (pick.has('slogan')) plan.slogan = plan.slogan || prev.slogan; if (pick.has('verse')) { plan.verse = plan.verse || prev.verse; plan.verseRef = plan.verseRef || prev.verseRef; }
+      if (pick.has('goals')) plan.goals = [...new Set([...(plan.goals || []), ...(prev.goals || [])])];
+      ['methods', 'ministry', 'worship', 'notes'].forEach(k => { if (pick.has(k)) plan[k] = join(plan[k], prev[k]); });
+      if (pick.has('budget')) (prev.budget || []).forEach(b => { if (!plan.budget.some(x => x.item === b.item)) plan.budget.push({ ...b }); });
+      let nEv = 0; if (pick.has('events')) for (const e of pevs) { const d = shift(e.date); if (dd.events.some(x => x.date === d && x.title === e.title)) continue; const ne = { id: 'ev_' + uid(), date: d, end: e.end ? shift(e.end) : '', title: e.title, note: [e.note, '전년도에서 복사 — 날짜 확인'].filter(Boolean).join(' · '), from: e._id || e.id }; await backend.set(`depts/${dd.id}/events/${ne.id}`, ne); dd.events.push({ _id: ne.id, ...ne }); nEv++; }
+      await savePlan(dd, plan); closeModal(); render(); toast(`가져왔습니다${nEv ? ` (일정 ${nEv}건 — 날짜를 꼭 확인하세요)` : ''}`); }; };
   const ea = $('#ev-add'); if (ea) ea.onclick = async () => { await keepDraft(); const dt = $('#ev-date').value, t = $('#ev-title').value.trim(); if (!dt || !t) return; const e = { id: 'ev_' + uid(), date: dt, end: '', title: t, note: '' }; await backend.set(`depts/${dd.id}/events/${e.id}`, e); dd.events.push({ _id: e.id, ...e }); render(); };
   document.querySelectorAll('[data-del-ev]').forEach(b => b.onclick = async () => { await keepDraft(); await backend.del(`depts/${dd.id}/events/${b.dataset.delEv}`); dd.events = dd.events.filter(e => (e._id || e.id) !== b.dataset.delEv); render(); });
   const ba = $('#b-add'); if (ba) ba.onclick = async () => { collectPlan(plan); const a = +$('#b-amt').value, it = $('#b-item').value.trim(); if (!a || !it) return; plan.budget.push({ category: $('#b-cat').value.trim(), item: it, amount: a, note: '' }); await savePlan(dd, plan); render(); };
@@ -3212,7 +3261,8 @@ VIEWS.outings = async () => {
         <div class="fields" style="margin-top:8px"><label class="f" style="grid-column:1/-1"><span>참석인원</span><input type="text" id="ot-r-att" value="${esc((ed.result || {}).attend || '')}"></label></div>
         <label class="f"><span>진행내용</span><textarea id="ot-r-content" rows="5">${esc((ed.result || {}).content || '')}</textarea></label>
         <label class="f"><span>평가</span><textarea id="ot-r-eval" rows="3">${esc((ed.result || {}).eval || '')}</textarea></label>
-        <div class="note" style="margin:10px 0 4px">예산 사용 내역 (항목 · 내용 · 금액)</div>${outRowsEditor('ot-spend', (ed.result || {}).spend, '내용', 'desc')}</details>
+        <div class="note" style="margin:10px 0 4px">예산 사용 내역 (항목 · 내용 · 금액)</div>${outRowsEditor('ot-spend', (ed.result || {}).spend, '내용', 'desc')}
+        ${ed.id && !isCommittee() ? `<div class="row" style="margin-top:10px"><button class="btn s" id="ot-to-rep">주일 보고서 활동에 넣기</button><button class="btn s" id="ot-to-exp">회계 지출 초안 만들기</button><span class="note">결과를 저장한 뒤 누르세요. 같은 행사는 두 번 들어가지 않습니다.</span></div>` : ''}</details>
       <div class="row" style="margin-top:12px"><button class="btn p" id="ot-save">저장</button><button class="btn" id="ot-cancel">닫기</button>${ed.id ? `<button class="btn" id="ot-car">${ed.vehicleId ? '연결된 차량 신청 열기' : '이 행사로 차량 신청 만들기'}</button><button class="btn d" id="ot-del">삭제</button>` : ''}</div></div>` : ''}
     <div class="card"><h2>${isCommittee() ? '전 부서 주말학습' : '우리 부서 주말학습'} <span class="r">${all.length}건</span></h2>${all.length ? `<div class="tw"><table><thead><tr><th>일시</th>${isCommittee() ? '<th>부서</th>' : ''}<th>행사</th><th>장소</th><th class="n">예산</th><th>차량</th><th>상태</th><th></th></tr></thead><tbody>
       ${all.map(o => `<tr><td>${esc(outDays(o))}</td>${isCommittee() ? `<td>${esc(DEPTS[o.dept] || '')}</td>` : ''}<td>${esc(o.title || o.purpose || '')}</td><td class="wrap">${esc(o.place || '')}</td><td class="n">${outSum(o.budget) ? won(outSum(o.budget)) : ''}</td><td>${o.vehicleId ? '신청함' : ''}</td><td>${isCommittee() && canEdit() ? `<select data-ot-st="${esc(o.dept)}|${o.id}">${OUT_STATUS.map(k => `<option ${(o.status || '작성 중') === k ? 'selected' : ''}>${k}</option>`).join('')}</select>` : pill(o.status)}</td>
@@ -3234,6 +3284,21 @@ BIND.outings = () => {
   const save = async () => { const { o, isNew } = collect(); if (!o.start) { toast('시작 일시를 넣어 주세요'); return null; } const { _id, ...data } = o; await backend.set(`depts/${S.dept}/outings/${o.id}`, data); if (isNew) S.outings[S.dept].push(o); S.sub.outEdit = o.id; return o; };
   const sv = $('#ot-save'); if (sv) sv.onclick = async () => { try { if (await save()) { await renderHere(); toast('저장했습니다'); } } catch (e) { toast('저장 실패: ' + (e.code || e.message), 4000); } };
   const dl = $('#ot-del'); if (dl) dl.onclick = () => { const o = getEd(); if (!o) return; openModal(`<h2>계획서 삭제<button class="btn s" id="modal-close">닫기</button></h2><p>"${esc(o.title || o.purpose || '주말학습')}" 계획서를 지울까요? 되돌릴 수 없습니다. 연결된 차량 신청은 차량 신청 화면에 그대로 남습니다.</p><div class="row"><button class="btn d" id="od-yes">삭제</button><button class="btn" id="od-no">취소</button></div>`); $('#modal-close').onclick = closeModal; $('#od-no').onclick = closeModal; $('#od-yes').onclick = async () => { await backend.del(`depts/${S.dept}/outings/${o.id}`); S.outings[S.dept] = S.outings[S.dept].filter(x => x.id !== o.id); delete S.sub.outEdit; closeModal(); render(); toast('삭제했습니다'); }; };
+  // 결과 → 주일 보고서: 행사 뒤 첫 주일(그날이 주일이면 그날) 보고서의 "예배 및 활동"에 한 줄 덧붙임. outingLinks로 두 번 들어가지 않게
+  const tr = $('#ot-to-rep'); if (tr) tr.onclick = async () => { const o = await save(); if (!o) return; const dd = D(); const st = new Date(o.start.slice(0, 10) + 'T00:00:00'); st.setDate(st.getDate() + (7 - st.getDay()) % 7); const dt = iso(st);
+    const r = dd.reports[dt] || blankReport(dd, dt); dd.reports[dt] = r; r.outingLinks = { ...(r.outingLinks || {}) };
+    if (r.outingLinks[o.id]) { toast(`${fmtK(dt)} 보고서에 이미 넣었습니다`); return; }
+    const res = o.result || {}; const line = `주말학습: ${o.title || o.purpose || ''}${o.place ? ' (' + o.place + ')' : ''}${res.attend ? ' — ' + res.attend : ''}${res.content ? '. ' + res.content.split('\n')[0] : ''}`;
+    r.activity = [String(r.activity || '').replace(/\s+$/, ''), line].filter(Boolean).join('\n'); r.outingLinks[o.id] = today(); await saveReport(dd, r); toast(`${fmtK(dt)} 주일 보고서 활동에 넣었습니다`); };
+  // 결과 → 회계 지출 초안: 사용 내역 줄마다 지출 1건. 아이디를 행사·줄 번호로 정해 다시 눌러도 겹치지 않음. "확인 필요" 표시를 달아 영수증·장부 확인 뒤 정리
+  const te = $('#ot-to-exp'); if (te) te.onclick = async () => { const o = await save(); if (!o) return; const dd = D(); const rows = ((o.result || {}).spend || []).filter(x => +String(x.amount || '').replace(/[^0-9]/g, ''));
+    if (!rows.length) { toast('결과보고서의 예산 사용 내역(금액)을 먼저 적어 주세요'); return; }
+    const y = +o.start.slice(0, 4); const led = dd.doc.ledgers.find(l => l.kind === 'budget' && +(l.year || YEAR) === y) || dd.doc.ledgers.find(l => +(l.year || YEAR) === y) || dd.doc.ledgers[0];
+    if (!led) { toast('회계 장부가 없습니다'); return; }
+    const date = (o.end || o.start).slice(0, 10); const mk = (x, i) => ({ id: `e_out_${o.id}_${i}`, dept: dd.id, ledgerId: led.id, date, category: x.item || '주말학습', desc: `${o.title || '주말학습'} — ${x.desc || x.item || ''}`.trim(), amount: +String(x.amount).replace(/[^0-9]/g, ''), requester: o.manager || '', approver: '', receipt: false, settled: '', note: '', flags: ['주말학습 결과에서 만든 지출 초안 — 영수증·장부 확인'], source: '주말학습 결과', outingId: o.id });
+    const list = rows.map(mk); const fresh = list.filter(e => !dd.expenses.some(x => x.id === e.id));
+    openModal(`<h2>회계 지출 초안 만들기<button class="btn s" id="modal-close">닫기</button></h2><p>${esc(led.name || '장부')}에 아래 ${fresh.length}건을 지출로 넣습니다. 각 건에 "확인 필요"가 붙으니, 영수증과 맞춰 본 뒤 회계에서 정리하세요.${list.length > fresh.length ? ` (이미 넣은 ${list.length - fresh.length}건은 건너뜀)` : ''}</p>${fresh.length ? `<div class="tw"><table><thead><tr><th>날짜</th><th>항목</th><th>내역</th><th class="n">금액</th></tr></thead><tbody>${fresh.map(e => `<tr><td>${esc(e.date)}</td><td>${esc(e.category)}</td><td>${esc(e.desc)}</td><td class="n">${won(e.amount)}</td></tr>`).join('')}</tbody></table></div><div class="row" style="margin-top:10px"><button class="btn p" id="oe-go">넣기</button></div>` : '<p class="note">새로 넣을 것이 없습니다.</p>'}`);
+    $('#modal-close').onclick = closeModal; const go = $('#oe-go'); if (go) go.onclick = async () => { for (const e of fresh) { await backend.set(`depts/${dd.id}/expenses/${e.id}`, e); dd.expenses.push(e); } closeModal(); toast(`지출 초안 ${fresh.length}건을 넣었습니다 — 회계에서 확인하세요`); }; };
   const car = $('#ot-car'); if (car) car.onclick = async () => { try { const o = await save(); if (!o) return; const c = await loadShared();
       if (!o.vehicleId || !c.vehicles.find(v => v.id === o.vehicleId)) { const v = { id: 'vh_' + uid(), dept: S.dept, created: today(), date: o.start.slice(0, 10), dateEnd: (o.end || '').slice(0, 10) > o.start.slice(0, 10) ? o.end.slice(0, 10) : '', start: o.start.slice(11, 16), end: (o.end || '').slice(11, 16), vehicle: '', people: (o.people.match(/\d+/g) || []).reduce((t, n) => t + +n, 0) || '', dest: o.place, purpose: o.title || o.purpose, requester: o.manager, requesterPhone: o.phone, status: '신청', outingId: o.id };
         const { id, ...data } = v; await backend.set(`vehicles/${v.id}`, { id, ...data }); c.vehicles.push(v); o.vehicleId = v.id; await backend.set(`depts/${S.dept}/outings/${o.id}`, (({ _id, ...x }) => x)(o)); }
@@ -3241,7 +3306,7 @@ BIND.outings = () => {
 };
 /* ───────────── 자료 내려받기 · 영수증 사진 정리 (교육위원회) ─────────────
    새 자료 종류(하위 묶음)를 만들면 아래 두 목록에 이름을 추가해야 내려받기에 포함된다. */
-const BACKUP_DEPT_SUBS = ['bylawFiles', 'students', 'reports', 'expenses', 'incomes', 'events', 'notices', 'assets', 'plans', 'timeline', 'officers', 'retreats', 'receipts', 'receiptImgs', 'bylaws', 'assemblies', 'outings', 'meetings', 'meetingFiles']; // care(심방 카드)는 부서 관리자만 읽을 수 있어 넣지 못함
+const BACKUP_DEPT_SUBS = ['monthlySnaps', 'bylawFiles', 'students', 'reports', 'expenses', 'incomes', 'events', 'notices', 'assets', 'plans', 'timeline', 'officers', 'retreats', 'receipts', 'receiptImgs', 'bylaws', 'assemblies', 'outings', 'meetings', 'meetingFiles']; // care(심방 카드)는 부서 관리자만 읽을 수 있어 넣지 못함
 const BACKUP_TOP = ['scholarship', 'archive', 'promotions', 'vehicles', 'siblings', 'meta'];
 async function collectAll(withImgs, say) {
   const raw = []; const miss = []; const put = (path, x) => { const { _id, ...data } = x; raw.push({ path, data }); };
