@@ -164,10 +164,11 @@ function ledgerSummary(dd, ledgerId, m) {
   return { L, prevEx, monEx, cumEx: prevEx+monEx, monIn, carryIn, balance: carryIn + monIn - monEx, remain: (L.budget||0) - prevEx - monEx, rate: L.budget ? Math.round((prevEx+monEx)/L.budget*1000)/10 : null, noDateEx, noDateIn, totalEx: sum(ex), totalIn: sum(inc) };
 }
 // 학생 상태: 재적·새친구·장기결석·제적과, 재적은 유지하되 잠시 못 나오는 사정(군입대·학업·사업·직접 입력)
-const STATUS_OPTS = [['active', '재적'], ['newcomer', '새친구'], ['longabsent', '장기결석'], ['military', '군입대'], ['study', '학업'], ['business', '사업'], ['custom', '직접 입력'], ['left', '제적']];
+const STATUS_OPTS = [['active', '재적'], ['newcomer', '새친구'], ['longabsent', '장기결석'], ['military', '군입대'], ['study', '학업'], ['business', '사업'], ['custom', '직접 입력'], ['left', '제적'], ['archived', '보관']];
 const AWAY = ['longabsent', 'military', 'study', 'business', 'custom'];
 const inRoll = s => (s.status === 'active' || AWAY.includes(s.status)) && !isGrad(s) && !(isYoungStu(s) && s.group === '팸장');
-const statusName = s => (S.data && S.data.young && isYoungStu(s) && isFamStaff(S.data.young, s) && (isGrad(s) || s.status === 'left' || s.group === '팸장')) ? '팸장' : isGrad(s) ? `자격 종료(${s.married ? '결혼' : s.churchRole ? '직분' : s.leftKind || '졸업'})` : isYoungStu(s) && s.group === '팸장' && s.status !== 'left' ? '팸장' : s.status === 'custom' ? (s.statusText || '기타') : (Object.fromEntries(STATUS_OPTS)[s.status] || s.status || '');
+const statusName = s => s.status === 'left' && s.archived ? '보관' : statusName0(s);
+const statusName0 = s => (S.data && S.data.young && isYoungStu(s) && isFamStaff(S.data.young, s) && (isGrad(s) || s.status === 'left' || s.group === '팸장')) ? '팸장' : isGrad(s) ? `자격 종료(${s.married ? '결혼' : s.churchRole ? '직분' : s.leftKind || '졸업'})` : isYoungStu(s) && s.group === '팸장' && s.status !== 'left' ? '팸장' : s.status === 'custom' ? (s.statusText || '기타') : (Object.fromEntries(STATUS_OPTS)[s.status] || s.status || '');
 const statusPill = s => `<span class="pill ${isGrad(s) || (isYoungStu(s) && (s.group === '팸장' || statusName(s) === '팸장')) ? 'info' : s.status === 'active' ? 'ok' : s.status === 'newcomer' ? 'info' : AWAY.includes(s.status) ? 'warn' : 'mute'}">${esc(statusName(s))}</span>`;
 const activeStudents = dd => dd.students.filter(inRoll);
 // 교사·임원 표시 순서: 교역자 → 부장 → 부감 → 회장 → 부회장 → 총무 → 서기 → 회계 → 부총무 등 → 팀장 → 팸장 → 담임·보조 → 나머지 (같은 순위면 등록 순서)
@@ -247,7 +248,7 @@ function navButton(n) {
   const inside = g.items.some(t => t[0] === S.view); const open = S.navOpen[g.id] ?? inside;
   return `<button data-navgroup="${esc(g.id)}" class="grp ${inside ? 'in' : ''} ${open ? 'open' : ''}"><span class="k">${n[2] || ''}</span>${n[1]}<span class="caret">${open ? '▴' : '▾'}</span></button>${open ? `<div class="sub-nav">${g.items.map(([k, l]) => `<button data-nav="${esc(k)}" class="${S.view === k ? 'on' : ''}">${l}</button>`).join('')}</div>` : ''}`;
 }
-const FOOTER = `<footer class="foot"><p>🔒 모든 자료는 교육부 전용 데이터베이스(Google Firebase)에 보관되며, 부서 비밀번호로 로그인한 사람만 볼 수 있습니다. 교회 밖에 공개하거나 넘기지 않습니다. 다만 "지도에서 보기"를 누르면 그 주소가 지도 서비스로 전달됩니다.</p><p>제작자: 이삭 목사 · 중앙성서교회</p></footer>`;
+const FOOTER = `<footer class="foot"><p>🔒 모든 자료는 교육부 전용 데이터베이스(Google Firebase)에 보관되며, 부서 비밀번호로 로그인한 사람만 볼 수 있습니다. 교회 밖에 공개하거나 넘기지 않습니다.</p><p>제작자: 이삭 목사 · 중앙성서교회</p></footer>`;
 
 // 같은 화면에서 저장·복적처럼 고친 뒤 다시 그릴 때는 보던 위치를 그대로 둔다
 const renderHere = () => { S.keepScroll = window.scrollY; return render(); };
@@ -531,6 +532,16 @@ function lastAttended(dd, s) { const r = namedReports(dd).filter(r => (r.att || 
 function absentStreak(dd, s) { const reps = namedReports(dd); let n = 0; for (let i = reps.length - 1; i >= 0; i--) { if ((reps[i].att || {})[s.id]) break; n++; } return { n, of: reps.length }; }
 const leftRule = dd => dd.id === 'young' ? { weeks: 52, label: '1년 이상 연속 결석 (회칙 6조 · 유학·군복무·온라인 출석은 제외)' } : { weeks: 12, label: '12주(약 3개월) 이상 연속 결석' };
 function setLeft(s, date, kind, reason) { (s.statusLog = s.statusLog || []).push({ date, from: s.status, to: 'left', kind, reason }); Object.assign(s, { status: 'left', leftDate: date, leftKind: kind, leftReason: reason }); }
+// 과거 기록만 있는 사람: 최근 2년(올해·작년) 소속 이력이 없고, 앱에서 재적으로 되돌린 적도 없는 제적자 — 보관 후보
+const pastOnly = s => !(s.history || []).some(h => +h.year >= YEAR - 1) && !(s.statusLog || []).some(l => l.to && l.to !== 'left');
+function archivedSection(dd, edit) {
+  const list = rosterCats(dd).archived.sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+  const lastYear = s => Math.max(0, ...(s.history || []).map(h => +h.year || 0)) || '';
+  return `<div class="card"><h2>보관 명단 <span class="r">${list.length}명</span></h2>
+    ${edit && list.length ? `<div class="row" style="margin-bottom:8px;gap:8px"><button class="btn" id="ab-left" disabled>선택한 사람 제적 명단으로</button><button class="btn p" id="ab-active" disabled>선택한 사람 복적</button><span class="note" id="ab-count">사람을 체크하세요</span></div>` : ''}
+    ${list.length ? `<div class="tw"><table><thead><tr>${edit ? '<th style="width:34px"><input type="checkbox" id="ab-all" title="모두 선택"></th>' : ''}<th class="n no">번호</th><th>이름</th><th>성별</th><th>생년월일</th><th class="n">마지막 소속 연도</th><th>처리일</th><th>비고</th></tr></thead><tbody>
+    ${list.map((s, i) => `<tr>${edit ? `<td><input type="checkbox" data-ab="${esc(s.id)}" aria-label="${esc(s.name)} 선택"></td>` : ''}<td class="n no">${i + 1}</td><td><button class="chip" data-student="${esc(s.id)}">${esc(s.name)}</button></td><td>${esc(s.sex || '')}</td><td>${esc(s.birth || '')}</td><td class="n">${esc(lastYear(s))}</td><td>${esc(s.leftDate || '')}</td><td class="wrap note">${esc(s.note || '')}</td></tr>`).join('')}</tbody></table></div>` : '<div class="note">보관한 사람이 없습니다. "제적" 칸에서 사람을 골라 "보관으로" 옮기거나, 학생 카드에서 상태를 "보관"으로 바꾸면 여기에 모입니다.</div>'}</div>`;
+}
 function leftSection(dd, edit) {
   const rule = leftRule(dd);
   const cands = activeStudents(dd).map(s => ({ s, st: absentStreak(dd, s), last: lastAttended(dd, s) })).filter(x => x.st.n >= Math.min(rule.weeks, x.st.of) && x.st.of >= 4 && !s_excused(x.s)).sort((a, b) => b.st.n - a.st.n);
@@ -542,7 +553,7 @@ function leftSection(dd, edit) {
       : `<div class="note">${namedReports(dd).length < 4 ? '출석 체크된 주일 보고서가 4장 이상 쌓이면 자동으로 찾습니다.' : '해당자가 없습니다.'}</div>`}
     <div class="note" style="margin-top:6px">${dd.id === 'young' ? '유학·군복무·온라인 출석 중인 사람은 학생 카드의 비고에 "유학", "군복무", "온라인"을 적어 두면 후보에서 빠집니다.' : '사정이 있는 학생은 학생 카드의 비고에 "유학", "군복무", "병가" 등을 적어 두면 후보에서 빠집니다.'}</div></div>
   <div class="card"><h2>제적 명단 <span class="r">${left.length}명 · ${Object.entries(kinds).map(([k, n]) => `${esc(k)} ${n}`).join(' · ')}</span></h2>
-    ${edit && left.length ? `<div class="row" style="margin-bottom:8px;gap:8px"><button class="btn p" id="rs-batch" disabled>선택한 학생 복적</button><span class="note" id="rs-count">복적할 학생을 체크하세요</span></div>` : ''}
+    ${edit && left.length ? `<div class="row" style="margin-bottom:8px;gap:8px;flex-wrap:wrap"><button class="btn p" id="rs-batch" disabled>선택한 학생 복적</button><button class="btn" id="ar-batch" disabled>선택한 학생 보관으로</button><button class="btn s" id="ar-pick">과거 기록만 있는 사람 고르기 (${left.filter(pastOnly).length}명)</button><span class="note" id="rs-count">학생을 체크하세요</span></div>` : ''}
     <div class="tw"><table><thead><tr>${edit ? '<th style="width:34px"><input type="checkbox" id="rs-all" title="모두 선택"></th>' : ''}<th class="n no">번호</th><th>이름</th><th>성별</th><th>생년월일</th><th>처리일</th><th>구분</th><th>사유</th><th>마지막 출석</th><th>연락처</th>${edit ? '<th></th>' : ''}</tr></thead><tbody>
     ${left.map((s, i) => `<tr>${edit ? `<td><input type="checkbox" data-rs="${esc(s.id)}" aria-label="${esc(s.name)} 선택"></td>` : ''}<td class="n no">${i + 1}</td><td><button class="chip" data-student="${esc(s.id)}">${esc(s.name)}</button></td><td>${esc(s.sex || '')}</td><td>${esc(s.birth || '')}</td><td>${esc(s.leftDate || '')}</td><td>${s.leftKind ? `<span class="pill mute">${esc(s.leftKind)}</span>` : ''}</td><td class="wrap note">${esc(s.leftReason || s.note || '')}</td><td>${lastAttended(dd, s) || ''}</td><td>${esc(phoneLabel(s))}</td>${edit ? `<td><button class="btn s" data-restore="${esc(s.id)}">복적</button></td>` : ''}</tr>`).join('') || `<tr><td colspan="11" class="note">제적한 학생이 없습니다.</td></tr>`}
     </tbody></table></div>${canEdit() ? '<div class="row" style="margin-top:10px"><button class="btn" id="lf-print">제적 명단 출력</button></div>' : ''}</div>`;
@@ -602,7 +613,7 @@ VIEWS.roster = async () => {
   const yr = S.sub.year || YEAR;
   const cats = rosterCats(dd);
   const TABS = yr !== YEAR ? [['yr', `${yr}년 명단`], ...(young ? [['fam', `${yr}년 팸장`]] : [])]
-    : [['active', young ? '재적 회원' : '재적'], ['newcomer', '새친구'], ['away', '장기결석'], ...(young ? [['fam', '팸장']] : []), ['left', '제적'], ...(young ? [['grad', '졸업·자격 종료']] : [])];
+    : [['active', young ? '재적 회원' : '재적'], ['newcomer', '새친구'], ['away', '장기결석'], ...(young ? [['fam', '팸장']] : []), ['left', '제적'], ...(young ? [['grad', '졸업·자격 종료']] : []), ['archived', '보관']];
   let show = S.sub.show || (yr !== YEAR ? 'yr' : 'active'); if (!TABS.some(t => t[0] === show)) show = TABS[0][0];
   const count = k => k === 'fam' ? famLeaders(dd, yr).length : k === 'yr' ? '' : (cats[k] || []).length;
   const deptPick = isCommittee() ? `<div class="row" style="margin-bottom:10px">${Object.entries(DEPTS).map(([k, v]) => `<button class="btn ${dd.id === k ? 'p' : ''}" data-dept="${esc(k)}">${v}</button>`).join('')}</div>` : '';
@@ -610,10 +621,11 @@ VIEWS.roster = async () => {
     <div class="row no-print"><label class="row" style="gap:6px"><span class="note">연도</span><select id="ro-year" style="width:auto">${years.map(y => `<option value="${esc(y)}" ${y === yr ? 'selected' : ''}>${y === YEAR ? `${y} (올해)` : y}</option>`).join('')}</select></label>${yr === YEAR && canEdit() ? `<button class="btn s" id="pp-open">진급자 명단 출력</button>` : ''}${young && canEdit() && !isCommittee() ? '<button class="btn s" id="ya-import">과거 출석부 가져오기</button>' : ''}</div></div>
   ${deptPick}
   <div class="ro-tabs no-print">${TABS.map(([k, l]) => `<button data-show="${esc(k)}" class="${show === k ? 'on' : ''}">${l}${count(k) !== '' ? ` <span class="n">${count(k)}</span>` : ''}</button>`).join('')}</div>
-  <div class="ro-desc note">${{ active: young ? '청년부 회원(재적)입니다. 결혼·직분자는 회칙 4조에 따라 여기서 빠지고 "졸업·자격 종료"로 갑니다.' : '재적 학생입니다.', newcomer: '등록 전 새친구입니다. 학생 카드에서 상태를 "재적"으로 바꾸면 재적으로 옮겨집니다.', away: '장기결석·군입대·학업·사업 등 잠시 못 나오는 회원입니다. 재적은 유지됩니다.', fam: '팸장·부팸장은 재적(회원)에 넣지 않고 따로 관리합니다.', left: '제적 처리된 사람과, 오래 결석해 제적 대상이 된 후보입니다.', grad: '결혼·직분으로 청년부 회원 자격이 끝났거나(회칙 4조) 청년부를 졸업한 사람입니다. 출석부·출석 체크·통계에서 빠집니다.', yr: young ? '그해 소속 명단입니다. 그해에 있던 구분(1청년·2청년·라피끄)이 함께 보입니다.' : '그해 소속 명단입니다.' }[show] || ''}</div>`;
+  <div class="ro-desc note">${{ archived: '보관: 예전 출석부·보고서에 이름만 남은 사람처럼, 제적 명단과 따로 기록만 보관하는 사람입니다. 출석·총회 판정에는 들어가지 않고, 언제든 제적 명단으로 되돌리거나 복적할 수 있습니다.', active: young ? '청년부 회원(재적)입니다. 결혼·직분자는 회칙 4조에 따라 여기서 빠지고 "졸업·자격 종료"로 갑니다.' : '재적 학생입니다.', newcomer: '등록 전 새친구입니다. 학생 카드에서 상태를 "재적"으로 바꾸면 재적으로 옮겨집니다.', away: '장기결석·군입대·학업·사업 등 잠시 못 나오는 회원입니다. 재적은 유지됩니다.', fam: '팸장·부팸장은 재적(회원)에 넣지 않고 따로 관리합니다.', left: '제적 처리된 사람과, 오래 결석해 제적 대상이 된 후보입니다.', grad: '결혼·직분으로 청년부 회원 자격이 끝났거나(회칙 4조) 청년부를 졸업한 사람입니다. 출석부·출석 체크·통계에서 빠집니다.', yr: young ? '그해 소속 명단입니다. 그해에 있던 구분(1청년·2청년·라피끄)이 함께 보입니다.' : '그해 소속 명단입니다.' }[show] || ''}</div>`;
   if (show === 'yr') return head + yearRosterBody(dd, yr);
   if (show === 'fam') return head + famLeaderBody(dd, yr);
   if (show === 'left') return head + `<div class="stack">${leftSection(dd, canEdit() && !isCommittee())}</div>`;
+  if (show === 'archived') return head + `<div class="stack">${archivedSection(dd, canEdit() && !isCommittee())}</div>`;
   if (show === 'grad') return head + gradSection(dd, cats.grad);
   const list = cats[show] || [];
   const sort = S.sub.sort || 'name';
@@ -731,7 +743,7 @@ function studentCard(dd, s) {
       <label class="f"><span>이름</span><input type="text" id="sc-name" value="${esc(s.name)}"></label>
       <label class="f"><span>${esc(dd.doc.classLabel)}</span><select id="sc-class">${dd.doc.classes.map(x => `<option value="${esc(x.id)}" ${x.id === s.classId ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}<option value="${esc(s.classId)}" ${c ? '' : 'selected'}>${esc(s.classId || '(없음)')}</option></select></label>
       <label class="f"><span>성별</span><select id="sc-sex"><option ${s.sex === '남' ? 'selected' : ''}>남</option><option ${s.sex === '여' ? 'selected' : ''}>여</option></select></label>
-      <label class="f"><span>상태</span><select id="sc-status">${STATUS_OPTS.map(([k, v]) => `<option value="${esc(k)}" ${s.status === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
+      <label class="f"><span>상태</span><select id="sc-status">${STATUS_OPTS.map(([k, v]) => `<option value="${esc(k)}" ${(s.status === 'left' && s.archived ? 'archived' : s.status) === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
       <label class="f" id="sc-stext-w" ${s.status === 'custom' ? '' : 'hidden'}><span>상태 직접 입력</span><input type="text" id="sc-stext" value="${esc(s.statusText || '')}" placeholder="예: 해외 체류, 휴직, 육아"></label>
       <label class="f"><span>생년월일</span><input type="date" id="sc-birth" value="${esc(s.birth || '')}"></label>
       <label class="f"><span>신급</span><select id="sc-faith">${faithOptions(s)}</select></label>
@@ -783,6 +795,23 @@ BIND.roster = () => {
       $('#rb-no').onclick = closeModal; $('#rb-yes').onclick = async () => { $('#rb-yes').disabled = true; $('#rb-yes').textContent = '처리 중…';
         await Promise.all(ppl.map(st => { (st.statusLog = st.statusLog || []).push({ date: today(), from: 'left', to: 'active', reason: '복적' }); Object.assign(st, { status: 'active', leftDate: '', leftKind: '', leftReason: '' }); return backend.set(`depts/${dd.id}/students/${st.id}`, st); }));
         closeModal(); renderHere(); toast(`${ppl.length}명 복적 — 재적 명단으로 돌아갔습니다`); }; }; }
+  { // 제적 → 보관 옮기기, 과거 기록만 있는 사람 고르기
+    const boxes = [...document.querySelectorAll('[data-rs]')]; const ab = $('#ar-batch'); const pk = $('#ar-pick');
+    const sync = () => { const n = boxes.filter(x => x.checked).length; if (ab) ab.disabled = !n; const bt = $('#rs-batch'); if (bt) bt.disabled = !n; const c = $('#rs-count'); if (c) c.textContent = n ? `${n}명 선택됨` : '학생을 체크하세요'; boxes.forEach(x => x.closest('tr').classList.toggle('sel', x.checked)); };
+    boxes.forEach(x => x.addEventListener('change', sync));
+    if (pk) pk.onclick = () => { boxes.forEach(x => { const st = dd.students.find(y => y.id === x.dataset.rs); x.checked = !!(st && pastOnly(st)); }); sync(); toast('최근 2년 소속 기록이 없는 사람을 골랐습니다 — 확인 후 "보관으로"를 누르세요', 3500); };
+    if (ab) ab.onclick = () => { const ppl = boxes.filter(x => x.checked).map(x => dd.students.find(y => y.id === x.dataset.rs)).filter(Boolean); if (!ppl.length) return;
+      openModal(`<h2>${ppl.length}명 보관<button class="btn s" id="modal-close">닫기</button></h2><p>제적 명단에서 빼서 "보관"으로 옮길까요? 기록은 그대로 남고, 언제든 되돌릴 수 있습니다.</p><div class="row" style="gap:4px;flex-wrap:wrap;margin:6px 0 12px">${ppl.map(x => `<span class="chip">${esc(x.name)}</span>`).join('')}</div><div class="row"><button class="btn p" id="ax-yes">${ppl.length}명 보관</button><button class="btn" id="ax-no">취소</button></div>`);
+      $('#modal-close').onclick = closeModal; $('#ax-no').onclick = closeModal; $('#ax-yes').onclick = async () => { $('#ax-yes').disabled = true; try { await Promise.all(ppl.map(st => { st.archived = true; (st.statusLog = st.statusLog || []).push({ date: today(), from: 'left', to: 'left', kind: '보관', reason: '제적 명단에서 보관으로' }); return backend.set(`depts/${dd.id}/students/${st.id}`, st); })); closeModal(); renderHere(); toast(`${ppl.length}명을 보관으로 옮겼습니다`); } catch (e) { closeModal(); toast('저장 실패: ' + (e.code || e.message), 4000); } }; };
+  }
+  { // 보관 → 제적 명단 / 복적
+    const boxes = [...document.querySelectorAll('[data-ab]')]; const bl = $('#ab-left'), ba = $('#ab-active'), cnt = $('#ab-count');
+    const sync = () => { const n = boxes.filter(x => x.checked).length; [bl, ba].forEach(b => { if (b) b.disabled = !n; }); if (cnt) cnt.textContent = n ? `${n}명 선택됨` : '사람을 체크하세요'; boxes.forEach(x => x.closest('tr').classList.toggle('sel', x.checked)); };
+    boxes.forEach(x => { x.onclick = e => e.stopPropagation(); x.onchange = sync; }); const all = $('#ab-all'); if (all) all.onchange = () => { boxes.forEach(x => { x.checked = all.checked; }); sync(); };
+    const run = async (toActive) => { const ppl = boxes.filter(x => x.checked).map(x => dd.students.find(y => y.id === x.dataset.ab)).filter(Boolean); if (!ppl.length) return;
+      try { await Promise.all(ppl.map(st => { st.archived = false; if (toActive) { (st.statusLog = st.statusLog || []).push({ date: today(), from: 'left', to: 'active', reason: '복적(보관에서)' }); Object.assign(st, { status: 'active', leftDate: '', leftKind: '', leftReason: '' }); } else (st.statusLog = st.statusLog || []).push({ date: today(), from: 'left', to: 'left', kind: '제적', reason: '보관에서 제적 명단으로' }); return backend.set(`depts/${dd.id}/students/${st.id}`, st); })); renderHere(); toast(toActive ? `${ppl.length}명 복적했습니다` : `${ppl.length}명을 제적 명단으로 되돌렸습니다`); } catch (e) { toast('저장 실패: ' + (e.code || e.message), 4000); } };
+    if (bl) bl.onclick = () => run(false); if (ba) ba.onclick = () => run(true);
+  }
   document.querySelectorAll('[data-restore]').forEach(b => b.onclick = e => { e.stopPropagation(); const s = dd.students.find(x => x.id === b.dataset.restore); if (!s) return;
     openModal(`<h2>복적 확인<button class="btn s" id="modal-close">닫기</button></h2><p><b>${esc(s.name)}</b>${s.birth ? ` (${esc(s.birth)})` : ''}을(를) 재적으로 되돌릴까요?</p><div class="row" style="margin-top:10px"><button class="btn p" id="rs-yes">복적</button><button class="btn" id="rs-no">취소</button></div>`);
     $('#rs-no').onclick = closeModal; $('#rs-yes').onclick = async () => { $('#rs-yes').disabled = true; closeModal(); (s.statusLog = s.statusLog || []).push({ date: today(), from: 'left', to: 'active', reason: '복적' }); Object.assign(s, { status: 'active', leftDate: '', leftKind: '', leftReason: '' }); await backend.set(`depts/${dd.id}/students/${s.id}`, s); renderHere(); toast(s.name + ' 복적 — 재적 명단으로 돌아갔습니다');  };
@@ -798,7 +827,9 @@ BIND.roster = () => {
     bindNoteTags();
     const scs = $('#sc-status'); if (scs) scs.onchange = () => { $('#sc-stext-w').hidden = scs.value !== 'custom'; if (scs.value === 'custom') $('#sc-stext').focus(); };
     const sv = $('#sc-save'); if (sv) sv.onclick = async () => {
-      const ns = $('#sc-status').value, was = s.status, ld = $('#sc-ldate').value, lk = $('#sc-lkind').value, lr = $('#sc-lreason').value.trim();
+      const ns0 = $('#sc-status').value, arch = ns0 === 'archived', ns = arch ? 'left' : ns0, was = s.status, ld = $('#sc-ldate').value, lk = $('#sc-lkind').value || (arch ? '보관' : ''), lr = $('#sc-lreason').value.trim();
+      // 보관: 제적과 똑같이 출석·판정에서 빠지되, 제적 명단과 따로 모아 둔다(과거 기록만 있는 사람 등)
+      s.archived = arch;
       if (ns === 'left' && was !== 'left') setLeft(s, ld || today(), lk || '제적', lr);
       else if (ns !== 'left' && was === 'left') { (s.statusLog = s.statusLog || []).push({ date: today(), from: 'left', to: ns, reason: '복적' }); s.leftDate = ''; s.leftKind = ''; s.leftReason = ''; }
       else if (ns === 'left') Object.assign(s, { leftDate: ld, leftKind: lk, leftReason: lr });
@@ -2433,13 +2464,8 @@ function familyRows(s) {
   sibs(s).forEach(n => { let where = ''; for (const d of Object.keys(DEPTS)) { const dd = S.data[d]; const x = dd && dd.students.find(y => y.name === n && y.status !== 'left'); if (x) { where = `${DEPTS[d]} ${(classOf(dd, x) || {}).name || x.classId || ''}`.trim(); break; } } rows.push({ name: n, rel: '형제자매', birth: '', church: where ? '본교회' : '', note: where }); });
   return rows;
 }
-// 주소 옆 지도: 펼칠 때만 지도를 불러옴(펼치기 전에는 주소가 지도 서비스로 가지 않음)
-function mapToggle(addr) {
-  if (!addr) return '';
-  const q = encodeURIComponent(addr);
-  return `<details class="map-box no-print" data-map="${esc(addr)}"><summary>지도 펼치기</summary><div class="map-frame"></div><div class="row map-links"><a href="https://map.kakao.com/link/search/${q}" target="_blank" rel="noopener">카카오맵</a><a href="https://map.naver.com/p/search/${q}" target="_blank" rel="noopener">네이버 지도</a><a href="https://www.google.com/maps/search/?api=1&query=${q}" target="_blank" rel="noopener">구글 지도</a><span class="note">길찾기는 지도 앱에서</span></div></details>`;
-}
-document.addEventListener('toggle', e => { const d = e.target; if (!d.matches || !d.matches('details[data-map]') || !d.open) return; const f = d.querySelector('.map-frame'); if (f && !f.firstChild) f.innerHTML = `<iframe title="지도" loading="lazy" referrerpolicy="no-referrer" src="https://maps.google.com/maps?q=${encodeURIComponent(d.dataset.map)}&z=16&output=embed"></iframe>`; }, true);
+// 지도 보기는 없앴다(주소를 외부 지도 서비스로 보내지 않음)
+function mapToggle() { return ''; }
 function careOf(dd, s) { return (dd.care || []).find(c => c._id === s.id) || (dd.care || []).find(c => normName(c.name) === normName(s.name) && (!c.birth || !s.birth || c.birth === s.birth)) || null; }
 function careCardHTML(dd, s, c, forPrint) {
   const tl = studentTimeline(dd, s); const off = officersOf(dd, s);
@@ -3248,12 +3274,12 @@ const isGrad = s => isYoungStu(s) && (marriedOut(s) || !!s.churchRole || (s.stat
 // 지금 교사·임원 명단에서 팸장·부팸장으로 임명된 사람 (결혼·직분으로 회원이 아니어도 팸장 탭에 둔다)
 const isFamStaff = (dd, s) => !!dd && dd.doc.staff.some(t => t.status !== 'left' && /팸장/.test(t.role || '') && normName(t.name) === normName(s.name));
 function rosterCats(dd) {
-  const young = dd.id === 'young'; const c = { active: [], newcomer: [], away: [], left: [], grad: [] };
+  const young = dd.id === 'young'; const c = { active: [], newcomer: [], away: [], left: [], archived: [], grad: [] };
   for (const s of dd.students) {
     if (young && isFamStaff(dd, s) && (isGrad(s) || s.status === 'left' || s.group === '팸장')) continue; // 팸장 탭에서 본다
     if (young && isGrad(s)) { c.grad.push(s); continue; }
     if (young && s.group === '팸장') continue; // 팸장 탭에서 본다
-    if (s.status === 'left') { if (!(young && isStaffName(dd, s))) c.left.push(s); continue; }
+    if (s.status === 'left') { if (s.archived) c.archived.push(s); else if (!(young && isStaffName(dd, s))) c.left.push(s); continue; }
     (s.status === 'newcomer' ? c.newcomer : AWAY.includes(s.status) ? c.away : c.active).push(s);
   }
   return c;
