@@ -1659,7 +1659,7 @@ function bylawHTML(t, opt = {}) {
     let m = x.match(/^(제\s*\d+\s*조(?:\s*의\s*\d+)?\s*(?:[(（][^)）]*[)）])?)(.*)$/);
     if (m) { pre = false; inArticles = true; started = true; start('bl-art', m[2], m[1]); continue; }
     if (BL_SPECIAL.test(x) || /^[<〈《【\[「]\s*[^<>〈〉《》【】\[\]]{1,24}\s*[>〉》】\]」]$/.test(x)) { pre = true; head(3, 'bl-special', x.replace(/^[\[【<〈《(「]\s*|\s*[\]】>〉》)」]$/g, '')); continue; }
-    m = x.match(/^(제\s*\d+\s*항\s*(?:[(（][^)）]*[)）])?)(.*)$/);
+    m = x.match(/^((?:제\s*)?\d+\s*항\s*(?:[(（][^)）]*[)）])?)(.*)$/); // "제1항"뿐 아니라 "1항 :"도 항으로 — 조 제목 줄에 붙지 않고 따로 줄을 잡음
     if (m) { start('bl-cl1', m[2], m[1]); continue; }
     if (/^([①-⑳])/.test(x)) { start('bl-cl1', x); continue; }
     if (/^(\(\d+\)|（\d+）|\d+\s*[.)]|[가-하]\s*[.)])\s*/.test(x) && !/^\d{4}\s*[.년]/.test(x)) { start('bl-cl2' + (pre && !inArticles ? ' bl-pre' : ''), x); continue; }

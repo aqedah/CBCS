@@ -578,3 +578,16 @@ details.card.principle>summary:hover .pr-tg{border-color:var(--accent);color:var
 /* 출석 체크 버튼: 손가락으로 누르기 쉬운 크기(휴대폰 44px 이상) */
 .att .s button{min-height:36px}
 @media(max-width:760px){.att .s{padding:2px 6px}.att .s button{min-height:46px;font-size:15px;padding:4px 6px}}
+/* 태블릿 폭(761~1100px): 왼쪽 메뉴를 아이콘 줄(64px)로 줄이고, 마우스를 올리거나 누르면 위로 펼쳐진다 */
+@media (min-width:761px) and (max-width:1100px){
+  .app{grid-template-columns:64px 1fr}
+  .side{width:64px;padding:16px 8px;overflow-x:hidden;z-index:40;transition:width .15s ease,box-shadow .15s ease}
+  .side .brand small,.side .dept-chip,.side .nav-bottom .sec,.side .foot,.side #admin-mode,.side #admin-off,.side .sub-nav,.side .caret{display:none}
+  .side .brand{font-size:15px;text-align:center}
+  .side .nav button{font-size:0;justify-content:center;padding:10px 0}
+  .side .nav button .k{font-size:17px;width:auto}
+  .side:hover,.side:focus-within{width:230px;box-shadow:4px 0 18px rgba(0,0,0,.12)}
+  .side:hover .brand small,.side:focus-within .brand small,.side:hover .dept-chip,.side:focus-within .dept-chip,.side:hover .nav-bottom .sec,.side:focus-within .nav-bottom .sec,.side:hover .sub-nav,.side:focus-within .sub-nav,.side:hover .caret,.side:focus-within .caret,.side:hover #admin-mode,.side:hover #admin-off{display:revert}
+  .side:hover .nav button,.side:focus-within .nav button{font-size:14px;justify-content:flex-start;padding:9px 10px}
+  .side:hover .brand,.side:focus-within .brand{font-size:revert;text-align:left}
+}
