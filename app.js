@@ -1591,10 +1591,17 @@ function applyOverride(a, j) { const o = (a.overrides || {})[j.s.id]; if (o && o
 // 판정 대상: 출석부의 재적 회원 + 팸장(팸장은 결의권자). 장기결석·군입대 등, 제적, 결혼·직분(자격 종료), 타 목장 소속은 판정표에서 빼고 아래에 따로 적는다
 /* 총회 판정 확정: 그날의 판정 결과를 총회 문서에 그대로 저장해 둔다. 확정 뒤에는 회원 상태·출석·회칙이 바뀌어도
    이 총회의 화면·출력·엑셀이 확정 당시 결과로 나온다. "지금 기준으로 다시 보기"로 현재 계산과 비교할 수 있다. */
+/* 발언권자: 결의권은 없지만 교회 등록(처음 출석) 6개월이 지난 사람. 결의권자는 당연히 발언권이 있으므로 따로 표기하지 않는다 */
+const SPEAK_MONTHS = 6;
+function speakOf(dd, j, base) {
+  if (j.speak !== undefined) return j.speak; if (j.voter === 'ok') return false;
+  let cs = j.cs; if (!cs && dd) { const s = (dd.students || []).find(x => x.id === j.s.id); if (s) cs = churchStart(dd, s); }
+  return !!(cs && cs.date && cs.date <= addMonths(base, -SPEAK_MONTHS));
+}
 function assemblySnapshot(dd, J) {
   const mini = s => ({ id: s.id, name: s.name, birth: s.birth || '', faith: s.faith || '', sex: s.sex || '', pseudo: !!s.pseudo });
   return { at: today(), bylaw: (currentBylaw(dd) || {}).revision || '', R: clone(J.R), q: clone(J.q),
-    list: J.list.map(j => { const { s, ...rest } = j; return { ...clone(rest), s: mini(s) }; }), excluded: (J.excluded || []).map(x => ({ s: mini(x.s), why: x.why })) };
+    list: J.list.map(j => { const { s, ...rest } = j; return { ...clone(rest), s: mini(s) }; }), excluded: (J.excluded || []).map(x => ({ s: mini(x.s), why: x.why, speak: !!x.speak })) };
 }
 function assemblyJudge(dd, a) {
   if (a.snapshot && !S.sub.asLive) return { ...clone(a.snapshot), snap: true };
@@ -1606,6 +1613,7 @@ function assemblyJudge(dd, a) {
   fam.filter(x => !x.stu).forEach(x => { const t = dd.doc.staff.find(y => y.status !== 'left' && normName(y.name) === normName(x.name)) || {}; pool.push({ id: 'fam_' + normName(x.name), name: x.name, sex: t.sex || '', birth: t.birth || '', faith: t.faith || '', status: 'active', group: '', history: [], pseudo: true }); });
   const list = pool.map(s => { const j = judge(dd, s, a.date, R); if (isFamP(s)) { j.voter = 'ok'; j.rsn = j.rsn || {}; j.rsn.voter = ['팸장 — 결의권자']; j.why.unshift('팸장 — 결의권자'); j.fam = true; } return applyOverride(a, j); }).sort((x, y) => (x.fam ? 1 : 0) - (y.fam ? 1 : 0) || x.s.name.localeCompare(y.s.name, 'ko'));
   const excluded = dd.students.filter(s => s.status !== 'left' && !isGrad(s) && !s.churchRole && !inPool(s)).map(s => ({ s, why: outWhy(s) })).sort((x, y) => x.why.localeCompare(y.why, 'ko') || x.s.name.localeCompare(y.s.name, 'ko'));
+  list.forEach(j => { j.speak = speakOf(dd, j, a.date); }); excluded.forEach(x => { x.speak = AWAY.includes(x.s.status) && speakOf(dd, { s: x.s, voter: 'no' }, a.date); });
   return { R, list, q: quorumOf(dd, a.date, R, a.quorumBasis || 'check'), excluded }; // 기준 기본값: 출석부 체크 수 (2026 임원회의 결정)
 }
 function lastSundayOfYear(y) { const d = new Date(y, 11, 31); d.setDate(d.getDate() - d.getDay()); return iso(d); }
@@ -2010,9 +2018,11 @@ function assemblyPaper(dd, a, J) {
     ${(() => { const vr = j => ((j.rsn && j.rsn.voter) || j.why || []).map(x => String(x).replace(/\s+/g, ' ')).filter(Boolean).join(' · ');
       const ck = J.list.filter(j => j.voter === 'check'), no = J.list.filter(j => j.voter === 'no'), ex = J.excluded || [];
       const head = `<thead><tr><th class="n" style="width:6%">번호</th><th style="width:10%;white-space:nowrap">이름</th><th style="width:10%;white-space:nowrap">구분</th><th class="n" style="width:11%;white-space:nowrap">1년 출석률</th><th>사유</th></tr></thead>`;
-      const row = (j, i) => `<tr><td class="n">${i + 1}</td><td>${esc(j.s.name)}</td><td>${j.fam ? '팸장' : '회원'}</td><td class="n">${j.rate != null ? j.rate + '%' : ''}</td><td style="font-size:11px">${esc(vr(j))}</td></tr>`;
-      return `<h3>확인 필요 (${ck.length}명)</h3><table class="tight">${head}<tbody>${ck.map(row).join('') || '<tr><td colspan="5">없음</td></tr>'}</tbody></table>
-      <h3>해당 아님 (${no.length + ex.length}명)</h3><table class="tight">${head}<tbody>${no.map(row).join('')}${ex.map((x, i) => `<tr><td class="n">${no.length + i + 1}</td><td>${esc(x.s.name)}</td><td>${AWAY.includes(x.s.status) ? '회원' : '회원 아님'}</td><td class="n"></td><td style="font-size:11px">${esc(x.why)}${AWAY.includes(x.s.status) ? ' — 회원 자격 일시 정지' : ''}</td></tr>`).join('') || (no.length ? '' : '<tr><td colspan="5">없음</td></tr>')}</tbody></table>`; })()}
+      const sp = j => speakOf(dd, j, a.date); const nsp = arr => arr.filter(sp).length;
+      const row = (j, i) => `<tr><td class="n">${i + 1}</td><td>${esc(j.s.name)}</td><td>${j.fam ? '팸장' : sp(j) ? '<b>발언권자</b>' : '회원'}</td><td class="n">${j.rate != null ? j.rate + '%' : ''}</td><td style="font-size:11px">${esc(vr(j))}</td></tr>`;
+      const exSp = ex.filter(x => x.speak !== undefined ? x.speak : AWAY.includes(x.s.status) && speakOf(dd, { s: x.s, voter: 'no' }, a.date));
+      return `<p class="note" style="margin:6px 0 0">발언권자: 결의권은 없지만 교회 등록 ${SPEAK_MONTHS}개월이 지나 총회에서 발언할 수 있는 사람</p><h3>확인 필요 (${ck.length}명${nsp(ck) ? ` · 그중 발언권자 ${nsp(ck)}명` : ''})</h3><table class="tight">${head}<tbody>${ck.map(row).join('') || '<tr><td colspan="5">없음</td></tr>'}</tbody></table>
+      <h3>해당 아님 (${no.length + ex.length}명${nsp(no) + exSp.length ? ` · 그중 발언권자 ${nsp(no) + exSp.length}명` : ''})</h3><table class="tight">${head}<tbody>${no.map(row).join('')}${ex.map((x, i) => `<tr><td class="n">${no.length + i + 1}</td><td>${esc(x.s.name)}</td><td>${exSp.includes(x) ? '<b>발언권자</b>' : AWAY.includes(x.s.status) ? '회원' : '회원 아님'}</td><td class="n"></td><td style="font-size:11px">${esc(x.why)}${AWAY.includes(x.s.status) ? ' — 회원 자격 일시 정지' : ''}</td></tr>`).join('') || (no.length ? '' : '<tr><td colspan="5">없음</td></tr>')}</tbody></table>`; })()}
     ${bylawArtHTML(dd, [4, 5, 6, 11], '판정 기준 조항 (회원 자격 4조 · 결의권 5조 · 결석과 제명 6조 · 임원 자격 11조)')}
     <h2>3. 후보자 명단 (회칙 11조)</h2><table><thead><tr><th>직위</th><th>후보</th><th>비고</th></tr></thead><tbody>${[...ASSEMBLY_POS, ...ASSEMBLY_POS_SUB].map(p => { const c = (a.candidates || []).filter(x => x.pos === p); return c.length ? c.map((x, i) => `<tr>${i ? '' : `<th rowspan="${c.length}">${p}</th>`}<td>${esc(x.name)}</td><td>${esc(x.note || '')}</td></tr>`).join('') : ''; }).join('') || '<tr><td colspan="3">후보 미정</td></tr>'}</tbody></table>
     <div class="ft"><b>중앙성서교회 청년부</b><span>CBCS에서 생성 · ${esc(a.date)}-총회자료.pdf</span></div></section>`;
@@ -2045,10 +2055,10 @@ async function exportAssemblyXLSX(dd, a, J) {
     [`${a.title} 자료`], ['중앙성서교회 청년부'], [],
     ['총회 날짜', a.date], ['구분', a.kind || ''], ['장소', a.place || ''], ['판정 기준 회칙', bl.revision || ''], [],
     ['정족수 (회칙 13조)'], ...J.q.rows.map(r => ['  ' + r.date, r.p]), ['직전 평균 출석', +J.q.avg.toFixed(1)], ['정족수', J.q.need, `평균의 ${J.R.quorumNum}/${J.R.quorumDen}`], [],
-    ['결의권자 (회칙 5조)', cnt('ok')], ['확인 필요', cnt('check')], ['해당 아님', cnt('no')], [],
+    ['결의권자 (회칙 5조)', cnt('ok')], ['확인 필요', cnt('check')], ['해당 아님', cnt('no')], ['발언권자 (결의권 없음 · 교회 등록 6개월 이상)', J.list.filter(j => speakOf(dd, j, a.date)).length + (J.excluded || []).filter(x => x.speak).length], [],
     ['현 임원 구성'], ...['임원', '팀장', '팸장'].map(k => [k, g[k].map(x => `${x.role} ${x.name}`).join(', ')]), [],
     ['만든 날', today(), 'CBCS에서 생성']], [18, 14, 60]), '요약');
-  const kindOf = j => j.fam ? '팸장' : '회원';
+  const kindOf = j => j.fam ? '팸장' : speakOf(dd, j, a.date) ? '발언권자' : '회원';
   X.utils.book_append_sheet(wb, sheet([['번호', '이름', '구분', '나이', '1년 출석', '출석 체크 주일', '출석률(%)', '임원 자격', '사유'],
     ...voters.map((j, i) => { const o = officerSum(j); return [i + 1, j.s.name, kindOf(j), j.age ?? '', j.cnt ?? '', j.of ?? '', j.rate ?? '', o.ok, o.why]; })], [6, 10, 8, 6, 9, 13, 10, 22, 40]), '결의권자 명단');
   X.utils.book_append_sheet(wb, sheet([['번호', '이름', '구분', '출석 서명'],
@@ -2096,7 +2106,7 @@ VIEWS.assembly = async () => {
           <tr><td>출석부에 체크된 회원 수${J.q.basis === 'check' ? ' <span class="pill ok">기준</span>' : ''}</td>${J.q.rows.map(r => `<td class="n">${r.chk}</td>`).join('')}<td class="n">${J.q.alt.chk.avg.toFixed(1)}</td><td class="n">${J.q.alt.chk.exact.toFixed(2)}</td><td class="n"><b>${J.q.alt.chk.need}</b></td></tr>
           <tr><td class="note">참석 교사·팸장 (참고, 정족수에 안 넣음)</td>${J.q.rows.map(r => `<td class="n note">${r.t}</td>`).join('')}<td></td><td></td><td></td></tr></tbody></table></div>
         ${edit ? `<div class="row" style="margin-top:6px;gap:6px"><span class="note">정족수 기준:</span>${[['report', '보고서 숫자'], ['check', '출석부 체크 수']].map(([k, l]) => `<button class="btn s ${J.q.basis === k ? 'p' : ''}" data-qbasis="${esc(k)}">${l}</button>`).join('')}<span class="note">둘이 다르면 서기가 보고서에 적은 숫자와 출석부 체크가 어긋난 것 — 보고서 열람에서 그 주를 확인</span></div>` : ''}${J.q.rows.length ? '' : '<div class="note">총회 날짜 이전 보고서가 없습니다.</div>'}</div>
-      <div class="card"><h2>결의권자(선거권자) <span class="r">회칙 5조</span></h2><div class="quorum"><span class="big">${cnt('ok')}명</span><span class="note">확인 필요 ${cnt('check')}명 · 해당 아님 ${cnt('no')}명</span></div>
+      <div class="card"><h2>결의권자(선거권자) <span class="r">회칙 5조</span></h2><div class="quorum"><span class="big">${cnt('ok')}명</span><span class="note">확인 필요 ${cnt('check')}명 · 해당 아님 ${cnt('no')}명 · 발언권자 ${J.list.filter(j => speakOf(dd, j, a.date)).length + (J.excluded || []).filter(x => x.speak).length}명</span></div>
         <div class="note" style="margin-top:6px;line-height:1.7">${(() => { const v = J.list.filter(j => j.voter === 'ok'); const chips = arr => arr.map(j => `<span class="chip">${esc(j.s.name)}</span>`).join(' '); const m = v.filter(j => !j.fam), f = v.filter(j => j.fam); return v.length ? `<div class="vchips"><b>회원 ${m.length}</b> ${chips(m)}</div>${f.length ? `<div class="vchips"><b>팸장 ${f.length}</b> ${chips(f)}</div>` : ''}` : '없음'; })()}${cnt('check') ? `<div style="margin-top:4px">확인 필요: ${J.list.filter(j => j.voter === 'check').map(j => esc(j.s.name)).sort((a, b) => a.localeCompare(b, 'ko')).join(', ')}</div>` : ''}</div>
         <div class="note" style="margin-top:6px">새가족반 수료 후 ${R.voterMonths}개월 이상, 최근 1년 출석률 ${R.voterRate}% 이상, 회원(만 ${R.ageMin}~${R.ageMax}세 미혼, 직분자·타 목장 제외)</div></div>
     </div>
@@ -2109,7 +2119,7 @@ VIEWS.assembly = async () => {
       ${edit ? `<div class="row" style="margin-top:10px"><select id="cd-pos" style="width:auto">${[...ASSEMBLY_POS, ...ASSEMBLY_POS_SUB].map(p => `<option>${p}</option>`).join('')}</select><select id="cd-sid" style="flex:1">${J.list.filter(j => j.member !== 'no').map(j => `<option value="${esc(j.s.id)}">${esc(j.s.name)}</option>`).join('')}</select><input type="text" id="cd-note" placeholder="비고 (추천인 등)" style="flex:1"><button class="btn" id="cd-add">후보 추가</button></div>` : ''}</div>
     <div class="card"><h2><span>판정표 <span class="row" style="display:inline-flex;gap:4px;margin-left:8px">${[['ok', '결의권자'], ['check', '확인 필요'], ['no', '해당 아님'], ['border', '55~65% 경계'], ['all', '전체']].map(([k, l]) => `<button class="btn s ${filter === k ? 'p' : ''}" data-vf="${esc(k)}">${l}</button>`).join('')}</span></span><span class="r">직전 1년 = ${esc(yrReps[0].date)} ~ ${esc(yrReps[yrReps.length - 1].date)} (총회 당일 포함) · 달력상 주일 ${yrReps.length}주가 분모 · 보고서 없는 주일 ${yrReps.filter(r => r.missing).length}주는 결석으로 셈 · "(추정)"은 소속 이력·출석 기록으로 짐작한 날짜</span></h2>
       <div class="tw"><table class="judge"><thead><tr><th class="n no">No.</th><th>이름</th><th class="n">나이</th><th>청년부 출석 시작</th><th class="n">1년 출석</th><th class="ystrip-h"><div class="ystrip">${stripHead}</div></th><th>선거권</th><th>회장</th><th>부회장</th><th>임명직</th><th>이력</th>${edit ? '<th></th>' : ''}</tr></thead><tbody>
-      ${rows.map((j, i) => `${j.fam && (i === 0 || !rows[i - 1].fam) ? `<tr class="j-div"><td colspan="12">팸장 <span class="note">회원은 아니지만 결의권자로 넣습니다</span></td></tr>` : ''}<tr${j.fam ? ' class="j-fam"' : ''}><td class="n no">${i + 1}</td><td>${esc(j.s.name)}${j.fam ? ' <span class="pill info">팸장</span>' : ''}</td><td class="n">${j.age ?? ''}</td><td>${j.ys ? esc(j.ys.date) + (j.ys.est ? ' <span class="note">(추정)</span>' : j.ys.school ? ' <span class="note">(주일학교)</span>' : j.ys.evang ? ' <span class="note">(등록일)</span>' : '') : ''}</td><td class="n"><button class="btn s" data-attd="${esc(j.s.id)}" title="주별 출석 근거 보기">${j.rate === null ? '근거' : `${j.cnt}/${j.of} (${j.rate}%)`}</button></td><td><div class="ystrip">${strip(j)}</div></td><td>${jpill(j.voter, j.rsn.voter)}</td><td>${jpill(j.pres, j.rsn.pres)}</td><td>${jpill(j.vp, j.rsn.vp)}</td><td>${jpill(j.appt, j.rsn.appt)}</td><td class="why">${[...(j.histList || []), ...j.why.filter(w => /^보정/.test(w))].map(x => `<div class="hist-line">${esc(x)}</div>`).join('')}</td>${edit ? `<td>${j.s.pseudo ? '<span class="note" title="학생 카드가 없는 팸장(교사·임원 명단)">팸장</span>' : `<button class="btn s" data-mi="${esc(j.s.id)}">정보</button>`}</td>` : ''}</tr>`).join('') || '<tr><td colspan="13" class="note">해당자가 없습니다.</td></tr>'}
+      ${rows.map((j, i) => `${j.fam && (i === 0 || !rows[i - 1].fam) ? `<tr class="j-div"><td colspan="12">팸장 <span class="note">회원은 아니지만 결의권자로 넣습니다</span></td></tr>` : ''}<tr${j.fam ? ' class="j-fam"' : ''}><td class="n no">${i + 1}</td><td>${esc(j.s.name)}${j.fam ? ' <span class="pill info">팸장</span>' : ''}</td><td class="n">${j.age ?? ''}</td><td>${j.ys ? esc(j.ys.date) + (j.ys.est ? ' <span class="note">(추정)</span>' : j.ys.school ? ' <span class="note">(주일학교)</span>' : j.ys.evang ? ' <span class="note">(등록일)</span>' : '') : ''}</td><td class="n"><button class="btn s" data-attd="${esc(j.s.id)}" title="주별 출석 근거 보기">${j.rate === null ? '근거' : `${j.cnt}/${j.of} (${j.rate}%)`}</button></td><td><div class="ystrip">${strip(j)}</div></td><td>${jpill(j.voter, j.rsn.voter)}${speakOf(dd, j, a.date) ? ' <span class="pill info" title="교회 등록 6개월 이상 — 발언권">발언권</span>' : ''}</td><td>${jpill(j.pres, j.rsn.pres)}</td><td>${jpill(j.vp, j.rsn.vp)}</td><td>${jpill(j.appt, j.rsn.appt)}</td><td class="why">${[...(j.histList || []), ...j.why.filter(w => /^보정/.test(w))].map(x => `<div class="hist-line">${esc(x)}</div>`).join('')}</td>${edit ? `<td>${j.s.pseudo ? '<span class="note" title="학생 카드가 없는 팸장(교사·임원 명단)">팸장</span>' : `<button class="btn s" data-mi="${esc(j.s.id)}">정보</button>`}</td>` : ''}</tr>`).join('') || '<tr><td colspan="13" class="note">해당자가 없습니다.</td></tr>'}
       </tbody></table></div>
       ${J.excluded && J.excluded.length ? `<details class="judge-out" style="margin-top:10px"><summary>판정에서 뺀 사람 ${J.excluded.length}명 <span class="note">장기결석·군입대·학업 등은 회원이지만 자격을 잠시 멈춘 사람, 새친구·타 목장·라피끄는 회원이 아닌 사람 — 결혼·직분으로 자격이 끝난 사람은 아예 넣지 않음</span></summary><div class="row" style="gap:4px;flex-wrap:wrap;margin-top:6px">${J.excluded.map(x => `<span class="chip">${esc(x.s.name)} <span class="note">${esc(x.why)}</span></span>`).join('')}</div></details>` : ''}</div>
   </div>`;
