@@ -2946,13 +2946,27 @@ const MEET_FIELDS = [['date', '일시'], ['writer', '작성자'], ['place', '장
 function parseMeetingText(text, fileName = '') {
   const t = String(text || '').replace(/\r/g, '').replace(/ /g, ' ');
   const LAB = [['absentees', '미\\s*참\\s*석\\s*자'], ['attendees', '참\\s*석\\s*자'], ['next', '(?:차\\s*후|다\\s*음)\\s*회\\s*의\\s*안\\s*건'], ['topic', '주\\s*요\\s*안\\s*건'], ['body', '(?:안\\s*건|회\\s*의\\s*내\\s*용)'], ['date', '일\\s*시'], ['writer', '작\\s*성\\s*자'], ['place', '장\\s*소'], ['note', '비\\s*고']];
-  const re = new RegExp(`^[ \\t]*(${LAB.map(([, r]) => r).join('|')})[ \\t]*(?::|：|\\n|[ \\t]{2,}|$)`, 'gm');
-  const hits = []; let m; while ((m = re.exec(t))) { const lab = m[1]; const key = (LAB.find(([, r]) => new RegExp('^' + r + '$').test(lab)) || [])[0]; if (key && !hits.some(h => h.key === key)) hits.push({ key, start: m.index, end: m.index + m[0].length }); else if (key === undefined) {} }
-  const out = {}; hits.sort((a, b) => a.start - b.start).forEach((h, i) => { const nx = hits[i + 1]; out[h.key] = t.slice(h.end, nx ? nx.start : t.length).replace(/^\s*#.*$/gm, '').trim(); });
-  const names = v => String(v || '').split(/[,，、\/\n]+/).map(x => x.trim()).filter(x => x && x.length <= 12);
-  const dm = (out.date || '').match(/(20\d\d)\D{1,3}(\d{1,2})\D{1,3}(\d{1,2})/) || String(fileName).match(/(20\d\d)\D{0,3}(\d{1,2})\D{1,3}(\d{1,2})/) || t.match(/(20\d\d)\D{1,3}(\d{1,2})\D{1,3}(\d{1,2})/);
-  const date = dm ? `${dm[1]}-${pad2(+dm[2])}-${pad2(+dm[3])}` : '';
-  return { date, dateText: (out.date || '').split('\n')[0].trim(), writer: (out.writer || '').split('\n')[0].trim(), place: (out.place || '').split('\n')[0].trim(), attendees: names(out.attendees), absentees: names(out.absentees), topic: (out.topic || '').trim(), body: (out.body || '').trim(), next: (out.next || '').trim(), note: (out.note || '').trim(), found: hits.map(h => h.key) };
+  const keyOf = lab => (LAB.find(([, r]) => new RegExp('^' + r + '$').test(lab)) || [])[0];
+  const hits = []; const add = (key, start, end) => { if (key && !hits.some(h => h.key === key)) hits.push({ key, start, end }); };
+  // ① 줄 맨 앞의 칸 이름 (뒤에 한 칸 띄고 바로 내용이 와도 됨: "일시 2026. 1. 4.")
+  const reLine = new RegExp(`^[ \\t]*(${LAB.map(([, r]) => r).join('|')})[ \\t]*[:：]?(?=[ \\t]|\\n|$)`, 'gm'); let m;
+  while ((m = reLine.exec(t))) add(keyOf(m[1]), m.index, m.index + m[0].length);
+  // ② 표가 한 줄로 읽힌 PDF: "참석자 가, 나 미참석자 다", "일시 … 작성자 …" — 줄 가운데의 미참석자·작성자
+  const reIn = /[ \t,](미\s*참\s*석\s*자|작\s*성\s*자)[ \t]*[:：]?(?=[ \t]|$)/gm;
+  while ((m = reIn.exec(t))) add(keyOf(m[1]), m.index + 1, m.index + m[0].length);
+  const out = {}; hits.sort((a, b) => a.start - b.start).forEach((h, i) => { const nx = hits[i + 1]; out[h.key] = t.slice(h.end, nx ? nx.start : t.length).replace(/^\s*#.*$/gm, '').replace(/^\s*회\s*의\s*록\s*$/gm, '').trim(); });
+  const none = v => /^[-–—·\s]*$/.test(v || '');
+  const names = v => none(v) ? [] : String(v || '').split(/[,，、\/\n]+/).map(x => x.trim()).filter(x => x && !none(x) && x.length <= 12);
+  const one = v => none(v) ? '' : String(v || '').split('\n').map(x => x.trim()).filter(Boolean).join(' ');
+  const dre = /(20\d\d)\D{1,3}(\d{1,2})\D{1,3}(\d{1,2})/;
+  const iso = mm => mm ? `${mm[1]}-${pad2(+mm[2])}-${pad2(+mm[3])}` : '';
+  const dIn = iso((out.date || '').match(dre)), dFile = iso(String(fileName).replace(/\.[a-z]+$/i, '').match(/(20\d\d)\D{0,3}(\d{1,2})\D{1,3}(\d{1,2})\D*$/) || String(fileName).match(dre));
+  const date = dFile || dIn || iso(t.match(dre));
+  const flags = dIn && dFile && dIn !== dFile ? [`본문 일시(${dIn})와 파일 이름 날짜(${dFile})가 달라 파일 이름 날짜로 넣음`] : [];
+  // PDF는 줄마다 빈 줄이 끼어 읽히므로, 빈 줄이 절반 넘게 끼어 있으면 빈 줄을 걷어 낸다
+  const tidy = v => { const L = String(v || '').split('\n'); const blank = L.filter(x => !x.trim()).length; return (blank * 2 >= L.length - 1 ? L.filter(x => x.trim()) : L).join('\n').replace(/\n{3,}/g, '\n\n').trim(); };
+  ['topic', 'body', 'next', 'note'].forEach(k => { out[k] = tidy(out[k]); });
+  return { date, dateText: one(out.date), writer: one(out.writer), place: one(out.place), attendees: names(out.attendees), absentees: names(out.absentees), topic: one(out.topic) ? (out.topic || '').trim() : '', body: (out.body || '').trim(), next: none(out.next) ? '' : (out.next || '').trim(), note: none(out.note) ? '' : (out.note || '').trim(), flags, found: hits.map(h => h.key) };
 }
 function meetingPaper(dd, mt) {
   const row = (k, v, h) => `<tr><th>${k}</th><td colspan="3"${h ? ` style="height:${h}px;vertical-align:top;white-space:pre-wrap"` : ''}>${esc(v || '')}</td></tr>`;
@@ -2967,7 +2981,7 @@ VIEWS.meetings = async () => {
   const yrs = [...new Set(all.map(x => (x.date || '').slice(0, 4)).filter(Boolean))].sort().reverse(); const yr = S.sub.myr || yrs[0] || String(YEAR);
   const label = isCommittee() ? '회의록' : meetLabel(S.dept);
   const view = S.sub.meet && all.find(x => x.id === S.sub.meet);
-  if (view) return `<div class="topbar no-print"><div><h1>${esc(label)} 회의록</h1><div class="sub">${esc(DEPTS[view.dept] || '')} · ${esc(view.date || '')}</div></div><div class="row"><button class="btn" id="mt-back">목록으로</button>${!isCommittee() && canEdit() ? '<button class="btn" id="mt-edit">수정</button>' : ''}${view.hasFile ? '<button class="btn" id="mt-file">원본 내려받기</button>' : ''}<button class="btn p" id="mt-pr">인쇄 / PDF로 저장</button></div></div>${meetingPaper(S.data[view.dept], view)}`;
+  if (view) return `<div class="topbar no-print"><div><h1>${esc(label)} 회의록</h1><div class="sub">${esc(DEPTS[view.dept] || '')} · ${esc(view.date || '')}</div></div><div class="row"><button class="btn" id="mt-back">목록으로</button>${!isCommittee() && canEdit() ? '<button class="btn" id="mt-edit">수정</button>' : ''}${view.hasFile ? '<button class="btn" id="mt-file">원본 내려받기</button>' : ''}<button class="btn p" id="mt-pr">인쇄 / PDF로 저장</button></div></div>${(view.flags || []).length ? `<div class="hint no-print" style="margin-bottom:10px">${view.flags.map(esc).join('<br>')}</div>` : ''}${meetingPaper(S.data[view.dept], view)}`;
   const ed = S.sub.meetEdit ? (S.sub.meetEdit === 'new' ? { id: '', date: today(), kind: meetLabel(S.dept), attendees: [], absentees: [] } : all.find(x => x.id === S.sub.meetEdit)) : null;
   const list = all.filter(x => (x.date || '').startsWith(yr));
   return `<div class="topbar"><div><h1>${esc(label)}</h1><div class="sub">${isCommittee() ? '전 부서 임원회의·교사회의 회의록' : `${esc(label)} 회의록을 쓰고 보관합니다. 지난 회의록 파일(HWP·PDF·Word)을 여러 개 한꺼번에 올리면 칸을 자동으로 읽어 넣습니다.`}</div></div>
