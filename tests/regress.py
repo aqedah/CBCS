@@ -123,5 +123,120 @@ with sync_playwright() as p:
     rec('R07 옛 판 차수·개정일 자동, 이전 판, 날짜순 정렬', ok, f'{f} / 목록={lst}')
     pg.close()
 
+    # ── 2026-10-14 사용성 재점검(af0ffea) 반영 ──
+    def t_R08():
+        # R08 연간계획서 출력 화면: 인쇄·돌아가기 단추가 연결되어야 함 (UX-01)
+        pg = login(b, 'elem'); go(pg, 'plan')
+        pg.evaluate("()=>{window.__pc=0; window.print=()=>{window.__pc++}}")
+        pg.click('#pl-open-print'); pg.wait_for_timeout(1000)
+        if pg.query_selector('#pl-print'): pg.click('#pl-print'); pg.wait_for_timeout(1200)
+        pc = pg.evaluate("()=>window.__pc")
+        if pg.query_selector('#pl-back'): pg.click('#pl-back'); pg.wait_for_timeout(1000)
+        back = bool(pg.query_selector('#pl-year'))
+        rec('R08 계획서 출력 인쇄·돌아가기', pc >= 1 and back, f'인쇄 호출={pc}, 돌아감={back}')
+        pg.close()
+    try: t_R08()
+    except Exception as e:
+        rec('R08 (실행 오류)', False, str(e)[:160])
+        try: pg.close()
+        except Exception: pass
+
+    def t_R09():
+        # R09 계획서 일정 추가 뒤에도 쓰던 표어가 저장되어야 함 (UX-02)
+        pg = login(b, 'elem'); Y = pg.evaluate("()=>window.CBCS_YEAR||2026") + 1
+        go(pg, 'plan', f"{{year:{Y}}}")
+        pg.fill('#pl-slogan', '사라지면 안 되는 계획 초안')
+        pg.fill('#ev-date', f'{Y}-01-10'); pg.fill('#ev-title', '시험 일정'); pg.click('#ev-add'); pg.wait_for_timeout(1500)
+        saved = pg.evaluate(f"async()=>((await window.CBCS_APP.backend.get('depts/elem/plans/{Y}'))||{{}}).slogan||''")
+        rec('R09 일정 추가 때 계획 초안 함께 저장', saved == '사라지면 안 되는 계획 초안', f'저장된 표어={saved!r}')
+        pg.close()
+    try: t_R09()
+    except Exception as e:
+        rec('R09 (실행 오류)', False, str(e)[:160])
+        try: pg.close()
+        except Exception: pass
+
+    def t_R10():
+        # R10 새 주일: 서기가 설교·헌금 저장 뒤, 먼저 열어 둔 다른 화면이 출석만 저장해도 설교·헌금이 남아야 함 (UX-03)
+        pg = login(b, 'elem'); D = '2026-12-27'
+        res = pg.evaluate(f"""async()=>{{const A=window.CBCS_APP, dd=A.S.data.elem; delete dd.reports['{D}']; const mk = A.blankReport || ((dd,d)=>({{dept:dd.id,date:d,title:'',preacher:'',att:{{}},absent:{{}},offering:{{sunday:0,tithe:0,thanks:0,other:0}},status:'draft'}})); if (dd.reportBase) delete dd.reportBase['{D}'];
+          const stale = mk(dd,'{D}');                       // 팸장 화면: 보고서가 아직 없을 때 열어 둠
+          const a = mk(dd,'{D}'); a.title='서기가 입력한 설교 제목'; a.preacher='시험교역자'; a.offering.sunday=50000;
+          await A.saveReport(dd, a);
+          const sid = dd.students.find(s=>s.status==='active').id; stale.att[sid]='P'; delete dd.reportBase['{D}'];
+          await A.saveReport(dd, stale);
+          const g = await A.backend.get('depts/elem/reports/{D}'); return {{title:g.title, preacher:g.preacher, sunday:(g.offering||{{}}).sunday, att:Object.keys(g.att||{{}}).length}};}}""")
+        rec('R10 새 주일 서기·팸장 따로 저장해도 내용 보존', res['title'] == '서기가 입력한 설교 제목' and res['preacher'] == '시험교역자' and res['sunday'] == 50000 and res['att'] == 1, str(res))
+        pg.close()
+    try: t_R10()
+    except Exception as e:
+        rec('R10 (실행 오류)', False, str(e)[:160])
+        try: pg.close()
+        except Exception: pass
+
+    def t_R11():
+        # R11 휴대폰: 결석 사유를 쓰고 저장 단추 없이 홈으로 가도 사유가 남거나 경고가 떠야 함 (UX-04)
+        pg = login(b, 'young', 390); go(pg, 'attend')
+        pg.evaluate("()=>document.querySelectorAll('details').forEach(d=>d.open=true)"); pg.wait_for_timeout(300)
+        inp = pg.query_selector('[data-abs]'); sid = inp.get_attribute('data-abs') if inp else None
+        if inp:
+            inp.fill('가상사유-R11'); pg.click('.mobile-nav [data-nav]:not(.on)'); pg.wait_for_timeout(1500)
+            warned = pg.is_visible('#lv-stay')
+            dt = pg.evaluate("()=>window.CBCS_APP.S.sub.date||''")
+            stored = pg.evaluate(f"async()=>{{const dd=window.CBCS_APP.S.data.young; const ds=Object.keys(dd.reports).sort(); for (const d of ds.reverse()) {{ const g=await window.CBCS_APP.backend.get('depts/young/reports/'+d); if (g && g.absent && g.absent['{sid}']) return g.absent['{sid}']; }} return ''}}")
+            rec('R11 결석 사유 저장 없이 이동해도 보존·경고', stored == '가상사유-R11' or warned, f'저장값={stored!r}, 경고={warned}')
+        else:
+            rec('R11 결석 사유 저장 없이 이동해도 보존·경고', False, '사유 칸 없음')
+        pg.close()
+    try: t_R11()
+    except Exception as e:
+        rec('R11 (실행 오류)', False, str(e)[:160])
+        try: pg.close()
+        except Exception: pass
+
+    def t_R12():
+        # R12 휴대폰: 아래쪽 회원 출석을 눌러도 화면 위치가 맨 위로 돌아가지 않아야 함 (UX-05)
+        pg = login(b, 'young', 390); go(pg, 'attend')
+        pg.evaluate("()=>document.querySelectorAll('details').forEach(d=>{d.open=true; d.dispatchEvent(new Event('toggle'))})"); pg.wait_for_timeout(300)
+        btns = pg.query_selector_all('[data-att]'); last = btns[-1]
+        last.scroll_into_view_if_needed(); pg.wait_for_timeout(300); y0 = pg.evaluate("()=>window.scrollY")
+        last.click(); pg.wait_for_timeout(1500); y1 = pg.evaluate("()=>window.scrollY")
+        rec('R12 출석 체크 뒤 화면 위치 유지', y0 > 300 and abs(y1 - y0) < 200, f'전={y0}, 후={y1}')
+        pg.close()
+    try: t_R12()
+    except Exception as e:
+        rec('R12 (실행 오류)', False, str(e)[:160])
+        try: pg.close()
+        except Exception: pass
+
+    def t_R13():
+        # R13 빈 주일 보고서는 "작성 완료" 전에 빠진 칸을 알려야 함 (UX-06)
+        pg = login(b, 'elem'); go(pg, 'weekly', "{date:'2027-01-03'}")
+        pg.click('#w-done'); pg.wait_for_timeout(800)
+        asked = pg.is_visible('#wd-go'); st = pg.evaluate("()=>(window.CBCS_APP.S.data.elem.reports['2027-01-03']||{}).status")
+        rec('R13 빈 보고서 완료 전 확인', asked and st != 'done', f'확인 창={asked}, 상태={st}')
+        pg.close()
+    try: t_R13()
+    except Exception as e:
+        rec('R13 (실행 오류)', False, str(e)[:160])
+        try: pg.close()
+        except Exception: pass
+
+    def t_R14():
+        # R14 새친구 등록: 성별을 고르게 하고, 학교를 학생 카드에도 저장 (UX-08)
+        pg = login(b, 'elem'); go(pg, 'weekly', "{date:'2027-01-03'}")
+        pg.fill('#nc-name', '가상새친구'); pg.fill('#nc-school', '가상초 3학년'); pg.click('#nc-add'); pg.wait_for_timeout(800)
+        n0 = pg.evaluate("()=>window.CBCS_APP.S.data.elem.students.filter(s=>s.name==='가상새친구').length")
+        pg.select_option('#nc-sex', '여'); pg.click('#nc-add'); pg.wait_for_timeout(1500)
+        s1 = pg.evaluate("()=>{const s=window.CBCS_APP.S.data.elem.students.find(s=>s.name==='가상새친구')||{}; return {sex:s.sex, school:s.school}}")
+        rec('R14 새친구 성별 선택·학교 저장', n0 == 0 and s1 == {'sex': '여', 'school': '가상초 3학년'}, f'성별 없이 등록={n0}, 저장={s1}')
+        pg.close()
+    try: t_R14()
+    except Exception as e:
+        rec('R14 (실행 오류)', False, str(e)[:160])
+        try: pg.close()
+        except Exception: pass
+
+
 print(json.dumps(results, ensure_ascii=False, indent=1))
 sys.exit(0 if all(r['pass'] for r in results) else 1)
