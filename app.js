@@ -1499,8 +1499,8 @@ async function loadYoung() {
 }
 /* 회칙 화면의 규례 종류: 청년부 회칙(총회 자동 판정 기준) · 한국성서선교회 헌장(통상 규례, 판정에는 안 씀) */
 // 청년부 회칙 화면 맨 위에 늘 보이는 원칙
-const YOUNG_PRINCIPLE = { src: '사단법인 한국성서선교회 헌장 제29조(기관의 권리 및 의무)', lead: '각 회원교회는 남, 녀 전도회, 장년회, 청년회, 각급 주일학교 등 여러 기관을 가지며 다음과 같은 권리 및 의무를 갖는다.', items: ['전 기관은 그 교회에 소속된다.', '각 기관은 그 교회에 봉사하기 위하여 존재한다.', '각 기관은 당회의 관할 하에 그 지도 및 치리를 받는다.', '각 기관은 당회의 지도하에 사업을 운영한다.', '각 기관은 사업을 위한 예산 결산을 당회에 제출하여 감사를 받는다.'] };
-const principleHTML = () => `<details class="card principle" ${S.principleClosed ? '' : 'open'}><summary><h2>${esc(YOUNG_PRINCIPLE.src)}</h2><span class="pr-tg"></span></summary><p>${esc(YOUNG_PRINCIPLE.lead)}</p><ol>${YOUNG_PRINCIPLE.items.map(x => `<li>${esc(x)}</li>`).join('')}</ol></details>`;
+const YOUNG_PRINCIPLE = { src: '사단법인 한국성서선교회 헌장 제29조(기관의 권리 및 의무)', lead: '각 회원교회는 남, 녀 전도회, 장년회, 청년회, 각급 주일학교 등 여러 기관을 가지며 다음과 같은 권리 및 의무를 갖는다.', items: ['전 기관은 그 교회에 소속된다.', '각 기관은 그 교회에 봉사하기 위하여 존재한다.', '각 기관은 당회의 관할 하에 그 지도 및 치리를 받는다.', '각 기관은 당회의 지도하에 사업을 운영한다.', '각 기관은 사업을 위한 예산 결산을 당회에 제출하여 감사를 받는다.'], more: [{ src: '사단법인 한국성서선교회 헌장 제60조(권리)', body: '입교인은 성찬 참여와 공동의회 회원권을 가지며 선거권과 피선거권을 갖는다.' }] };
+const principleHTML = () => `<details class="card principle" ${S.principleClosed ? '' : 'open'}><summary><h2>${esc(YOUNG_PRINCIPLE.src)}</h2><span class="pr-tg"></span></summary><p>${esc(YOUNG_PRINCIPLE.lead)}</p><ol>${YOUNG_PRINCIPLE.items.map(x => `<li>${esc(x)}</li>`).join('')}</ol>${(YOUNG_PRINCIPLE.more || []).map(m => `<h3 style="margin:14px 0 4px;font-size:15px">${esc(m.src)}</h3><p>${esc(m.body)}</p>`).join('')}</details>`;
 const RULE_DOCS = { young: { name: '청년부 회칙', org: '중앙성서교회 청년부' }, gideon: { name: '기드온 찬양팀 회칙', org: '중앙성서교회 기드온 찬양팀' }, charter: { name: '한국성서선교회 헌장', org: '한국성서선교회' } };
 const bylawKind = b => (b && b.kind) || 'young';
 const bylawsOf = (dd, k) => dd.bylaws.filter(b => bylawKind(b) === k);
