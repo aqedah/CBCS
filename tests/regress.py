@@ -110,5 +110,18 @@ with sync_playwright() as p:
     rec('R06 큰 원본은 "제외"로 따로 표시', '제외' in txt and '원본' in txt, txt.replace('\n', ' ')[:160])
     pg.close()
 
+    # R07 회칙 옛 판 올리기: 본문 끝 개정 기록에서 차수·개정일을 채우고 "이전 판"으로, 목록은 날짜순
+    pg = login(b, 'young'); go(pg, 'bylaws')
+    old = tempfile.NamedTemporaryFile('w', suffix='.txt', delete=False, prefix='가상회칙_13년총회수정본_')
+    old.write('가상 청년부 회칙\n제1조 : 가상 조문이다.\n제2조 : 가상 조문 둘.\n11차 수정 : 2011년 9월 26일\n12차 수정 : 2012년 10월 21일\n'); old.close()
+    pg.click('#bl-upload'); pg.set_input_files('#bu-file', old.name); pg.wait_for_timeout(1500)
+    f = pg.evaluate("()=>({to:$('#bu-to').value, rev:$('#bu-rev').value, date:$('#bu-date').value, st:$('#bu-status').value})".replace('$(', 'document.querySelector('))
+    pg.click('#bu-save'); pg.wait_for_timeout(1500)
+    lst = pg.evaluate("()=>[...document.querySelectorAll('.vlist .item .t')].map(x=>x.textContent)")
+    pos = lst.index('12차 수정') if '12차 수정' in lst else -1
+    ok = f == {'to': 'new', 'rev': '12차 수정', 'date': '2012-10-21', 'st': 'old'} and pos > 0
+    rec('R07 옛 판 차수·개정일 자동, 이전 판, 날짜순 정렬', ok, f'{f} / 목록={lst}')
+    pg.close()
+
 print(json.dumps(results, ensure_ascii=False, indent=1))
 sys.exit(0 if all(r['pass'] for r in results) else 1)
