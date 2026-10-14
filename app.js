@@ -31,6 +31,9 @@ function closeModal() { $('#modal').hidden = true; $('#modal-box').innerHTML = '
 /* ───────────── 데이터 계층 ───────────── */
 let fb = null;
 const backend = MOCK ? mockBackend() : await firebaseBackend();
+// 쓰기 결과 기록: "저장"을 눌렀을 때 실제로 서버 저장이 성공했는지 보고 미저장 표시를 푼다
+backend._raw = {}; // 시험에서 쓰기 실패를 흉내 낼 때 여기를 바꾼다
+['set', 'setMerge', 'update', 'del', 'batchSet', 'list', 'get'].forEach(k => { const f = backend[k]; if (typeof f !== 'function') return; backend._raw[k] = f; if (k === 'list' || k === 'get') { backend[k] = (...a) => backend._raw[k].apply(backend, a); return; } backend[k] = async (...a) => { S.writes.pending++; try { const r = await backend._raw[k].apply(backend, a); S.writes.ok++; return r; } catch (e) { S.writes.err++; throw e; } finally { S.writes.pending--; } }; });
 
 async function firebaseBackend() {
   const FB = 'https://www.gstatic.com/firebasejs/10.14.1/';
@@ -66,6 +69,7 @@ async function firebaseBackend() {
     onSession(cb) { cb(active); },
     async get(p) { const s = await getDoc(ref(p)); return s.exists() ? s.data() : null; },
     async set(p, data) { await setDoc(ref(p), data); },
+    async setMerge(p, data) { await setDoc(ref(p), data, { merge: true }); }, // 있는 칸은 남기고 합친다(지도형 칸은 안쪽까지)
     // 바뀐 칸만 고친다: changes = [[['att','학생id'], 값 또는 DEL], ...] — 다른 사람이 동시에 고친 다른 칸을 덮어쓰지 않음
     async update(p, changes) { const args = changes.flatMap(([path, v]) => [new FieldPath(...path), v === DEL ? deleteField() : v]); await updateDoc(ref(p), ...args); },
     async del(p) { await deleteDoc(ref(p)); },
@@ -95,6 +99,7 @@ function mockBackend() { // 로컬 시험용: data/import_data.json을 읽어 �
     onSession(cb) { seeded.then(() => cb(session)); },
     async get(p) { return store[p] ? JSON.parse(JSON.stringify(store[p])) : null; },
     async set(p, data) { store[p] = JSON.parse(JSON.stringify(data)); save(); },
+    async setMerge(p, data) { const deep = (a, b) => { Object.entries(b).forEach(([k, v]) => { if (v && typeof v === 'object' && !Array.isArray(v) && a[k] && typeof a[k] === 'object' && !Array.isArray(a[k])) deep(a[k], v); else a[k] = JSON.parse(JSON.stringify(v)); }); return a; }; store[p] = deep(store[p] || {}, data); save(); },
     async update(p, changes) { const o = store[p]; if (!o) throw new Error('not-found'); changes.forEach(([path, v]) => { let t = o; path.slice(0, -1).forEach(k => { t = t[k] = t[k] && typeof t[k] === 'object' ? t[k] : {}; }); const k = path[path.length - 1]; if (v === DEL) delete t[k]; else t[k] = JSON.parse(JSON.stringify(v)); }); save(); },
     async del(p) { delete store[p]; save(); },
     async list(p) { const pre = p + '/'; return Object.keys(store).filter(k => k.startsWith(pre) && !k.slice(pre.length).includes('/')).map(k => ({ _id: k.slice(pre.length), ...JSON.parse(JSON.stringify(store[k])) })); },
@@ -104,6 +109,7 @@ function mockBackend() { // 로컬 시험용: data/import_data.json을 읽어 �
 
 /* 세션·캐시 */
 const S = { user: null, dept: null, data: {}, committee: null, view: 'home', sub: {}, loaded: false }; window.CBCS = S;
+S.writes = { ok: 0, err: 0, pending: 0 }; // 쓰기 결과 기록(아래 backend 감싸기와 함께 씀)
 const isCommittee = () => S.user === 'committee';
 const isCare = () => !!(S.careKey && S.careDept === S.dept); // 부서 관리자 모드(심방 카드 열림) — 비밀번호로 만든 열쇠가 메모리에만 있음
 const canEdit = () => !isMobile();
@@ -250,10 +256,12 @@ const renderHere = () => { S.keepScroll = window.scrollY; return render(); };
 const PAGE_SAVES = ['w-save', 'm-save', 'pl-save', 'bt-save', 'ot-save', 'vh-save', 'mn-save', 'as-save'];
 S.dirty = false;
 function trackDirty() {
-  S.dirty = false; const main = document.querySelector('.main'); if (!main) return;
+  if (!(S.dirty === 'saving' && S.writes.pending)) S.dirty = false; const main = document.querySelector('.main'); if (!main) return;
   if (!PAGE_SAVES.some(id => document.getElementById(id))) return;
   main.addEventListener('input', e => { if (!e.target.closest('.modal') && e.target.matches('input:not([type=file]):not([type=checkbox]), textarea, select')) S.dirty = true; });
-  PAGE_SAVES.forEach(id => { const b = document.getElementById(id); if (b) b.addEventListener('click', () => { S.dirty = false; }, true); });
+  // 저장 단추: 누르는 순간이 아니라, 서버 저장이 실제로 성공한 뒤에 미저장 표시를 푼다. 실패하면 그대로 남는다
+  PAGE_SAVES.forEach(id => { const b = document.getElementById(id); if (b) b.addEventListener('click', () => { if (!S.dirty) return; const ok0 = S.writes.ok, err0 = S.writes.err; S.dirty = 'saving'; let n = 0;
+    const tick = () => { if (S.dirty !== 'saving') return; if (S.writes.err > err0) { S.dirty = true; return; } if (S.writes.ok > ok0 && !S.writes.pending) { S.dirty = false; return; } if (++n < 100) setTimeout(tick, 200); else S.dirty = true; }; setTimeout(tick, 200); }, true); });
 }
 function leaveOk(fn) {
   if (!S.dirty) return fn();
@@ -313,7 +321,7 @@ window.addEventListener('beforeprint', () => { S.printing = true; });
 window.addEventListener('afterprint', () => { S.printing = false; if (S.user && S.mqStale) { S.mqStale = false; render(); } });
 const doPrint = () => { S.printing = true; window.print(); setTimeout(() => { S.printing = false; }, 1500); };
 // 폭이 바뀌어 다시 그릴 때는 보던 화면을 그대로 둔다(휴대폰 메뉴에 없는 화면이어도 메인으로 보내지 않음)
-matchMedia('(max-width:760px)').addEventListener('change', () => { if (!S.user) return; if (S.printing) { S.mqStale = true; return; } S.keepView = true; render().finally(() => { S.keepView = false; }); });
+matchMedia('(max-width:760px)').addEventListener('change', () => { if (!S.user) return; if (S.printing || S.dirty) { S.mqStale = true; return; } S.keepView = true; render().finally(() => { S.keepView = false; }); }); // 쓰던 글이 있으면 다시 그리지 않는다(초안 보존)
 
 /* ───────────── 로그인 ───────────── */
 const acctName = d => d === 'committee' ? '교육위원회' : DEPTS[d] || '';
@@ -822,7 +830,8 @@ const clone = x => x == null ? x : JSON.parse(JSON.stringify(x));
 async function saveReport(dd, r) {
   const p = `depts/${dd.id}/reports/${r.date}`; dd.reportBase = dd.reportBase || {}; const base = dd.reportBase[r.date];
   const { _id, ...cur } = r;
-  if (!base) { await backend.set(p, cur); }
+  // 처음 저장(서버에 아직 없는 주일): 통째로 덮어쓰지 않고 합쳐 쓴다 — 두 사람이 같은 새 주일을 동시에 처음 저장해도 출석이 모두 남음
+  if (!base) { await backend.setMerge(p, cur); }
   else {
     const ch = []; const MAPS = ['att', 'absent'];
     new Set([...Object.keys(base), ...Object.keys(cur)]).forEach(k => {
@@ -830,7 +839,7 @@ async function saveReport(dd, r) {
       if (MAPS.includes(k) && cur[k] && typeof cur[k] === 'object' && base[k] && typeof base[k] === 'object') { new Set([...Object.keys(base[k]), ...Object.keys(cur[k])]).forEach(id => { if (!jsonEq(base[k][id], cur[k][id])) ch.push([[k, id], cur[k][id] === undefined ? DEL : cur[k][id]]); }); }
       else if (!jsonEq(base[k], cur[k])) ch.push([[k], cur[k] === undefined ? DEL : cur[k]]);
     });
-    if (ch.length) { try { await backend.update(p, ch); } catch (e) { if (/not-found|No document/i.test(e.code || e.message)) await backend.set(p, cur); else throw e; } }
+    if (ch.length) { try { await backend.update(p, ch); } catch (e) { if (/not-found|No document/i.test(e.code || e.message)) await backend.setMerge(p, cur); else throw e; } }
   }
   const fresh = await backend.get(p) || cur; Object.keys(r).forEach(k => delete r[k]); Object.assign(r, fresh);
   dd.reports[r.date] = r; dd.reportBase[r.date] = clone(fresh);
@@ -1015,7 +1024,7 @@ function reportPaper(dd, r, withBar) {
   const head = dd.doc.staff.find(t => t.status !== 'left' && /부장|회장/.test(t.role)); const sec = dd.doc.staff.find(t => t.status !== 'left' && /총무|서기/.test(t.role));
   const hasNames = Object.keys(r.att || {}).length > 0;
   const classRows = hasNames ? dd.doc.classes.map(c => { const st = classStudents(dd, c.id); const pr = st.filter(x => r.att[x.id]); const ab = st.filter(x => !r.att[x.id]); return `<tr><td>${esc(c.name)}</td><td>${esc(c.teacher || '')}</td><td>${pr.map(x => esc(x.name) + (r.att[x.id] === 'O' ? '(온라인·본당)' : '')).join(', ')}</td><td class="n">${st.length}</td><td class="n">${pr.length}</td><td>${ab.map(x => esc(x.name) + (r.absent[x.id] ? `(${esc(r.absent[x.id])})` : '')).join(', ')}</td></tr>`; }).join('')
-    : (r.classRows || []).map(c => `<tr><td>${esc(c.classId)}</td><td>${esc(c.teacher || '')}</td><td>${(c.present || []).map(esc).join(', ')}</td><td class="n">${c.reg ?? ''}</td><td class="n">${c.att ?? ''}</td><td>${Object.entries(r.absent || {}).filter(([k]) => true).length ? '' : ''}</td></tr>`).join('');
+    : (r.classRows || []).map(c => `<tr><td>${esc(c.classId)}</td><td>${esc(c.teacher || '')}</td><td>${(c.present || []).map(esc).join(', ')}</td><td class="n">${esc(c.reg ?? '')}</td><td class="n">${esc(c.att ?? '')}</td><td>${Object.entries(r.absent || {}).filter(([k]) => true).length ? '' : ''}</td></tr>`).join('');
   const tA = r.teachersPresent || [], tB = Object.entries(r.teachersAbsent || {});
   const unmatched = Object.keys(r.attUnmatched || {});
   const absentUnmatched = Object.entries(r.absentUnmatched || {});
@@ -2283,13 +2292,8 @@ async function importRoster(payload, log) {
     if (!DEPTS[d]) { log(`${d}: 모르는 부서 — 건너뜀`); continue; }
     if (!isCommittee() && S.dept !== d) { log(`${DEPTS[d]} ${rows.length}명: 다른 부서라 건너뜀 (교육위원회로 들어가면 전 부서 가능)`); continue; }
     const dd = await loadDept(d); const items = []; let upd = 0, add = 0, lft = 0; const warn = [];
-    // 같은 사람 찾기 — 생년월일(연도까지) 일치만 자동으로 합친다. 생일이 다르거나 동명이인이면 합치지 않고 "확인 필요"에 올린다
-    const findS = x => { const same = dd.students.filter(s => normName(s.name) === normName(x.name)); if (!same.length) return null;
-      const exact = same.filter(s => x.birth && s.birth && s.birth === x.birth); if (exact.length === 1) return exact[0];
-      if (exact.length > 1) { warn.push(`${x.name} ${x.birth}: 앱에 같은 이름·생일이 ${exact.length}명 — 건너뜀`); return undefined; }
-      const loose = same.filter(s => !x.birth || !s.birth); if (loose.length === 1 && same.length === 1) { warn.push(`${x.name}: 한쪽에 생일이 없어 이름으로만 맞춤 — 맞는지 확인`); return loose[0]; }
-      if (same.length === 1 && x.birth && same[0].birth) { warn.push(`${x.name}: 생일이 다름 (앱 ${same[0].birth} / 명부 ${x.birth})${md(same[0].birth) === md(x.birth) ? ' — 연도만 다름' : ''} — 합치지 않음, 같은 사람이면 앱에서 생일을 고친 뒤 다시 가져오기`); return undefined; }
-      warn.push(`${x.name}: 같은 이름이 ${same.length}명이라 못 정함 — 건너뜀`); return undefined; };
+    // 같은 사람 찾기 — 공통 규칙(matchPerson): 생년월일(연도까지) 일치만 자동, 다르거나 동명이인이면 합치지 않고 "확인 필요"
+    const findS = x => { const m = matchPerson(dd.students, x); if (m.status === 'none') return null; if (m.status === 'exact') return m.s; if (m.status === 'loose') { warn.push(`${x.name}: ${m.reason} — 맞는지 확인`); return m.s; } warn.push(`${x.name}: ${m.reason} — 합치지 않음${m.status === 'conflict' ? ', 같은 사람이면 앱에서 생일을 고친 뒤 다시 가져오기' : ''}`); return undefined; };
     for (const x of rows) {
       let s = findS(x); if (s === undefined) continue;
       if (!s) { s = { id: `${d}_${x.name}_${x.birth || uid()}`, name: x.name, sex: x.sex || '', birth: x.birth || '', dept: d, classId: '', status: x.left ? 'left' : 'active', faith: '', faithYear: '', faithHalf: '', phone: '', school: '', father: '', mother: '', siblings: [], address: '', evangelist: '', guardianPhone: '', guardianRel: '', scholarship: [], note: '', history: [], statusLog: [], flags: [`${payload.year || ''} 명부에서 추가`] }; dd.students.push(s); add++; } else upd++;
@@ -2464,6 +2468,9 @@ VIEWS.care = async () => {
     <div class="row">${['active', 'left', 'all'].map(k => `<button class="btn s ${show === k ? 'p' : ''}" data-show="${esc(k)}">${{ active: '재적·새친구', left: '제적', all: '전체' }[k]}</button>`).join('')}<button class="btn s ${S.sub.sort === 'visit' ? 'p' : ''}" id="cr-sort">심방 오래된 순</button>${canEdit() ? `<button class="btn s" id="cr-import">과거 자료 가져오기</button><button class="btn s" id="cr-pw">관리자 비밀번호 바꾸기</button>` : ''}</div></div>
   <div class="stack">
     ${careNeedsCard(dd)}
+    <details class="card"><summary><b>심방 카드 백업 · 복원</b> <span class="note">잠긴(암호화된) 상태 그대로 파일로 받고, 같은 관리자 비밀번호로만 다시 열립니다</span></summary>
+      <div class="row" style="margin-top:8px"><button class="btn" id="cb-down">심방 카드 백업 내려받기 (${(dd.careRaw || []).length}건)</button><label class="btn s" style="cursor:pointer">백업 파일로 되돌리기<input type="file" id="cb-file" accept=".json,application/json" hidden></label></div>
+      <div class="note" style="margin-top:6px">전체 백업(교육위원회)에는 심방 카드가 들어가지 않으므로, 부서 관리자가 이 단추로 따로 받아 둡니다. 비밀번호를 바꾸면 그 전 백업은 예전 비밀번호로만 열립니다.</div><pre class="progress" id="cb-log"></pre></details>
     <div class="card"><div class="tw"><table class="rtab"><thead><tr><th>이름</th><th>나이</th><th>${esc(dd.doc.classLabel || "반")}</th><th>직장·학교</th><th>최근 심방</th><th>최근 기록</th><th>명부</th><th></th></tr></thead><tbody>
     ${sorted.map(s => { const c = careOf(dd, s); const n = (c && c.notes || []).slice().sort((a, b) => a.date < b.date ? 1 : -1)[0]; const yr = Object.values(dd.reports).filter(r => r.date.startsWith(String(YEAR))); const p = yr.filter(r => (r.att || {})[s.id]).length;
       return `<tr class="click" data-care="${esc(s.id)}"><td>${esc(s.name)}</td><td>${s.birth ? '만 ' + ageAt(s.birth, today()) : '—'}</td><td class="note">${esc((classOf(dd, s) || {}).name || s.classId || '')}</td><td class="wrap note">${esc(c && c.job || s.school || '')}</td><td>${n ? fmtShort(n.date) : '<span class="pill warn">없음</span>'}</td><td class="wrap note">${esc(n ? n.text.slice(0, 50) : '')}</td><td>${c ? '<span class="pill ok">있음</span>' : '<span class="pill mute">없음</span>'}</td><td class="note">${YEAR} 출석 ${p}/${yr.length}</td></tr>`; }).join('')}
@@ -2482,6 +2489,15 @@ function careForm(dd, s, c) {
     <h3 style="font-size:13px;margin:14px 0 6px">심방 기록 추가</h3><div class="row" style="flex-wrap:wrap"><input type="date" id="cn-date" value="${today()}" style="width:auto"><input type="text" id="cn-by" placeholder="심방자" style="width:120px"><input type="text" id="cn-place" placeholder="장소·방법 (식사, 전화…)" style="width:160px"></div><textarea id="cn-text" placeholder="만나서 나눈 내용, 기도 제목, 다음에 챙길 것" style="margin-top:6px"></textarea><div class="row" style="margin-top:6px"><button class="btn p" id="cn-add">기록 저장</button></div>`;
 }
 BIND.care = () => {
+  const cbd = $('#cb-down'); if (cbd) cbd.onclick = async () => { const dd = D(); try { const raw = await backend.list(`depts/${dd.id}/care`); downloadText(`CBCS-심방카드-${dd.id}-${today()}.json`, JSON.stringify({ kind: 'cbcs-care-backup', schemaVersion: 1, dept: dd.id, generated: new Date().toISOString(), count: raw.length, docs: raw })); $('#cb-log').textContent = `${raw.length}건을 잠긴 상태 그대로 내려받았습니다. 시놀로지의 부서 관리자 폴더에 보관하세요.`; } catch (e) { $('#cb-log').textContent = '내려받기 실패: ' + (e.code || e.message); } };
+  const cbf = $('#cb-file'); if (cbf) cbf.onchange = async () => { const dd = D(); const lg = $('#cb-log'); const f = cbf.files[0]; if (!f) return;
+    try { const pay = JSON.parse(await f.text()); if (pay.kind !== 'cbcs-care-backup' || pay.dept !== dd.id || !Array.isArray(pay.docs)) throw new Error('이 부서의 심방 카드 백업 파일이 아닙니다');
+      const ver = pay.docs.find(x => x._id === '_verify'); if (ver && S.careKey) { try { await decJSON(S.careKey, ver); } catch (e) { throw new Error('지금 관리자 비밀번호로 열리지 않는 백업입니다(다른 비밀번호로 만든 백업)'); } }
+      let cur = []; try { cur = await backend.list(`depts/${dd.id}/care`); } catch (e) { throw new Error('지금 심방 카드를 읽지 못해 비교할 수 없습니다 — 다시 시도하세요'); }
+      const have = new Set(cur.map(x => x._id)); const over = pay.docs.filter(x => have.has(x._id)).length;
+      openModal(`<h2>심방 카드 되돌리기<button class="btn s" id="modal-close">닫기</button></h2><p>${esc((pay.generated || '').slice(0, 10))} 백업 ${pay.docs.length}건으로 <b>${over}건을 덮어쓰고 ${pay.docs.length - over}건을 새로 만듭니다.</b> 백업에 없는 지금 카드는 그대로 둡니다.</p><div class="row"><button class="btn d" id="cbr-yes">되돌리기</button><button class="btn" id="cbr-no">취소</button></div>`); $('#modal-close').onclick = closeModal; $('#cbr-no').onclick = closeModal;
+      $('#cbr-yes').onclick = async () => { closeModal(); try { await backend.batchSet(pay.docs.map(({ _id, ...data }) => ({ path: `depts/${dd.id}/care/${_id}`, data }))); lg.textContent = `${pay.docs.length}건을 되돌렸습니다. 관리자 모드를 끝냈다가 다시 들어오면 반영됩니다.`; } catch (e) { lg.textContent = '되돌리기 실패: ' + (e.code || e.message); } };
+    } catch (e) { lg.textContent = e.message || '파일을 읽지 못했습니다'; } };
   const dd = D(); const ul = $('#care-unlock'); if (ul) { ul.onclick = () => adminModeDialog(dd); return; }
   if (!isCare()) return;
   const pw = $('#cr-pw'); if (pw) pw.onclick = () => changeCarePassword(dd);
@@ -3022,14 +3038,21 @@ BIND.meetings = () => {
     box.innerHTML = `<div class="tw"><table><thead><tr><th>파일</th><th>날짜</th><th>주요안건</th><th>작성자</th><th class="n">참석</th><th>읽은 칸</th><th>처리</th></tr></thead><tbody>${items.map(x => x.err ? `<tr><td>${esc(x.f.name)}</td><td colspan="5" class="note">${esc(x.err)}</td><td><span class="pill bad">못 읽음</span></td></tr>` : `<tr><td class="wrap">${esc(x.f.name)}</td><td>${esc(x.p.date || '?')}</td><td class="wrap">${esc(x.p.topic)}</td><td>${esc(x.p.writer)}</td><td class="n">${x.p.attendees.length}</td><td class="note">${x.p.found.length}/9</td><td>${!x.ok ? '<span class="pill warn">날짜 없음 — 건너뜀</span>' : x.dup ? '<span class="pill mute">이미 있음 — 건너뜀</span>' : '<span class="pill ok">새로 넣음</span>'}</td></tr>`).join('')}</tbody></table></div>
       <div class="row" style="margin-top:8px"><button class="btn p" id="mt-import" ${good.length ? '' : 'disabled'}>${good.length}건 저장</button><span class="note">날짜를 못 찾은 파일은 "새 회의록"으로 직접 넣어 주세요. 저장한 뒤에도 각 회의록에서 고칠 수 있습니다.</span></div><pre class="progress" id="mt-prog"></pre>`;
     const go = $('#mt-import'); if (go) go.onclick = async () => { go.disabled = true; let n = 0; const fails = []; const prog = $('#mt-prog');
-      for (const x of good) { prog.textContent = `저장 중 ${n + fails.length + 1}/${good.length} · ${x.f.name}`;
+      const res = []; // 파일마다: 내용 저장 / 원본 보관·제외·실패
+      for (const x of good) { prog.textContent = `저장 중 ${res.length + 1}/${good.length} · ${x.f.name}`;
+        const r = { name: x.f.name, content: '', orig: '' };
         try { const id = 'mt_' + uid(); const o = { id, dept: S.dept, kind: meetLabel(S.dept), created: today(), ...x.p, fileName: x.f.name, imported: true, hasFile: false }; delete o.found;
-          // 원본 파일 먼저(650KB 이하만) — 실패해도 회의록 내용은 저장한다
-          if (x.f.size < 650 * 1024) { try { const u8 = new Uint8Array(await x.f.arrayBuffer()); let bin = ''; for (let i = 0; i < u8.length; i += 0x8000) bin += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); await backend.set(`depts/${S.dept}/meetingFiles/${id}`, { name: x.f.name, type: x.f.type || '', size: x.f.size, data: btoa(bin) }); o.hasFile = true; } catch (e) { console.warn('원본 보관 실패', x.f.name, e); } }
-          await backend.set(`depts/${S.dept}/meetings/${id}`, o); L.push(o); n++;
-        } catch (e) { fails.push(`${x.f.name}: ${e.code || e.message}`); } }
-      if (fails.length) { prog.textContent = `${n}건 저장, ${fails.length}건 실패\n` + fails.join('\n'); toast(`${n}건 저장 · ${fails.length}건 실패 — 아래 내용을 확인하세요`, 5000); setTimeout(() => render(), 6000); }
-      else { render(); toast(`회의록 ${n}건을 넣었습니다`); } }; };
+          // 원본 파일 먼저(650KB 이하만) — 원본이 안 되어도 회의록 내용은 저장한다(결과에 따로 표시)
+          if (x.f.size >= 650 * 1024) r.orig = `제외 (${Math.round(x.f.size / 1024)}KB — 650KB 넘는 원본은 앱에 보관하지 않음, 시놀로지에 보관)`;
+          else { try { const u8 = new Uint8Array(await x.f.arrayBuffer()); let bin = ''; for (let i = 0; i < u8.length; i += 0x8000) bin += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); await backend.set(`depts/${S.dept}/meetingFiles/${id}`, { name: x.f.name, type: x.f.type || '', size: x.f.size, data: btoa(bin) }); o.hasFile = true; r.orig = '보관'; } catch (e) { r.orig = '실패 — ' + (e.code || e.message); } }
+          await backend.set(`depts/${S.dept}/meetings/${id}`, o); L.push(o); r.content = '저장';
+        } catch (e) { r.content = '실패 — ' + (e.code || e.message); if (r.orig === '보관') r.orig += ' (내용 저장 실패로 쓰이지 않음)'; }
+        res.push(r); }
+      const okN = res.filter(r => r.content === '저장').length, origN = res.filter(r => r.orig === '보관').length;
+      box.innerHTML = `<div class="tw"><table><thead><tr><th>파일</th><th>회의록 내용</th><th>원본 파일</th></tr></thead><tbody>${res.map(r => `<tr><td class="wrap">${esc(r.name)}</td><td>${r.content === '저장' ? '<span class="pill ok">저장</span>' : `<span class="pill bad">${esc(r.content)}</span>`}</td><td>${r.orig === '보관' ? '<span class="pill ok">보관</span>' : `<span class="pill warn">${esc(r.orig || '—')}</span>`}</td></tr>`).join('')}</tbody></table></div>
+        <div class="row" style="margin-top:8px"><b>내용 ${okN}/${res.length}건 저장 · 원본 ${origN}/${res.length}개 보관</b><button class="btn" id="mt-done">목록 보기</button></div>`;
+      $('#mt-done').onclick = () => render();
+      toast(origN === okN && okN === res.length ? `회의록 ${okN}건과 원본을 모두 넣었습니다` : `내용 ${okN}건 저장 · 원본 ${origN}개 보관 — 결과표를 확인하세요`, 4500); }; };
 };
 
 /* ───────────── 주말학습 (교회 양식 "주말학습계획서" + 첨부 1 차량신청서 + 첨부 2 결과보고서) ─────────────
@@ -3180,11 +3203,14 @@ BIND.backup = () => {
     try { const pay = JSON.parse(await f.text()); if (!pay || pay.kind !== 'cbcs-backup' || !Array.isArray(pay.raw)) throw new Error('CBCS 백업 파일이 아닙니다');
       const ok = pay.raw.filter(x => x && typeof x.path === 'string' && x.data && typeof x.data === 'object' && BACKUP_PATH_OK(x.path)); const bad = pay.raw.length - ok.length;
       const groups = {}; ok.forEach(x => { const a = x.path.split('/'); const col = a.length % 2 === 0 ? a.slice(0, -1).join('/') : a.join('/'); (groups[col] = groups[col] || []).push(x); });
-      const rows = []; for (const [col, items] of Object.entries(groups)) { let exist = new Set(); try { if (col.split('/').length % 2 === 1) exist = new Set((await backend.list(col)).map(d => `${col}/${d._id}`)); else { const d = await backend.get(col); if (d) exist.add(col); } } catch (er) {} const over = items.filter(x => exist.has(x.path)).length; rows.push({ col, n: items.length, over, add: items.length - over }); }
-      const tot = rows.reduce((t, r) => ({ n: t.n + r.n, over: t.over + r.over, add: t.add + r.add }), { n: 0, over: 0, add: 0 });
+      // 지금 서버 자료와 비교 — 읽기에 실패한 묶음은 "0건"으로 치지 않고 "비교 못 함"으로 표시하고, 하나라도 있으면 되돌리기를 막는다
+      const rows = []; for (const [col, items] of Object.entries(groups)) { let exist = new Set(), fail = ''; try { if (col.split('/').length % 2 === 1) exist = new Set((await backend.list(col)).map(d => `${col}/${d._id}`)); else { const d = await backend.get(col); if (d) exist.add(col); } } catch (er) { fail = er.code || er.message || '읽기 실패'; } const over = fail ? null : items.filter(x => exist.has(x.path)).length; rows.push({ col, n: items.length, over, add: fail ? null : items.length - over, fail }); }
+      const failed = rows.filter(r => r.fail);
+      const tot = rows.reduce((t, r) => ({ n: t.n + r.n, over: t.over + (r.over || 0), add: t.add + (r.add || 0) }), { n: 0, over: 0, add: 0 });
       box.innerHTML = `<div class="note">${esc(f.name)} · 만든 날 ${esc((pay.generated || '').slice(0, 10))}${pay.partial ? ' · <span class="pill warn">부분 백업 파일</span>' : ''}${bad ? ` · 형식이 맞지 않아 뺀 항목 ${bad}건` : ''}</div>
-        <div class="tw" style="margin-top:6px"><table><thead><tr><th>묶음</th><th class="n">파일 속</th><th class="n">덮어씀</th><th class="n">새로 생김</th></tr></thead><tbody>${rows.sort((a, b) => a.col.localeCompare(b.col)).map(r => `<tr><td>${esc(backupColOf(r.col + '/x'))}</td><td class="n">${r.n}</td><td class="n">${r.over || ''}</td><td class="n">${r.add || ''}</td></tr>`).join('')}<tr><th>합계</th><td class="n"><b>${tot.n}</b></td><td class="n"><b>${tot.over}</b></td><td class="n"><b>${tot.add}</b></td></tr></tbody></table></div>
-        <div class="row" style="margin-top:8px"><button class="btn d" id="rt-go">${tot.n}건 되돌리기</button><span class="note">파일에 없는 자료는 그대로 둡니다.</span></div><pre class="progress" id="rt-log"></pre>`;
+        <div class="tw" style="margin-top:6px"><table><thead><tr><th>묶음</th><th class="n">파일 속</th><th class="n">덮어씀</th><th class="n">새로 생김</th></tr></thead><tbody>${rows.sort((a, b) => a.col.localeCompare(b.col)).map(r => `<tr><td>${esc(backupColOf(r.col + '/x'))}</td><td class="n">${r.n}</td>${r.fail ? `<td colspan="2"><span class="pill bad">비교 못 함</span> <span class="note">${esc(r.fail)}</span></td>` : `<td class="n">${r.over || ''}</td><td class="n">${r.add || ''}</td>`}</tr>`).join('')}<tr><th>합계</th><td class="n"><b>${tot.n}</b></td><td class="n"><b>${failed.length ? '?' : tot.over}</b></td><td class="n"><b>${failed.length ? '?' : tot.add}</b></td></tr></tbody></table></div>
+        ${failed.length ? `<div class="hint" style="margin-top:8px">지금 서버 자료 ${failed.length}묶음을 읽지 못해 무엇이 덮어써질지 알 수 없습니다. 인터넷 연결을 확인하고 파일을 다시 골라 비교해 주세요. 비교가 끝나기 전에는 되돌릴 수 없습니다.</div>` : `<div class="row" style="margin-top:8px"><button class="btn d" id="rt-go">${tot.n}건 되돌리기</button><span class="note">파일에 없는 자료는 그대로 둡니다(병합 복원 — 백업 날의 상태와 똑같이 만드는 것은 아님).</span></div>`}<pre class="progress" id="rt-log"></pre>`;
+      if (failed.length) return;
       $('#rt-go').onclick = () => { openModal(`<h2>백업으로 되돌리기<button class="btn s" id="modal-close">닫기</button></h2><p>${esc((pay.generated || '').slice(0, 10))} 백업으로 <b>${tot.over}건을 덮어쓰고 ${tot.add}건을 새로 만듭니다.</b> 그 뒤에 고친 내용은 사라집니다. 계속할까요?</p><div class="row"><button class="btn d" id="rt-yes">되돌리기</button><button class="btn" id="rt-no">취소</button></div>`); $('#modal-close').onclick = closeModal; $('#rt-no').onclick = closeModal;
         $('#rt-yes').onclick = async () => { closeModal(); const lg = $('#rt-log'); try { await backend.batchSet(ok.map(x => ({ path: x.path, data: x.data })), (a, b) => { lg.textContent = `진행 ${a}/${b}`; }); lg.textContent = `완료 — ${ok.length}건을 되돌렸습니다. 새로고침하면 반영됩니다.`; S.data = {}; S.committee = null; } catch (er) { lg.textContent = '되돌리기 실패: ' + (er.code || er.message); } }; };
     } catch (er) { box.innerHTML = `<div class="hint">${esc(er.message || '파일을 읽지 못했습니다')}</div>`; } };
@@ -3288,6 +3314,18 @@ function yearRosterBody(dd, yr) {
 }
 
 // 과거 출석부 엑셀 변환 파일(young_attendance.json) 가져오기 — 기존 학생과 이름·생일로 합치고, 주일 보고서에 출석을 채운다
+/* 같은 사람 찾기 (명부·과거 출석부 등 모든 가져오기 공통)
+   - 이름 + 생년월일(연도까지) 일치 → 같은 사람
+   - 이름이 하나뿐이고 한쪽에 생일이 없으면 → 같은 사람으로 보되 "확인" 표시
+   - 생년월일이 다르거나(연도만 달라도), 같은 이름이 여럿이면 → 합치지 않음 */
+function matchPerson(list, x) {
+  const same = list.filter(s => normName(s.name) === normName(x.name)); if (!same.length) return { status: 'none' };
+  const exact = same.filter(s => x.birth && s.birth && s.birth === x.birth); if (exact.length === 1) return { s: exact[0], status: 'exact' };
+  if (exact.length > 1) return { status: 'ambiguous', reason: `같은 이름·생일이 ${exact.length}명` };
+  if (same.length === 1 && (!x.birth || !same[0].birth)) return { s: same[0], status: 'loose', reason: '한쪽에 생일이 없어 이름으로만 맞춤' };
+  if (same.length === 1) return { status: 'conflict', other: same[0], reason: `생일이 다름 (앱 ${same[0].birth} / 가져올 자료 ${x.birth})${same[0].birth.slice(5) === String(x.birth).slice(5) ? ' — 연도만 다름' : ''}` };
+  return { status: 'ambiguous', reason: `같은 이름이 ${same.length}명` };
+}
 function importYoungAttendance(dd) {
   openModal(`<h2>과거 출석부 가져오기<button class="btn s" id="modal-close">닫기</button></h2><p class="note">young_attendance.py로 만든 <b>young_attendance.json</b>(2021~2024 출석부·주일보고서 엑셀)을 올립니다. 같은 이름·생일의 학생은 소속 이력만 보태고, 없는 학생은 "제적" 상태로 새로 넣습니다. 그 날 보고서가 이미 있으면 출석 칸만 채웁니다.</p><div class="row" style="margin-top:6px"><input type="file" id="ya-file" accept=".json,application/json"><button class="btn p" id="ya-go" disabled>가져오기 시작</button></div><pre class="progress" id="ya-log" style="margin-top:10px"></pre>`);
   let picked = null; const go = $('#ya-go');
@@ -3297,7 +3335,7 @@ function importYoungAttendance(dd) {
     try {
       const d = JSON.parse(await f.text()); const items = []; let newS = 0, mergedS = 0, newR = 0, mergedR = 0;
       const md = b => (b || '').slice(5); const byKey = {};
-      const matchStudent = x => { const same = dd.students.filter(s => normName(s.name) === normName(x.name)); return same.find(s => !x.birth || !s.birth || md(s.birth) === md(x.birth)) || (same.length === 1 ? same[0] : undefined); }; // 이름이 하나뿐이면 생일이 달라도 같은 사람으로 보고 표시
+      const review = []; const matchStudent = x => { const m = matchPerson(dd.students, x); if (m.status === 'conflict' || m.status === 'ambiguous') { review.push(`${x.name}: ${m.reason} — 합치지 않고 따로 둠`); return undefined; } if (m.status === 'loose') review.push(`${x.name}: ${m.reason} — 맞는지 확인`); return m.s; }; // 공통 규칙(matchPerson) — 생년월일이 다르면 합치지 않는다
       for (const x of d.students || []) {
         let s = matchStudent(x);
         const yrs = Object.keys(x.years || {}).map(Number).sort(); const lastY = yrs[yrs.length - 1]; const lastG = lastY ? (x.years[lastY].group || '청년') : '청년';
@@ -3310,10 +3348,10 @@ function importYoungAttendance(dd) {
         if (x.rejoin && !s.statusLog.some(q => q.from === 'left' && q.date === x.rejoin)) { s.statusLog.push({ date: x.rejoin, from: 'left', to: 'active', reason: '복적', source: '과거 출석부 변환(사용자 확인)' }); }
         for (const l of x.left || []) { if (!s.statusLog.some(q => q.to === 'left' && String(q.date || '').startsWith(String(l.year)))) s.statusLog.push({ date: `${l.year}-12-31`, from: 'active', to: 'left', kind: l.kind || '제적', reason: l.reason || '', source: l.source });
           if (['결혼', '직분'].includes(l.kind) && s.status !== 'left' && !(s.statusLog || []).some(q => q.from === 'left' && q.date > `${l.year}-12-31`)) { s.status = 'left'; s.leftDate = `${l.year}-12-31`; s.leftKind = l.kind; s.leftReason = l.reason || ''; } /* 회칙 4조 자격 종료(사용자 확인)는 재적이어도 적용 */ if (s.status === 'left' && l.year === Math.max(...(x.left || []).map(q => q.year)) && (!s.leftDate || s.leftDate < `${l.year}-12-31`)) { s.leftDate = `${l.year}-12-31`; s.leftKind = l.kind || s.leftKind || '제적'; s.leftReason = l.reason || s.leftReason || ''; } }
-        byKey[x.name + '|' + md(x.birth)] = s;
+        byKey[x.name + '|' + (x.birth || '')] = s;
         items.push({ path: `depts/young/students/${s.id}`, data: s });
       }
-      const idOf = x => (byKey[x.name + '|' + md(x.birth)] || matchStudent(x) || {}).id;
+      const idOf = x => (byKey[x.name + '|' + (x.birth || '')] || (matchPerson(dd.students, x).status === 'exact' ? matchPerson(dd.students, x).s : null) || {}).id;
       const attByDate = {};
       for (const x of d.students || []) { const sid = idOf(x); if (!sid) continue; for (const v of Object.values(x.years || {})) for (const [dt, a] of Object.entries(v.att || {})) (attByDate[dt] = attByDate[dt] || {})[sid] = a; }
       for (const r of d.reports || []) {
@@ -3335,6 +3373,7 @@ function importYoungAttendance(dd) {
       for (const s of rmS) { await backend.del(`depts/young/students/${s.id}`); dd.students.splice(dd.students.indexOf(s), 1); const i = items.findIndex(it => it.path === `depts/young/students/${s.id}`); if (i >= 0) items.splice(i, 1); }
       if (rmS.length) { for (const it of items) if (it.path.startsWith('depts/young/reports/') && it.data.att) for (const s of rmS) delete it.data.att[s.id]; log(`교사인데 학생으로 들어가 있던 기록 삭제: ${rmS.map(s => s.name).join(', ')}`); }
       log(`학생: 기존과 합침 ${mergedS}명 · 새로 추가 ${newS}명 (제적 상태) · 보고서: 새로 ${newR}장 · 출석만 채움 ${mergedR}장 · 임원 이력 ${(d.officers || []).length}건 → 문서 ${items.length}개 올립니다…`);
+      review.forEach(r => log('※ 확인 필요 · ' + r));
       await backend.batchSet(items, (a, b) => { $('#ya-log').textContent = $('#ya-log').textContent.replace(/\n진행.*$/, '') + `\n진행 ${a}/${b}`; });
       log('완료. 출석부의 연도 버튼(2021~2024)과 총회 자료의 직전 1년 띠에 반영됩니다.'); (d._review || []).forEach(x => log('※ ' + x)); S.data = {};
     } catch (err) { console.error(err); log('실패: ' + (err.code || err.message)); go.disabled = false; }
@@ -3343,7 +3382,7 @@ function importYoungAttendance(dd) {
 }
 
 /* ───────────── 시작 ───────────── */
-window.CBCS_APP = { S, render, backend };
+window.CBCS_APP = { S, render, backend, matchPerson, saveReport }; // matchPerson·saveReport는 회귀 시험용
 backend.onSession(async d => {
   if (d) { S.user = d; S.dept = d === 'committee' ? null : d; }
   else { S.user = null; S.dept = null; }

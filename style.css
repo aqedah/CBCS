@@ -164,7 +164,7 @@ details.fold .tw{margin-top:10px}
   .grid2,.grid3,.recent{grid-template-columns:1fr}
   .thumb{max-width:300px}
   .mobile-nav{display:flex;position:fixed;left:0;right:0;bottom:0;background:var(--panel);border-top:1px solid var(--line);padding:6px 4px calc(6px + env(safe-area-inset-bottom,0px));gap:2px;overflow-x:auto;z-index:30}
-  .mobile-nav button{flex:1 0 64px;border:0;background:none;font-size:11px;padding:6px 2px;border-radius:6px;color:var(--fg);white-space:nowrap}
+  .mobile-nav button{flex:1 1 0;min-width:0;border:0;background:none;font-size:11px;padding:6px 2px;border-radius:6px;color:var(--fg);white-space:nowrap}
   .mobile-nav button.on{background:var(--accent-soft);color:var(--accent);font-weight:500}
   .paper{padding:18px 14px}
   .step{grid-template-columns:30px 1fr}

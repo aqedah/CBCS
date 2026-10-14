@@ -10,3 +10,12 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 20 }
       - run: npx --yes eslint@8.57.0 --no-eslintrc -c .eslintrc.json app.js tour.js patches.js config.js
+  regress:
+    # 체험 모드(가상 자료)로 회귀 시험: 고친 문제가 다시 생기지 않는지 브라우저에서 확인
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: pip install playwright && python -m playwright install --with-deps chromium
+      - run: (python -m http.server 8765 >/dev/null 2>&1 &) && sleep 2 && python tests/regress.py http://localhost:8765
