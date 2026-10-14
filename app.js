@@ -222,10 +222,10 @@ const NAV_COMMITTEE = [['home','메인','⌂'],['roster','출석부 열람','☰
 const NAV_COMMITTEE_MOBILE = [['home','메인'],['reports','보고서'],['scholarship','장학'],['tutorial','안내']];
 const VIEWS = {}, BIND = {};
 // 메뉴 묶음: 사이드 메뉴에서 누르면 아래로 펼쳐지는 하위 메뉴 (휴대폰은 화면 위 탭)
-const DOC_TABS = () => [[isCommittee() || isMobile() ? 'reports' : 'weekly', '주일 보고서'], ['monthly', '월간 보고서'], ['plan', '연간계획서']];
+const DOC_TABS = () => [[isCommittee() || isMobile() ? 'reports' : 'weekly', '주일 보고서'], ['monthly', '월간 보고서'], ['meetings', isCommittee() ? '회의록' : meetLabel(S.dept)], ['plan', '연간계획서']];
 // 계획서 묶음: 연간계획서 + 주말학습계획서(행사별 계획) + 차량 신청(주말학습계획서 첨부 1)
 const PLAN_TABS = () => [['plan', '연간계획서'], ['outings', '주말학습'], ['vehicles', '차량 신청']];
-const REPORT_TABS = () => [[isCommittee() ? 'reports' : 'weekly', '주일 보고서'], ['monthly', '월간 보고서']];
+const REPORT_TABS = () => [[isCommittee() ? 'reports' : 'weekly', '주일 보고서'], ['monthly', '월간 보고서'], ['meetings', isCommittee() ? '회의록' : meetLabel(S.dept)]];
 // DB 묶음: 쌓아 두는 자료 — 보관함(지난 문서), 교육위원회는 장학·백업·복원까지
 const DB_TABS = () => [['archive', '보관함'], ...(isCommittee() ? [['scholarship', '장학'], ['backup', '백업·복원']] : [])];
 const YOUNG_TABS = () => [['bylaws', '회칙·헌장'], ['assembly', '총회 자료'], ['minutes', '총회 회의록']];
@@ -2926,6 +2926,86 @@ BIND.vehicles = () => {
 };
 
 
+/* ───────────── 회의록 (청년부 임원회의 · 다른 부서 교사회의) ─────────────
+   depts/{부서}/meetings/{id}: 일시·작성자·장소·참석자·미참석자·주요안건·안건(본문)·차후 회의 안건·비고
+   역대 회의록 파일(HWP·HWPX·PDF·DOCX)을 여러 개 한꺼번에 올리면 칸을 자동으로 읽어 미리보기 → 저장한다.
+   원본 파일은 650KB 이하면 depts/{부서}/meetingFiles/{id}에 같이 보관한다. */
+const meetLabel = d => d === 'young' ? '임원회의' : '교사회의';
+async function loadMeetings(d) { S.meetings = S.meetings || {}; if (!S.meetings[d]) { try { S.meetings[d] = (await backend.list(`depts/${d}/meetings`)).map(x => ({ ...x, id: x.id || x._id })); } catch (e) { S.meetings[d] = []; S.meetingsErr = e.code || e.message; } } return S.meetings[d]; }
+const MEET_FIELDS = [['date', '일시'], ['writer', '작성자'], ['place', '장소'], ['attendees', '참석자'], ['absentees', '미참석자'], ['topic', '주요안건'], ['body', '안건'], ['next', '차후 회의 안건'], ['note', '비고']];
+// 회의록 글에서 칸 읽기: 줄 맨 앞의 "일시·작성자·장소·참석자·미참석자·주요안건·안건·차후 회의 안건·비고"를 칸 이름으로 본다
+function parseMeetingText(text, fileName = '') {
+  const t = String(text || '').replace(/\r/g, '').replace(/ /g, ' ');
+  const LAB = [['absentees', '미\\s*참\\s*석\\s*자'], ['attendees', '참\\s*석\\s*자'], ['next', '(?:차\\s*후|다\\s*음)\\s*회\\s*의\\s*안\\s*건'], ['topic', '주\\s*요\\s*안\\s*건'], ['body', '(?:안\\s*건|회\\s*의\\s*내\\s*용)'], ['date', '일\\s*시'], ['writer', '작\\s*성\\s*자'], ['place', '장\\s*소'], ['note', '비\\s*고']];
+  const re = new RegExp(`^[ \\t]*(${LAB.map(([, r]) => r).join('|')})[ \\t]*(?::|：|\\n|[ \\t]{2,}|$)`, 'gm');
+  const hits = []; let m; while ((m = re.exec(t))) { const lab = m[1]; const key = (LAB.find(([, r]) => new RegExp('^' + r + '$').test(lab)) || [])[0]; if (key && !hits.some(h => h.key === key)) hits.push({ key, start: m.index, end: m.index + m[0].length }); else if (key === undefined) {} }
+  const out = {}; hits.sort((a, b) => a.start - b.start).forEach((h, i) => { const nx = hits[i + 1]; out[h.key] = t.slice(h.end, nx ? nx.start : t.length).replace(/^\s*#.*$/gm, '').trim(); });
+  const names = v => String(v || '').split(/[,，、\/\n]+/).map(x => x.trim()).filter(x => x && x.length <= 12);
+  const dm = (out.date || '').match(/(20\d\d)\D{1,3}(\d{1,2})\D{1,3}(\d{1,2})/) || String(fileName).match(/(20\d\d)\D{0,3}(\d{1,2})\D{1,3}(\d{1,2})/) || t.match(/(20\d\d)\D{1,3}(\d{1,2})\D{1,3}(\d{1,2})/);
+  const date = dm ? `${dm[1]}-${pad2(+dm[2])}-${pad2(+dm[3])}` : '';
+  return { date, dateText: (out.date || '').split('\n')[0].trim(), writer: (out.writer || '').split('\n')[0].trim(), place: (out.place || '').split('\n')[0].trim(), attendees: names(out.attendees), absentees: names(out.absentees), topic: (out.topic || '').trim(), body: (out.body || '').trim(), next: (out.next || '').trim(), note: (out.note || '').trim(), found: hits.map(h => h.key) };
+}
+function meetingPaper(dd, mt) {
+  const row = (k, v, h) => `<tr><th>${k}</th><td colspan="3"${h ? ` style="height:${h}px;vertical-align:top;white-space:pre-wrap"` : ''}>${esc(v || '')}</td></tr>`;
+  return `<section class="paper outform"><h1 class="ttl">회 의 록</h1><div class="ttl-sub">${esc(dd.doc.name || DEPTS[dd.id] || '')} ${esc(mt.kind || meetLabel(dd.id))}</div>
+    <table class="kv ok"><tbody><tr><th>일 시</th><td>${esc(mt.dateText || (mt.date ? fmtK(mt.date) : ''))}</td><th>작성자</th><td>${esc(mt.writer || '')}</td></tr>
+      ${row('장 소', mt.place)}${row('참석자', (mt.attendees || []).join(', '))}${row('미참석자', (mt.absentees || []).join(', '))}${row('주요안건', mt.topic)}${row('안 건', mt.body, 260)}${row('차후<br>회의 안건', mt.next, 50).replace('&lt;br&gt;', '<br>')}${row('비 고', mt.note, 40)}</tbody></table>
+    <div class="ft"><b>중앙성서교회 ${esc(dd.doc.name || '')}</b><span>CBCS에서 생성 · 회의록 ${esc(mt.date || '')}${mt.fileName ? ' · 원본 ' + esc(mt.fileName) : ''}</span></div></section>`;
+}
+VIEWS.meetings = async () => {
+  const depts = isCommittee() ? Object.keys(DEPTS) : [S.dept]; for (const d of depts) { await loadMeetings(d); await loadDept(d); }
+  const all = depts.flatMap(d => S.meetings[d].map(x => ({ ...x, dept: x.dept || d }))).sort((a, b) => (b.date || '') < (a.date || '') ? -1 : 1);
+  const yrs = [...new Set(all.map(x => (x.date || '').slice(0, 4)).filter(Boolean))].sort().reverse(); const yr = S.sub.myr || yrs[0] || String(YEAR);
+  const label = isCommittee() ? '회의록' : meetLabel(S.dept);
+  const view = S.sub.meet && all.find(x => x.id === S.sub.meet);
+  if (view) return `<div class="topbar no-print"><div><h1>${esc(label)} 회의록</h1><div class="sub">${esc(DEPTS[view.dept] || '')} · ${esc(view.date || '')}</div></div><div class="row"><button class="btn" id="mt-back">목록으로</button>${!isCommittee() && canEdit() ? '<button class="btn" id="mt-edit">수정</button>' : ''}${view.hasFile ? '<button class="btn" id="mt-file">원본 내려받기</button>' : ''}<button class="btn p" id="mt-pr">인쇄 / PDF로 저장</button></div></div>${meetingPaper(S.data[view.dept], view)}`;
+  const ed = S.sub.meetEdit ? (S.sub.meetEdit === 'new' ? { id: '', date: today(), kind: meetLabel(S.dept), attendees: [], absentees: [] } : all.find(x => x.id === S.sub.meetEdit)) : null;
+  const list = all.filter(x => (x.date || '').startsWith(yr));
+  return `<div class="topbar"><div><h1>${esc(label)}</h1><div class="sub">${isCommittee() ? '전 부서 임원회의·교사회의 회의록' : `${esc(label)} 회의록을 쓰고 보관합니다. 지난 회의록 파일(HWP·PDF·Word)을 여러 개 한꺼번에 올리면 칸을 자동으로 읽어 넣습니다.`}</div></div>
+    <div class="row">${yrs.length ? `<select id="mt-yr" style="width:auto">${[...new Set([yr, ...yrs])].map(y => `<option ${y === yr ? 'selected' : ''}>${y}</option>`).join('')}</select>` : ''}${!isCommittee() && canEdit() && !ed ? '<button class="btn" id="mt-up">파일로 올리기 (여러 개)</button><button class="btn p" id="mt-new">새 회의록</button>' : ''}</div></div>
+  <div class="stack">
+    ${S.meetingsErr ? `<div class="hint">불러오기 실패: ${esc(S.meetingsErr)}</div>` : ''}
+    ${ed ? `<div class="card" id="mt-form"><h2>${ed.id ? '회의록 수정' : '새 회의록'}</h2><div class="fields">
+      <label class="f"><span>날짜</span><input type="date" id="mf-date" value="${esc(ed.date || '')}"></label><label class="f"><span>일시 (적힌 그대로)</span><input type="text" id="mf-dtext" value="${esc(ed.dateText || '')}" placeholder="예: 2026. 10. 04(주일) 오후 1시"></label>
+      <label class="f"><span>작성자</span><input type="text" id="mf-writer" value="${esc(ed.writer || '')}"></label><label class="f"><span>장소</span><input type="text" id="mf-place" value="${esc(ed.place || '')}"></label>
+      <label class="f" style="grid-column:span 2"><span>참석자 (쉼표로 구분)</span><input type="text" id="mf-att" value="${esc((ed.attendees || []).join(', '))}"></label><label class="f" style="grid-column:span 2"><span>미참석자</span><input type="text" id="mf-abs" value="${esc((ed.absentees || []).join(', '))}"></label>
+      <label class="f" style="grid-column:1/-1"><span>주요안건</span><input type="text" id="mf-topic" value="${esc(ed.topic || '')}"></label></div>
+      <label class="f" style="margin-top:8px"><span>안건 (회의 내용)</span><textarea id="mf-body" rows="10">${esc(ed.body || '')}</textarea></label>
+      <label class="f"><span>차후 회의 안건</span><textarea id="mf-next" rows="2">${esc(ed.next || '')}</textarea></label><label class="f"><span>비고</span><input type="text" id="mf-note" value="${esc(ed.note || '')}"></label>
+      <div class="row" style="margin-top:10px"><button class="btn p" id="mn-save">저장</button><button class="btn" id="mf-cancel">닫기</button>${ed.id ? '<button class="btn d" id="mf-del">삭제</button>' : ''}</div></div>` : ''}
+    <div class="card" id="mt-upbox" hidden><h2>지난 회의록 파일 올리기 <span class="r">HWP · HWPX · PDF · DOCX · 여러 개 한꺼번에</span></h2><input type="file" id="mt-files" multiple accept=".hwp,.hwpx,.pdf,.docx,.odt,.txt"><div id="mt-prev" style="margin-top:10px"></div></div>
+    <div class="card"><h2>${esc(yr)}년 ${esc(label)} <span class="r">${list.length}건</span></h2>${list.length ? `<div class="tw"><table class="mt-list"><thead><tr><th>날짜</th>${isCommittee() ? '<th>부서</th>' : ''}<th>주요안건</th><th>작성자</th><th class="n">참석</th><th>차후 회의 안건</th></tr></thead><tbody>
+      ${list.map(x => `<tr data-meet="${esc(x.id)}" style="cursor:pointer"><td>${esc(x.date || '')}</td>${isCommittee() ? `<td>${esc(DEPTS[x.dept] || '')}</td>` : ''}<td class="wrap"><b>${esc(x.topic || '(안건 없음)')}</b></td><td>${esc(x.writer || '')}</td><td class="n">${(x.attendees || []).length}${(x.absentees || []).length ? '/' + ((x.attendees || []).length + x.absentees.length) : ''}</td><td class="wrap note">${esc((x.next || '').split('\n')[0])}</td></tr>`).join('')}</tbody></table></div>` : '<div class="note">이 해의 회의록이 없습니다.</div>'}</div>
+  </div>`;
+};
+BIND.meetings = () => {
+  const back = $('#mt-back'); if (back) { back.onclick = () => { delete S.sub.meet; render(); }; $('#mt-pr').onclick = () => printAsPDF(`회의록-${S.sub.meet}.pdf`);
+    const me = $('#mt-edit'); if (me) me.onclick = () => { S.sub.meetEdit = S.sub.meet; delete S.sub.meet; render(); };
+    const mf = $('#mt-file'); if (mf) mf.onclick = async () => { const d = S.dept || Object.keys(DEPTS).find(k => (S.meetings[k] || []).some(x => x.id === S.sub.meet)); const f = await backend.get(`depts/${d}/meetingFiles/${S.sub.meet}`); if (!f || !f.data) { toast('원본 파일을 찾지 못했습니다'); return; } const bin = atob(f.data); const u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); saveBlob(new Blob([u8], { type: f.type || 'application/octet-stream' }), f.name || 'meeting'); };
+    return; }
+  const y = $('#mt-yr'); if (y) y.onchange = () => { S.sub.myr = y.value; renderHere(); };
+  document.querySelectorAll('[data-meet]').forEach(r => r.onclick = () => { S.sub.meet = r.dataset.meet; render(); });
+  const nw = $('#mt-new'); if (nw) nw.onclick = () => { S.sub.meetEdit = 'new'; render(); };
+  const cc = $('#mf-cancel'); if (cc) cc.onclick = () => { delete S.sub.meetEdit; render(); };
+  const sv = $('#mn-save'); if (sv) sv.onclick = async () => { const L = S.meetings[S.dept]; const old = S.sub.meetEdit === 'new' ? null : L.find(x => x.id === S.sub.meetEdit); const sp = v => v.split(/[,，、]+/).map(x => x.trim()).filter(Boolean);
+    const o = Object.assign(old || { id: 'mt_' + uid(), dept: S.dept, kind: meetLabel(S.dept), created: today() }, { date: $('#mf-date').value, dateText: $('#mf-dtext').value.trim(), writer: $('#mf-writer').value.trim(), place: $('#mf-place').value.trim(), attendees: sp($('#mf-att').value), absentees: sp($('#mf-abs').value), topic: $('#mf-topic').value.trim(), body: $('#mf-body').value.trim(), next: $('#mf-next').value.trim(), note: $('#mf-note').value.trim() });
+    if (!o.date) { toast('날짜를 넣어 주세요'); return; } const { _id, ...data } = o; await backend.set(`depts/${S.dept}/meetings/${o.id}`, data); if (!old) L.push(o); delete S.sub.meetEdit; S.sub.meet = o.id; render(); toast('저장했습니다'); };
+  const dl = $('#mf-del'); if (dl) dl.onclick = () => { const L = S.meetings[S.dept]; const o = L.find(x => x.id === S.sub.meetEdit); openModal(`<h2>회의록 삭제<button class="btn s" id="modal-close">닫기</button></h2><p>${esc(o.date)} 회의록을 지울까요? 되돌릴 수 없습니다.</p><div class="row"><button class="btn d" id="md-yes">삭제</button><button class="btn" id="md-no">취소</button></div>`); $('#modal-close').onclick = closeModal; $('#md-no').onclick = closeModal; $('#md-yes').onclick = async () => { await backend.del(`depts/${S.dept}/meetings/${o.id}`); if (o.hasFile) await backend.del(`depts/${S.dept}/meetingFiles/${o.id}`).catch(() => {}); S.meetings[S.dept] = L.filter(x => x.id !== o.id); delete S.sub.meetEdit; closeModal(); render(); toast('삭제했습니다'); }; };
+  const up = $('#mt-up'); if (up) up.onclick = () => { $('#mt-upbox').hidden = false; $('#mt-upbox').scrollIntoView({ block: 'start' }); };
+  const fi = $('#mt-files'); if (fi) fi.onchange = async () => { const box = $('#mt-prev'); const files = [...fi.files]; if (!files.length) return; box.innerHTML = `<div class="note">${files.length}개 파일을 읽는 중…</div>`;
+    const L = S.meetings[S.dept]; const items = [];
+    for (const f of files) { try { const buf = await f.arrayBuffer(); const raw = cleanBylawText(await fileToRuleText(f, buf)); const p = parseMeetingText(raw, f.name); const dup = L.find(x => x.date === p.date && (x.topic || '') === (p.topic || '')); items.push({ f, buf, p, raw, dup, ok: !!p.date }); } catch (e) { items.push({ f, err: e.message || '읽기 실패' }); } }
+    const good = items.filter(x => !x.err && x.ok && !x.dup);
+    box.innerHTML = `<div class="tw"><table><thead><tr><th>파일</th><th>날짜</th><th>주요안건</th><th>작성자</th><th class="n">참석</th><th>읽은 칸</th><th>처리</th></tr></thead><tbody>${items.map(x => x.err ? `<tr><td>${esc(x.f.name)}</td><td colspan="5" class="note">${esc(x.err)}</td><td><span class="pill bad">못 읽음</span></td></tr>` : `<tr><td class="wrap">${esc(x.f.name)}</td><td>${esc(x.p.date || '?')}</td><td class="wrap">${esc(x.p.topic)}</td><td>${esc(x.p.writer)}</td><td class="n">${x.p.attendees.length}</td><td class="note">${x.p.found.length}/9</td><td>${!x.ok ? '<span class="pill warn">날짜 없음 — 건너뜀</span>' : x.dup ? '<span class="pill mute">이미 있음 — 건너뜀</span>' : '<span class="pill ok">새로 넣음</span>'}</td></tr>`).join('')}</tbody></table></div>
+      <div class="row" style="margin-top:8px"><button class="btn p" id="mt-import" ${good.length ? '' : 'disabled'}>${good.length}건 저장</button><span class="note">날짜를 못 찾은 파일은 "새 회의록"으로 직접 넣어 주세요. 저장한 뒤에도 각 회의록에서 고칠 수 있습니다.</span></div>`;
+    const go = $('#mt-import'); if (go) go.onclick = async () => { go.disabled = true; let n = 0;
+      for (const x of good) { const id = 'mt_' + uid(); const small = x.buf.byteLength < 650 * 1024; const o = { id, dept: S.dept, kind: meetLabel(S.dept), created: today(), ...x.p, fileName: x.f.name, imported: true, hasFile: small }; delete o.found;
+        await backend.set(`depts/${S.dept}/meetings/${id}`, o);
+        if (small) { const u8 = new Uint8Array(x.buf); let bin = ''; for (let i = 0; i < u8.length; i += 0x8000) bin += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); await backend.set(`depts/${S.dept}/meetingFiles/${id}`, { name: x.f.name, type: x.f.type || '', size: x.f.size, data: btoa(bin) }).catch(() => { o.hasFile = false; }); }
+        L.push(o); n++; }
+      render(); toast(`회의록 ${n}건을 넣었습니다`); }; };
+};
+
 /* ───────────── 주말학습 (교회 양식 "주말학습계획서" + 첨부 1 차량신청서 + 첨부 2 결과보고서) ─────────────
    depts/{부서}/outings/{id} — 부서가 계획서를 쓰고 출력해 결재(부장·교육디렉터·교육위원장·교장)를 받는다.
    상태: 작성 중 → 제출 → 승인 → 완료(결과보고). 차량이 필요하면 계획서에서 바로 차량 신청을 만든다. */
@@ -3027,7 +3107,7 @@ BIND.outings = () => {
 };
 /* ───────────── 자료 내려받기 · 영수증 사진 정리 (교육위원회) ─────────────
    새 자료 종류(하위 묶음)를 만들면 아래 두 목록에 이름을 추가해야 내려받기에 포함된다. */
-const BACKUP_DEPT_SUBS = ['bylawFiles', 'students', 'reports', 'expenses', 'incomes', 'events', 'notices', 'assets', 'plans', 'timeline', 'officers', 'retreats', 'receipts', 'receiptImgs', 'bylaws', 'assemblies', 'outings']; // care(심방 카드)는 부서 관리자만 읽을 수 있어 넣지 못함
+const BACKUP_DEPT_SUBS = ['bylawFiles', 'students', 'reports', 'expenses', 'incomes', 'events', 'notices', 'assets', 'plans', 'timeline', 'officers', 'retreats', 'receipts', 'receiptImgs', 'bylaws', 'assemblies', 'outings', 'meetings', 'meetingFiles']; // care(심방 카드)는 부서 관리자만 읽을 수 있어 넣지 못함
 const BACKUP_TOP = ['scholarship', 'archive', 'promotions', 'vehicles', 'siblings', 'meta'];
 async function collectAll(withImgs, say) {
   const raw = []; const miss = []; const put = (path, x) => { const { _id, ...data } = x; raw.push({ path, data }); };
