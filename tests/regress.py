@@ -358,5 +358,17 @@ with sync_playwright() as p:
     try: t_R23()
     except Exception as e: rec('R23 (실행 오류)', False, str(e)[:160])
 
+    def t_R24():
+        pg = login(b, 'young')
+        pg.evaluate("""()=>{const A=window.CBCS_APP; const st=A.S.data.young.students.filter(s=>s.status==='active'); st[0].status='military'; st[1].status='study'; st[2].status='longabsent'; A.S.view='roster'; A.S.sub={show:'paused'}; return A.render()}""")
+        pg.wait_for_timeout(1200)
+        tabs = pg.evaluate("()=>[...document.querySelectorAll('.ro-tabs button')].map(b=>b.textContent.trim())")
+        rows = pg.evaluate("()=>document.querySelectorAll('table.roster tbody tr[data-student]').length")
+        ok = any(t.startswith('정지') and t.endswith('2') for t in tabs) and any(t.startswith('장기결석') and t.endswith('1') for t in tabs) and rows == 2
+        rec('R24 출석부 정지 칸(군입대·학업·사업)', ok, f'탭={tabs}, 정지 줄={rows}')
+        pg.close()
+    try: t_R24()
+    except Exception as e: rec('R24 (실행 오류)', False, str(e)[:160])
+
 print(json.dumps(results, ensure_ascii=False, indent=1))
 sys.exit(0 if all(r['pass'] for r in results) else 1)

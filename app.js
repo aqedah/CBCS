@@ -167,6 +167,7 @@ function ledgerSummary(dd, ledgerId, m) {
 // 학생 상태: 재적·새친구·장기결석·제적과, 재적은 유지하되 잠시 못 나오는 사정(군입대·학업·사업·직접 입력)
 const STATUS_OPTS = [['active', '재적'], ['newcomer', '새친구'], ['longabsent', '장기결석'], ['military', '군입대'], ['study', '학업'], ['business', '사업'], ['custom', '직접 입력'], ['left', '제적'], ['archived', '보관']];
 const AWAY = ['longabsent', 'military', 'study', 'business', 'custom'];
+const PAUSE = ['military', 'study', 'business', 'custom']; // 정지: 군입대·학업·사업 등으로 잠시 쉬는 회원 (장기결석과 따로 본다)
 const inRoll = s => (s.status === 'active' || AWAY.includes(s.status)) && !isGrad(s) && !(isYoungStu(s) && s.group === '팸장');
 const statusName = s => s.status === 'left' && s.archived ? '보관' : statusName0(s);
 const statusName0 = s => (S.data && S.data.young && isYoungStu(s) && isFamStaff(S.data.young, s) && (isGrad(s) || s.status === 'left' || s.group === '팸장')) ? '팸장' : isGrad(s) ? `자격 종료(${s.married ? '결혼' : s.churchRole ? '직분' : s.leftKind || '졸업'})` : isYoungStu(s) && s.group === '팸장' && s.status !== 'left' ? '팸장' : s.status === 'custom' ? (s.statusText || '기타') : (Object.fromEntries(STATUS_OPTS)[s.status] || s.status || '');
@@ -635,15 +636,15 @@ VIEWS.roster = async () => {
   const yr = S.sub.year || YEAR;
   const cats = rosterCats(dd);
   const TABS = yr !== YEAR ? [['yr', `${yr}년 명단`], ...(young ? [['fam', `${yr}년 팸장`]] : [])]
-    : [['active', young ? '재적 회원' : '재적'], ['newcomer', '새친구'], ['away', '장기결석'], ...(young ? [['fam', '팸장']] : []), ['left', '제적'], ...(young ? [['grad', '졸업·자격 종료']] : []), ['archived', '보관']];
+    : [['active', young ? '재적 회원' : '재적'], ['newcomer', '새친구'], ['away', '장기결석'], ['paused', '정지'], ...(young ? [['fam', '팸장']] : []), ['left', '제적'], ...(young ? [['grad', '졸업·자격 종료']] : []), ['archived', '보관']];
   let show = S.sub.show || (yr !== YEAR ? 'yr' : 'active'); if (!TABS.some(t => t[0] === show)) show = TABS[0][0];
   const count = k => k === 'fam' ? famLeaders(dd, yr).length : k === 'yr' ? '' : (cats[k] || []).length;
   const deptPick = isCommittee() ? `<div class="row" style="margin-bottom:10px">${Object.entries(DEPTS).map(([k, v]) => `<button class="btn ${dd.id === k ? 'p' : ''}" data-dept="${esc(k)}">${v}</button>`).join('')}</div>` : '';
-  const head = `<div class="topbar"><div><h1>출석부 — ${esc(dd.doc.name)}${yr !== YEAR ? ` <span class="pill warn">${yr}년</span>` : ''}</h1><div class="sub">${yr !== YEAR ? `${yr}년 기록 보기 · 과거 출석부 엑셀과 주일 보고서에서 옮긴 기록` : `재적 ${cats.active.length}명${cats.away.length ? ` · 장기결석 ${cats.away.length}명` : ''} · 교사·임원 ${visibleStaff(dd).length}명 · 이름을 누르면 학생 카드`}</div></div>
+  const head = `<div class="topbar"><div><h1>출석부 — ${esc(dd.doc.name)}${yr !== YEAR ? ` <span class="pill warn">${yr}년</span>` : ''}</h1><div class="sub">${yr !== YEAR ? `${yr}년 기록 보기 · 과거 출석부 엑셀과 주일 보고서에서 옮긴 기록` : `재적 ${cats.active.length}명${cats.away.length ? ` · 장기결석 ${cats.away.length}명` : ''}${cats.paused.length ? ` · 정지 ${cats.paused.length}명` : ''} · 교사·임원 ${visibleStaff(dd).length}명 · 이름을 누르면 학생 카드`}</div></div>
     <div class="row no-print"><label class="row" style="gap:6px"><span class="note">연도</span><select id="ro-year" style="width:auto">${years.map(y => `<option value="${esc(y)}" ${y === yr ? 'selected' : ''}>${y === YEAR ? `${y} (올해)` : y}</option>`).join('')}</select></label>${yr === YEAR && canEdit() ? `<button class="btn s" id="pp-open">진급자 명단 출력</button>` : ''}${young && canEdit() && !isCommittee() ? '<button class="btn s" id="ya-import">과거 출석부 가져오기</button>' : ''}</div></div>
   ${deptPick}
   <div class="ro-tabs no-print">${TABS.map(([k, l]) => `<button data-show="${esc(k)}" class="${show === k ? 'on' : ''}">${l}${count(k) !== '' ? ` <span class="n">${count(k)}</span>` : ''}</button>`).join('')}</div>
-  <div class="ro-desc note">${{ archived: '보관: 예전 출석부·보고서에 이름만 남은 사람처럼, 제적 명단과 따로 기록만 보관하는 사람입니다. 출석·총회 판정에는 들어가지 않고, 언제든 제적 명단으로 되돌리거나 복적할 수 있습니다.', active: young ? '청년부 회원(재적)입니다. 결혼·직분자는 회칙 4조에 따라 여기서 빠지고 "졸업·자격 종료"로 갑니다.' : '재적 학생입니다.', newcomer: '등록 전 새친구입니다. 학생 카드에서 상태를 "재적"으로 바꾸면 재적으로 옮겨집니다.', away: '장기결석·군입대·학업·사업 등 잠시 못 나오는 회원입니다. 재적은 유지됩니다.', fam: '팸장·부팸장은 재적(회원)에 넣지 않고 따로 관리합니다.', left: '제적 처리된 사람과, 오래 결석해 제적 대상이 된 후보입니다.', grad: '결혼·직분으로 청년부 회원 자격이 끝났거나(회칙 4조) 청년부를 졸업한 사람입니다. 출석부·출석 체크·통계에서 빠집니다.', yr: young ? '그해 소속 명단입니다. 그해에 있던 구분(1청년·2청년·라피끄)이 함께 보입니다.' : '그해 소속 명단입니다.' }[show] || ''}</div>`;
+  <div class="ro-desc note">${{ archived: '보관: 예전 출석부·보고서에 이름만 남은 사람처럼, 제적 명단과 따로 기록만 보관하는 사람입니다. 출석·총회 판정에는 들어가지 않고, 언제든 제적 명단으로 되돌리거나 복적할 수 있습니다.', active: young ? '청년부 회원(재적)입니다. 결혼·직분자는 회칙 4조에 따라 여기서 빠지고 "졸업·자격 종료"로 갑니다.' : '재적 학생입니다.', newcomer: '등록 전 새친구입니다. 학생 카드에서 상태를 "재적"으로 바꾸면 재적으로 옮겨집니다.', away: '장기결석: 특별한 사유 없이 오래 나오지 않는 회원입니다. 재적은 유지됩니다.', paused: '정지: 군입대·학업(유학 등)·사업처럼 사유가 있어 잠시 쉬는 회원입니다. 재적은 유지되고 회원 자격은 일시 정지됩니다. 돌아오면 상태 칸을 눌러 "재적"으로 바꾸세요.', fam: '팸장·부팸장은 재적(회원)에 넣지 않고 따로 관리합니다.', left: '제적 처리된 사람과, 오래 결석해 제적 대상이 된 후보입니다.', grad: '결혼·직분으로 청년부 회원 자격이 끝났거나(회칙 4조) 청년부를 졸업한 사람입니다. 출석부·출석 체크·통계에서 빠집니다.', yr: young ? '그해 소속 명단입니다. 그해에 있던 구분(1청년·2청년·라피끄)이 함께 보입니다.' : '그해 소속 명단입니다.' }[show] || ''}</div>`;
   if (show === 'yr') return head + yearRosterBody(dd, yr);
   if (show === 'fam') return head + famLeaderBody(dd, yr);
   if (show === 'left') return head + `<div class="stack">${leftSection(dd, canEdit() && !isCommittee())}</div>`;
@@ -804,7 +805,7 @@ BIND.roster = () => {
   document.querySelectorAll('[data-show]').forEach(b => b.onclick = () => { S.sub.show = b.dataset.show; S.view = 'roster'; render(); });
   document.querySelectorAll('[data-year]').forEach(b => b.onclick = () => { S.sub.year = +b.dataset.year; render(); });
   const ry = $('#ro-year'); if (ry) ry.onchange = () => { const y = +ry.value; S.sub = { ...(isCommittee() && S.sub.dept ? { dept: S.sub.dept } : {}), ...(y !== YEAR ? { year: y } : {}) }; render(); };
-  document.querySelectorAll('[data-group]').forEach(b => b.onclick = () => { S.sub.group = b.dataset.group; if (S.sub.show === 'away' || S.sub.show === 'married') S.sub.show = 'active'; render(); });
+  document.querySelectorAll('[data-group]').forEach(b => b.onclick = () => { S.sub.group = b.dataset.group; if (S.sub.show === 'away' || S.sub.show === 'paused' || S.sub.show === 'married') S.sub.show = 'active'; render(); });
   const ya = $('#ya-import'); if (ya) ya.onclick = () => importYoungAttendance(dd);
   const lp = $('#lf-print'); if (lp) lp.onclick = () => { S.sub.leftPrint = true; render(); };
   const lb = $('#lf-back'); if (lb) { lb.onclick = () => { delete S.sub.leftPrint; render(); }; $('#lf-pr').onclick = doPrint; return; }
@@ -3426,13 +3427,13 @@ const isGrad = s => isYoungStu(s) && (marriedOut(s) || !!s.churchRole || (s.stat
 // 지금 교사·임원 명단에서 팸장·부팸장으로 임명된 사람 (결혼·직분으로 회원이 아니어도 팸장 탭에 둔다)
 const isFamStaff = (dd, s) => !!dd && dd.doc.staff.some(t => t.status !== 'left' && /팸장/.test(t.role || '') && normName(t.name) === normName(s.name));
 function rosterCats(dd) {
-  const young = dd.id === 'young'; const c = { active: [], newcomer: [], away: [], left: [], archived: [], grad: [] };
+  const young = dd.id === 'young'; const c = { active: [], newcomer: [], away: [], paused: [], left: [], archived: [], grad: [] };
   for (const s of dd.students) {
     if (young && isFamStaff(dd, s) && (isGrad(s) || s.status === 'left' || s.group === '팸장')) continue; // 팸장 탭에서 본다
     if (young && isGrad(s)) { c.grad.push(s); continue; }
     if (young && s.group === '팸장') continue; // 팸장 탭에서 본다
     if (s.status === 'left') { if (s.archived) c.archived.push(s); else if (!(young && isStaffName(dd, s))) c.left.push(s); continue; }
-    (s.status === 'newcomer' ? c.newcomer : AWAY.includes(s.status) ? c.away : c.active).push(s);
+    (s.status === 'newcomer' ? c.newcomer : PAUSE.includes(s.status) ? c.paused : AWAY.includes(s.status) ? c.away : c.active).push(s);
   }
   return c;
 }
