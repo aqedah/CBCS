@@ -316,5 +316,16 @@ with sync_playwright() as p:
     try: t_R20()
     except Exception as e: rec('R20 (실행 오류)', False, str(e)[:160])
 
+    def t_R21():
+        pg = login(b, 'young'); go(pg, 'assembly'); pg.wait_for_timeout(800)
+        scr = pg.inner_text('.main')
+        pg.evaluate("()=>{const A=window.CBCS_APP;A.S.sub.print=true;return A.render()}"); pg.wait_for_timeout(1500)
+        t = pg.inner_text('.paper'); h = t[t.find('결의권자 ('):t.find('결의권자 (') + 60]
+        ok = '교역자' in h and '\t교역자\t' in t and '(선거권자)' not in scr and '교역자 1' in scr
+        rec('R21 총회 결의권자에 교역자 표기', ok, h.replace('\n', ' '))
+        pg.close()
+    try: t_R21()
+    except Exception as e: rec('R21 (실행 오류)', False, str(e)[:160])
+
 print(json.dumps(results, ensure_ascii=False, indent=1))
 sys.exit(0 if all(r['pass'] for r in results) else 1)
