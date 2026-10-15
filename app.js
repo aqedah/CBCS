@@ -578,9 +578,15 @@ function inlineEditor(dd, s, td, kind, done) {
       <div class="ie-opts">${FAITH_OPTS.map(k => `<label><input type="radio" name="ie-f" value="${esc(k)}" ${(s.faith || '') === k ? 'checked' : ''}> ${k || '모름'}</label>`).join('')}</div>
       <div class="row" style="gap:4px;margin-top:6px"><input type="number" id="ie-fy" placeholder="연도 (예: 2019)" value="${esc(s.faithYear || '')}" style="width:120px"><select id="ie-fh" style="width:auto"><option value="">반기</option><option ${s.faithHalf === '상' ? 'selected' : ''}>상</option><option ${s.faithHalf === '하' ? 'selected' : ''}>하</option></select></div>
       ${hist.length ? `<details class="ie-hist" open><summary>기존 내역</summary>${hist.map(h => `<div>• ${esc(h)}</div>`).join('')}</details>` : '<div class="note" style="margin-top:6px">기존 내역 없음</div>'}`
+    : kind === 'status' ? (() => { const cur = s.status === 'left' && s.archived ? 'archived' : s.status; return `<b>상태 — ${esc(s.name)}</b>
+      <div class="ie-opts">${STATUS_OPTS.map(([k, v]) => `<label><input type="radio" name="ie-st" value="${esc(k)}" ${cur === k ? 'checked' : ''}> ${v}</label>`).join('')}</div>
+      <label class="f" id="ie-st-c" ${cur === 'custom' ? '' : 'hidden'}><span>상태 직접 입력</span><input type="text" id="ie-stext" value="${esc(s.statusText || '')}" placeholder="예: 해외 체류"></label>
+      <div id="ie-st-l" ${cur === 'left' || cur === 'archived' ? '' : 'hidden'}><div class="row" style="gap:4px;margin-top:6px"><input type="date" id="ie-ld" value="${esc(s.leftDate || today())}" style="width:auto"><select id="ie-lk" style="width:auto"><option value="">구분</option>${LEFT_KINDS.map(k => `<option ${s.leftKind === k ? 'selected' : ''}>${k}</option>`).join('')}</select></div><input type="text" id="ie-lr" value="${esc(s.leftReason || '')}" placeholder="사유 (선택)" style="margin-top:4px"></div>
+      ${(s.statusLog || []).length ? `<details class="ie-hist"><summary>상태 기록 ${s.statusLog.length}건</summary>${s.statusLog.slice(-5).reverse().map(q => `<div>• ${esc(q.date || '')} ${esc(q.reason || q.kind || '')} ${esc(q.from || '')}→${esc(q.to || '')}</div>`).join('')}</details>` : ''}`; })()
     : kind === 'phone' ? `<b>연락처 — ${esc(s.name)}</b><label class="f"><span>본인</span><input type="tel" id="ie-p" value="${esc(s.phone || '')}"></label><label class="f"><span>보호자</span><div class="row" style="gap:4px"><input type="tel" id="ie-gp" value="${esc(s.guardianPhone || '')}" style="flex:1"><select id="ie-gr" style="width:auto">${['모', '부', '보호자'].map(r => `<option ${(s.guardianRel || '보호자') === r ? 'selected' : ''}>${r}</option>`).join('')}</select></div></label>`
     : `<b>비고 — ${esc(s.name)}</b><textarea id="ie-n" rows="3">${esc(s.note || '')}</textarea>`;
-  pop.innerHTML += `<div class="row" style="gap:6px;margin-top:8px"><button class="btn s p" id="ie-save">저장</button><button class="btn s" id="ie-cancel">취소</button><span class="note">Esc 닫기${kind === 'faith' ? '' : ' · Enter 저장'}</span></div>`;
+  pop.innerHTML += `<div class="row" style="gap:6px;margin-top:8px"><button class="btn s p" id="ie-save">저장</button><button class="btn s" id="ie-cancel">취소</button><span class="note">Esc 닫기${kind === 'faith' || kind === 'status' ? '' : ' · Enter 저장'}</span></div>`;
+  if (kind === 'status') pop.querySelectorAll('input[name=ie-st]').forEach(x => x.onchange = () => { const v = x.value; pop.querySelector('#ie-st-c').hidden = v !== 'custom'; pop.querySelector('#ie-st-l').hidden = !(v === 'left' || v === 'archived'); });
   document.body.appendChild(pop);
   const r = td.getBoundingClientRect(); const w = Math.min(340, innerWidth - 16); pop.style.width = w + 'px'; pop.style.left = Math.max(8, Math.min(r.left, innerWidth - w - 8)) + 'px';
   const top = r.bottom + 4; pop.style.top = (top + pop.offsetHeight > innerHeight - 8 ? Math.max(8, r.top - pop.offsetHeight - 4) : top) + 'px';
@@ -588,18 +594,28 @@ function inlineEditor(dd, s, td, kind, done) {
   const outside = e => { if (!pop.contains(e.target)) close(); };
   const save = async () => {
     if (kind === 'faith') { const v = (pop.querySelector('input[name=ie-f]:checked') || {}).value || ''; if (s.faith !== v && s.faith) s.faithPrev = s.faith; s.faith = v; s.faithYear = +$('#ie-fy').value || ''; s.faithHalf = $('#ie-fh').value; if (v) s.flags = (s.flags || []).filter(f => !/신급 임시/.test(f)); }
+    else if (kind === 'status') {
+      // 학생 카드의 상태 저장과 같은 규칙: 제적·보관은 날짜·구분·사유를 남기고, 제적에서 돌아오면 "복적"으로 기록. 그 밖의 변경도 상태 기록에 남긴다
+      const ns0 = (pop.querySelector('input[name=ie-st]:checked') || {}).value || s.status; const arch = ns0 === 'archived', ns = arch ? 'left' : ns0, was = s.status;
+      const ld = $('#ie-ld').value || today(), lk = $('#ie-lk').value || (arch ? '보관' : '제적'), lr = $('#ie-lr').value.trim();
+      if (ns === 'left' && was !== 'left') setLeft(s, ld, lk, lr);
+      else if (ns !== 'left' && was === 'left') { (s.statusLog = s.statusLog || []).push({ date: today(), from: 'left', to: ns, reason: '복적' }); Object.assign(s, { status: ns, leftDate: '', leftKind: '', leftReason: '' }); }
+      else if (ns === 'left') Object.assign(s, { leftDate: ld, leftKind: lk, leftReason: lr });
+      else if (ns !== was) { (s.statusLog = s.statusLog || []).push({ date: today(), from: was, to: ns, reason: '상태 변경' }); s.status = ns; }
+      s.archived = arch; s.statusText = ns === 'custom' ? ($('#ie-stext').value.trim() || '기타') : '';
+    }
     else if (kind === 'phone') Object.assign(s, { phone: $('#ie-p').value.trim(), guardianPhone: $('#ie-gp').value.trim(), guardianRel: $('#ie-gr').value });
     else s.note = $('#ie-n').value.trim();
     $('#ie-save').disabled = true; await backend.set(`depts/${dd.id}/students/${s.id}`, s); close(); done(); toast('저장했습니다');
   };
-  const key = e => { if (e.key === 'Escape') { e.preventDefault(); close(); } else if (e.key === 'Enter' && kind !== 'faith' && !e.shiftKey) { e.preventDefault(); save(); } };
+  const key = e => { if (e.key === 'Escape') { e.preventDefault(); close(); } else if (e.key === 'Enter' && kind !== 'faith' && kind !== 'status' && !e.shiftKey) { e.preventDefault(); save(); } };
   setTimeout(() => { document.addEventListener('mousedown', outside, true); document.addEventListener('keydown', key, true); }, 0);
   $('#ie-cancel').onclick = close; $('#ie-save').onclick = save;
   const first = pop.querySelector('input:checked, input, textarea'); if (first) first.focus();
 }
 function studentRow(dd, s, edit, no, div) {
   const c = classOf(dd, s);
-  return `<tr class="click" data-student="${esc(s.id)}">${no ? `<td class="n no">${no}</td>` : ''}${div ? `<td><span class="pill ${div === '라피끄' ? 'info' : 'mute'}">${div}</span></td>` : ''}<td>${esc(s.name)}${s.flags && s.flags.length ? ` <span class="tag flag" title="${esc(s.flags.join(' / '))}">!</span>` : ''}</td><td>${esc(c ? c.name : s.classId)}</td><td>${esc(s.sex)}</td><td>${s.birth || ''}</td><td class="ie" data-ie="faith" title="${esc(faithLabel(s))}">${s.faith ? esc(s.faith) : '<span class="note">모름</span>'}</td><td class="ie" data-ie="phone">${esc(phoneLabel(s)) || '<span class="note">—</span>'}</td><td class="wrap note">${esc(s.school || '')}</td><td class="wrap note ie" data-ie="note">${esc(s.note || '') || '<span class="note">—</span>'}</td><td>${statusPill(s)}</td></tr>`;
+  return `<tr class="click" data-student="${esc(s.id)}">${no ? `<td class="n no">${no}</td>` : ''}${div ? `<td><span class="pill ${div === '라피끄' ? 'info' : 'mute'}">${div}</span></td>` : ''}<td>${esc(s.name)}${s.flags && s.flags.length ? ` <span class="tag flag" title="${esc(s.flags.join(' / '))}">!</span>` : ''}</td><td>${esc(c ? c.name : s.classId)}</td><td>${esc(s.sex)}</td><td>${s.birth || ''}</td><td class="ie" data-ie="faith" title="${esc(faithLabel(s))}">${s.faith ? esc(s.faith) : '<span class="note">모름</span>'}</td><td class="ie" data-ie="phone">${esc(phoneLabel(s)) || '<span class="note">—</span>'}</td><td class="wrap note" title="${esc(s.school || '')}"><div class="clamp2">${esc(s.school || '')}</div></td><td class="wrap note ie" data-ie="note" title="${esc(s.note || '')}">${s.note ? `<div class="clamp2">${esc(s.note)}</div>` : '<span class="note">—</span>'}</td><td class="ie" data-ie="status">${statusPill(s)}</td></tr>`;
 }
 VIEWS.roster = async () => {
   let dd; if (isCommittee()) { const d = S.sub.dept || 'kinder'; dd = await loadDept(d); } else dd = D();
@@ -639,7 +655,7 @@ VIEWS.roster = async () => {
   const sorted = list.slice().sort(sort === 'name' ? byName : sort === 'gradeDesc' ? ((a, b) => corder(b) - corder(a) || byName(a, b)) : ((a, b) => corder(a) - corder(b) || byName(a, b)));
   return head + `<div class="stack">
     <div class="card"><h2><span class="row" style="display:inline-flex;gap:4px">${[['name', '이름 가나다순'], ['gradeAsc', dd.doc.classLabel + ' 오름차순'], ['gradeDesc', dd.doc.classLabel + ' 내림차순']].map(([k, v]) => `<button class="btn s ${sort === k ? 'p' : ''}" data-sort="${esc(k)}">${esc(v)}</button>`).join('')}</span> <span class="r">생년월일·연락처·주소는 부서 안에서만 보이고 PDF에는 이름만 나갑니다</span></h2>
-      <div class="tw"><table class="roster"><colgroup><col style="width:46px">${curDiv ? '<col style="width:70px">' : ''}<col style="width:96px"><col style="width:130px"><col style="width:52px"><col style="width:108px"><col style="width:110px"><col style="width:170px"><col style="width:150px"><col><col style="width:84px"></colgroup><thead><tr><th class="n no">번호</th>${curDiv ? '<th>구분</th>' : ''}<th>이름</th><th>${esc(dd.doc.classLabel)}</th><th>성별</th><th>생년월일</th><th>신급</th><th>연락처</th><th>학교</th><th>비고</th><th>상태</th></tr></thead><tbody>
+      <div class="tw"><table class="roster"><colgroup><col style="width:46px">${curDiv ? '<col style="width:70px">' : ''}<col style="width:84px"><col style="width:104px"><col style="width:44px"><col style="width:92px"><col style="width:64px"><col style="width:150px"><col style="width:110px"><col><col style="width:76px"></colgroup><thead><tr><th class="n no">번호</th>${curDiv ? '<th>구분</th>' : ''}<th>이름</th><th>${esc(dd.doc.classLabel)}</th><th>성별</th><th>생년월일</th><th>신급</th><th>연락처</th><th>학교</th><th>비고</th><th>상태</th></tr></thead><tbody>
       ${sorted.map((s, i) => studentRow(dd, s, false, i + 1, curDiv ? youngDiv(s, YEAR) : '')).join('') || `<tr><td colspan="11" class="note">해당하는 사람이 없습니다.</td></tr>`}
       </tbody></table></div>
       ${show === 'active' && canEdit() && !isCommittee() ? `<div class="fields edit-only" style="margin-top:12px">
@@ -730,7 +746,7 @@ function studentCard(dd, s) {
   const present = attRows.filter(a => a.v).length;
   const f = k => esc(s[k] || '');
   const edit = canEdit() && !isCommittee();
-  return `<h2>${esc(s.name)} <span class="note">${esc(c ? c.name : s.classId)} · ${esc(s.sex)}</span><button class="btn s" id="modal-close">닫기</button></h2>
+  return `<h2>${esc(s.name)} <span class="note" style="margin:0 auto 0 10px">${esc(c ? c.name : s.classId)} · ${esc(s.sex)}</span><button class="btn s" id="modal-close">닫기</button></h2>
     ${s.flags && s.flags.length ? `<div class="flags">${s.flags.map(esc).join('<br>')}</div>` : ''}
     <div class="grid2 sc-grid" style="margin-top:10px">
       <dl class="kvl"><dt>생년월일</dt><dd>${f('birth')}</dd><dt>신급</dt><dd>${esc(faithLabel(s))}</dd><dt>학교</dt><dd>${f('school')}</dd>${dd.id === 'young' ? `<dt>직분</dt><dd>${esc(s.churchRole || '없음')}</dd>` : ''}${dd.id === 'young' ? `<dt>결혼</dt><dd>${s.married ? `기혼${s.marriedDate ? ' (' + esc(s.marriedDate) + ')' : ''}` : '미혼'}</dd>` : ''}<dt>연락처(본인)</dt><dd>${f('phone')}</dd><dt>보호자 연락처</dt><dd>${f('guardianPhone')}${s.guardianPhone ? ' (' + esc(s.guardianRel || '보호자') + ')' : ''}</dd><dt>아버지</dt><dd>${f('father')}</dd><dt>어머니</dt><dd>${f('mother')}</dd><dt>주소</dt><dd>${f('address')}${mapToggle(s.address)}</dd><dt>전도자</dt><dd>${f('evangelist')}</dd><dt>장학</dt><dd>${esc((s.scholarship || []).join(', '))}</dd><dt>비고</dt><dd>${f('note')}</dd></dl>

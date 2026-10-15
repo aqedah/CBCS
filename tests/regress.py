@@ -347,5 +347,16 @@ with sync_playwright() as p:
     try: t_R22()
     except Exception as e: rec('R22 (실행 오류)', False, str(e)[:160])
 
+    def t_R23():
+        pg = login(b, 'young'); go(pg, 'roster')
+        sid = pg.evaluate("()=>document.querySelectorAll('td[data-ie=status]')[1].closest('tr').dataset.student")
+        pg.locator('td[data-ie="status"]').nth(1).click(); pg.wait_for_timeout(400)
+        pg.check('input[name=ie-st][value=left]'); pg.fill('#ie-ld', '2026-10-01'); pg.select_option('#ie-lk', '이사'); pg.click('#ie-save'); pg.wait_for_timeout(1200)
+        a = pg.evaluate(f"async()=>{{const s=await window.CBCS_APP.backend.get('depts/young/students/{sid}'); return [s.status, s.leftDate, s.leftKind]}}")
+        rec('R23 출석부 상태 칸 눌러 바로 바꾸기', a == ['left', '2026-10-01', '이사'], str(a))
+        pg.close()
+    try: t_R23()
+    except Exception as e: rec('R23 (실행 오류)', False, str(e)[:160])
+
 print(json.dumps(results, ensure_ascii=False, indent=1))
 sys.exit(0 if all(r['pass'] for r in results) else 1)

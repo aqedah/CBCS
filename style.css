@@ -593,3 +593,5 @@ details.card.principle>summary:hover .pr-tg{border-color:var(--accent);color:var
 }
 .btn.ok-on{background:var(--ok-soft);color:var(--ok);border-color:currentColor;font-weight:600}
 .cls h3 .btn.s{margin-left:6px;vertical-align:middle}
+.clamp2{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;white-space:normal;line-height:1.45}
+table.roster td.wrap{min-width:0}
