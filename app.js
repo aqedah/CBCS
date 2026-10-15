@@ -1951,19 +1951,20 @@ function bylawOrder(a, b) {
   return da !== db ? (da < db ? 1 : -1) : bylawNo(b) - bylawNo(a);
 }
 /* 본문 끝의 "N차 수정 : YYYY년 M월 D일" 기록에서 이 판의 차수와 개정일을 찾는다. 기록이 없으면 파일 이름의 연도를 쓴다 */
-function bylawGuess(text, fileName) {
-  let best = null;
-  String(text || '').split('\n').forEach(l => {
-    const m = l.match(/^\s*(\d+)\s*차\s*(?:수정|개정)\s*[:：]?\s*(\d{4})\s*년\s*(\d{1,2}|\?+)?\s*월?\s*(\d{1,2}|\?+)?\s*일?/);
-    if (!m) return; const no = +m[1]; if (best && best.no >= no) return;
-    const mo = /^\d+$/.test(m[3] || '') ? m[3].padStart(2, '0') : '', da = /^\d+$/.test(m[4] || '') ? m[4].padStart(2, '0') : '';
-    best = { no, rev: no + '차 수정', date: m[2] + (mo ? '-' + mo + (da ? '-' + da : '') : ''), from: 'text' };
-  });
+function bylawGuess(text, fileName, kind) {
+  // 한 줄에 여러 기록이 붙어 있어도("1 차 수정일 : 2013년 11월 23일 2 차 수정일 : …") 모두 찾는다. "**일", "??일"은 모르는 날
+  let best = null; const re = /(\d+)\s*차\s*(?:수정|개정)\s*일?\s*[:：]?\s*(\d{4})\s*년\s*(\d{1,2}|[?*]+)?\s*월?\s*(\d{1,2}|[?*]+)?\s*일?/g; let m;
+  while ((m = re.exec(String(text || '')))) { const no = +m[1]; if (best && best.no >= no) continue;
+    const mo = /^\d+$/.test(m[3] || '') ? m[3].padStart(2, '0') : '', da = mo && /^\d+$/.test(m[4] || '') ? m[4].padStart(2, '0') : '';
+    best = { no, rev: no + '차 수정', date: m[2] + (mo ? '-' + mo + (da ? '-' + da : '') : ''), from: 'text' }; }
   if (best) return best;
   const n = String(fileName || ''); const y = n.match(/(?:^|\D)(20\d\d|19\d\d)(?!\d)/) || n.match(/(?:^|\D)(\d\d)\s*년/);
-  const c = n.match(/(\d+)\s*차/);
-  return { no: c ? +c[1] : -1, rev: c ? c[1] + '차 수정' : n.replace(/\.[^.]+$/, ''), date: y ? (y[1].length === 2 ? '20' + y[1] : y[1]) : '', from: y || c ? 'name' : '' };
+  const c = n.match(/(\d+)\s*차/); const charter = kind === 'charter';
+  // 헌장 말고는 파일 이름을 판 이름으로 쓰지 않는다 — 판 이름은 늘 "N차 수정"
+  return { no: c ? +c[1] : -1, rev: c ? c[1] + '차 수정' : charter ? n.replace(/\.[^.]+$/, '') : '', date: y ? (y[1].length === 2 ? '20' + y[1] : y[1]) : '', from: y || c ? 'name' : '' };
 }
+/* 판 이름 맞추기: "24", "24차", "24 차 개정" → "24차 수정" (헌장은 그대로) */
+function bylawRevName(v, kind) { v = String(v || '').trim(); if (kind === 'charter') return v; const m = v.match(/^(\d+)\s*(?:차)?\s*(?:수정|개정)?\s*(\(.*\))?$/); return m ? `${m[1]}차 수정${m[2] ? ' ' + m[2] : ''}` : v; }
 function cleanBylawText(t) { return t.replace(/\r/g, '').split('\n').map(l => l.replace(/[\u0000-\u0008-]/g, '').replace(/\s+$/, '')).join('\n').replace(/\n{3,}/g, '\n\n').trim(); }
 function bylawUploadDialog(dd, b) {
   const kind = bylawKind(b); const DOC = RULE_DOCS[kind];
@@ -1988,7 +1989,7 @@ function bylawUploadDialog(dd, b) {
       const arts = (txt.match(/^제\s*\d+\s*조/gm) || []).length;
       msg.textContent = `${file.name} — ${txt.length.toLocaleString()}자, 조문 ${arts}개를 찾았습니다.${arts ? '' : ' 조문 제목을 찾지 못했으니 내용을 확인해 주세요.'}`;
       /* 차수·개정일을 본문 끝 기록(또는 파일 이름)에서 찾아 채우고, 넣을 곳·상태도 맞춘다 */
-      const g = bylawGuess(txt, file.name); const all = bylawsOf(dd, kind); const cur = currentOf(dd, kind);
+      const g = bylawGuess(txt, file.name, kind); const all = bylawsOf(dd, kind); const cur = currentOf(dd, kind);
       const nb = s => String(s || '').replace(/\s+/g, '');
       const same = all.find(x => x.text && nb(x.text) === nb(txt));
       const sameNo = g.no > 0 ? all.find(x => bylawNo(x) === g.no) : null;
@@ -1996,10 +1997,10 @@ function bylawUploadDialog(dd, b) {
       [...to.options].filter(o => o.value.startsWith('id:')).forEach(o => o.remove());
       if (hit && hit.id !== b.id) to.add(new Option(`이미 있는 판에 넣기: ${hit.revision}${hit.date ? ' (' + hit.date + ')' : ''}`, 'id:' + hit.id));
       to.value = hit ? (hit.id === b.id ? 'this' : 'id:' + hit.id) : 'new'; to.onchange({ target: to });
-      if (g.rev) $('#bu-rev').value = g.rev; if (g.date) $('#bu-date').value = g.date;
+      $('#bu-rev').value = g.rev || ''; if (g.date) $('#bu-date').value = g.date;
       const st = !cur || !g.date ? 'draft' : g.date < (cur.date || '') || (g.no > 0 && g.no < bylawNo(cur)) ? 'old' : g.date === cur.date || g.no === bylawNo(cur) ? 'current' : 'draft';
       $('#bu-status').value = st === 'current' && hit ? 'old' : st;
-      $('#bu-guess').innerHTML = (g.from === 'text' ? `본문 끝의 개정 기록에서 <b>${esc(g.rev)} · ${esc(g.date)}</b>을(를) 찾았습니다.` : g.from === 'name' ? `개정 기록이 없어 파일 이름에서 <b>${esc(g.date || g.rev)}</b>을(를) 짐작했습니다. 맞는지 확인해 주세요.` : '차수와 개정일을 찾지 못했습니다. 직접 적어 주세요.')
+      $('#bu-guess').innerHTML = (g.from === 'text' ? `본문 끝의 개정 기록에서 <b>${esc(g.rev)} · ${esc(g.date)}</b>을(를) 찾았습니다.` : g.from === 'name' ? `개정 기록이 없어 파일 이름에서 <b>${esc([g.rev, g.date].filter(Boolean).join(' · '))}</b>을(를) 짐작했습니다.${kind !== 'charter' && !g.rev ? ' 차수는 직접 적어 주세요 (예: 24차 수정).' : ' 맞는지 확인해 주세요.'}` : kind === 'charter' ? '개정일을 찾지 못했습니다. 직접 적어 주세요.' : '차수와 개정일을 찾지 못했습니다. 판 이름에 "24차 수정"처럼 차수를 적어 주세요.')
         + (same ? ` 본문이 이미 있는 <b>${esc(same.revision)}</b>과 글자까지 같아, 새 판을 만들지 않고 그 판에 원본 파일을 붙이도록 골라 두었습니다.` : sameNo ? ` 이미 <b>${esc(sameNo.revision)}</b>이 있어 그 판의 본문을 바꾸도록 골라 두었습니다. 새 판으로 두려면 "넣을 곳"을 바꾸세요.` : to.value === 'new' ? ` 새 판으로 추가하고 상태는 <b>${{ old: '이전 판', draft: '개정안', current: '현행' }[$('#bu-status').value]}</b>으로 골라 두었습니다.` : '');
       $('#bu-save').disabled = !txt;
     } catch (err) { msg.textContent = '읽지 못했습니다: ' + err.message; }
@@ -2009,14 +2010,15 @@ function bylawUploadDialog(dd, b) {
     let target = b; const toV = $('#bu-to').value;
     if (toV.startsWith('id:')) target = dd.bylaws.find(x => x.id === toV.slice(3)) || b;
     const dv = $('#bu-date').value.trim(); if (toV === 'new' && dv && !/^\d{4}(-\d{2}(-\d{2})?)?$/.test(dv)) { toast('개정일은 2025-12-28 또는 2013처럼 적어 주세요'); return; }
+    const rv = bylawRevName($('#bu-rev').value, kind); if (toV === 'new' && kind !== 'charter' && !/^\d+차 수정/.test(rv)) { toast('판 이름은 "24차 수정"처럼 차수로 적어 주세요'); return; }
     if (toV === 'new') {
       const st = $('#bu-status').value; const cur = currentOf(dd, kind) || { title: DOC.name };
-      target = { id: (kind === 'charter' ? 'charter_' : 'rev_') + uid(), ...(kind === 'young' ? {} : { kind }), title: cur.title, revision: $('#bu-rev').value.trim() || file.name, date: dv, status: st, text: '', params: { ...(cur.params || RULE_2025) }, summary: [], notes: '' };
+      target = { id: (kind === 'charter' ? 'charter_' : 'rev_') + uid(), ...(kind === 'young' ? {} : { kind }), title: cur.title, revision: rv || file.name, date: dv, status: st, text: '', params: { ...(cur.params || RULE_2025) }, summary: [], notes: '' };
       if (st === 'current') { for (const x of bylawsOf(dd, kind)) if (x.status === 'current' && !x.unsaved) { x.status = 'old'; await saveBylaw(dd, x); } }
       if (st === 'current') bylawsOf(dd, kind).filter(x => x.unsaved && !x.text).forEach(x => dd.bylaws.splice(dd.bylaws.indexOf(x), 1));
       dd.bylaws.push(target);
     }
-    if (target.id !== sameId) target.text = text; delete target.gap; if (!target.revision && file) target.revision = file.name.replace(/\.[^.]+$/, '');
+    if (target.id !== sameId) target.text = text; delete target.gap; if (!target.revision && file && kind === 'charter') target.revision = file.name.replace(/\.[^.]+$/, '');
     let stored = false;
     if (file && buf && buf.byteLength < 650 * 1024) { const u8 = new Uint8Array(buf); let bin = ''; for (let i = 0; i < u8.length; i += 0x8000) bin += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); await backend.set(`depts/young/bylawFiles/${target.id}`, { name: file.name, type: file.type || '', size: file.size, data: btoa(bin), at: today() }); stored = true; }
     if (file) target.file = { name: file.name, size: file.size, at: today(), stored };
@@ -2046,7 +2048,7 @@ BIND.bylaws = () => {
       closeModal(); S.sub = { rdoc: kind }; render(); toast('삭제했습니다'); };
   };
   const ed = $('#bl-edit'); if (ed) ed.onclick = () => { S.sub.editText = true; S.sub.bylaw = b.id; render(); };
-  const cc = $('#bt-cancel'); if (cc) { cc.onclick = () => { delete S.sub.editText; render(); }; $('#bt-save').onclick = async () => { Object.assign(b, { title: $('#bt-title').value.trim(), revision: $('#bt-rev').value.trim(), date: $('#bt-date').value, text: $('#bt-text').value }); if (b.text.trim()) delete b.gap; await saveBylaw(dd, b); delete S.sub.editText; render(); toast(`${RULE_DOCS[kind].name}을(를) 저장했습니다`); }; return; }
+  const cc = $('#bt-cancel'); if (cc) { cc.onclick = () => { delete S.sub.editText; render(); }; $('#bt-save').onclick = async () => { Object.assign(b, { title: $('#bt-title').value.trim(), revision: bylawRevName($('#bt-rev').value, kind), date: $('#bt-date').value, text: $('#bt-text').value }); if (b.text.trim()) delete b.gap; await saveBylaw(dd, b); delete S.sub.editText; render(); toast(`${RULE_DOCS[kind].name}을(를) 저장했습니다`); }; return; }
   const cu = $('#bl-current'); if (cu) cu.onclick = () => { openModal(`<h2>현행 ${esc(RULE_DOCS[kind].name)} 지정<button class="btn s" id="modal-close">닫기</button></h2><p>"${esc(b.revision)}"을 현행으로 지정할까요? 지금 현행인 판은 "이전 판"이 됩니다.${kind === 'young' ? ' 총회 자료의 자동 판정은 이 판의 기준값을 따릅니다. 보통 총회에서 개정안이 통과된 뒤에 누릅니다.' : ''}</p><div class="row"><button class="btn p" id="cu-yes">지정</button><button class="btn" id="cu-no">취소</button></div>`); $('#cu-no').onclick = closeModal; $('#cu-yes').onclick = async () => { for (const x of bylawsOf(dd, kind)) { if (x.status === 'current' && x !== b && !x.unsaved) { x.status = 'old'; await saveBylaw(dd, x); } } b.status = 'current'; await saveBylaw(dd, b); closeModal(); render(); toast('현행으로 지정했습니다'); }; };
   const bi = $('#bl-import'); if (bi) bi.onclick = () => importYoungBylaws(dd);
   const ad = $('#bl-add'); if (ad) ad.onclick = async () => { const cur = currentOf(dd, kind); const n = { id: (kind === 'charter' ? 'charter_' : 'rev_') + uid(), ...(kind === 'young' ? { params: { ...(cur.params || RULE_2025) } } : { kind }), title: cur.title.replace(/ 개정안$/, '') + ' 개정안', revision: `${YEAR + 1} 개정안`, date: today(), status: 'draft', text: cur.text, summary: [], notes: '' }; await saveBylaw(dd, n); dd.bylaws.push(n); S.sub = { bylaw: n.id, editText: true }; render(); };
