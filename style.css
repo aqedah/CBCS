@@ -445,7 +445,7 @@ button.tile.go .l{color:var(--muted)}
 /* 출석부 표 바로 고치기 */
 td.ie-on{cursor:text;position:relative}
 td.ie-on:hover{outline:2px dashed var(--accent);outline-offset:-3px;background:var(--panel) !important}
-.ie-pop{position:fixed;z-index:120;background:var(--panel);border:1px solid var(--accent);border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.2);padding:10px 12px;font-size:13px;display:flex;flex-direction:column;gap:6px}
+.ie-pop{position:fixed;z-index:120;max-height:calc(100vh - 16px);overflow:auto;background:var(--panel);border:1px solid var(--accent);border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.2);padding:10px 12px;font-size:13px;display:flex;flex-direction:column;gap:6px}
 .ie-pop textarea{width:100%;font:inherit;padding:6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}
 .ie-opts{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}
 .ie-opts label{display:flex;gap:4px;align-items:center;padding:4px 6px;border:1px solid var(--line-soft);border-radius:5px;cursor:pointer}

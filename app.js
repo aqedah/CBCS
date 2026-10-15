@@ -586,10 +586,12 @@ function inlineEditor(dd, s, td, kind, done) {
     : kind === 'phone' ? `<b>연락처 — ${esc(s.name)}</b><label class="f"><span>본인</span><input type="tel" id="ie-p" value="${esc(s.phone || '')}"></label><label class="f"><span>보호자</span><div class="row" style="gap:4px"><input type="tel" id="ie-gp" value="${esc(s.guardianPhone || '')}" style="flex:1"><select id="ie-gr" style="width:auto">${['모', '부', '보호자'].map(r => `<option ${(s.guardianRel || '보호자') === r ? 'selected' : ''}>${r}</option>`).join('')}</select></div></label>`
     : `<b>비고 — ${esc(s.name)}</b><textarea id="ie-n" rows="3">${esc(s.note || '')}</textarea>`;
   pop.innerHTML += `<div class="row" style="gap:6px;margin-top:8px"><button class="btn s p" id="ie-save">저장</button><button class="btn s" id="ie-cancel">취소</button><span class="note">Esc 닫기${kind === 'faith' || kind === 'status' ? '' : ' · Enter 저장'}</span></div>`;
-  if (kind === 'status') pop.querySelectorAll('input[name=ie-st]').forEach(x => x.onchange = () => { const v = x.value; pop.querySelector('#ie-st-c').hidden = v !== 'custom'; pop.querySelector('#ie-st-l').hidden = !(v === 'left' || v === 'archived'); });
+  if (kind === 'status') pop.querySelectorAll('input[name=ie-st]').forEach(x => x.onchange = () => { const v = x.value; pop.querySelector('#ie-st-c').hidden = v !== 'custom'; pop.querySelector('#ie-st-l').hidden = !(v === 'left' || v === 'archived'); place(); });
   document.body.appendChild(pop);
+  // 창 위치: 칸 아래에 두되 화면 밑으로 넘치면 칸 위로, 그래도 안 되면 화면 안에 맞춰 올린다. 내용이 늘어나면(제적·보관 칸 등) 다시 맞춘다
   const r = td.getBoundingClientRect(); const w = Math.min(340, innerWidth - 16); pop.style.width = w + 'px'; pop.style.left = Math.max(8, Math.min(r.left, innerWidth - w - 8)) + 'px';
-  const top = r.bottom + 4; pop.style.top = (top + pop.offsetHeight > innerHeight - 8 ? Math.max(8, r.top - pop.offsetHeight - 4) : top) + 'px';
+  const place = () => { const h = pop.offsetHeight, below = r.bottom + 4, above = r.top - h - 4; pop.style.top = (below + h <= innerHeight - 8 ? below : above >= 8 ? above : Math.max(8, innerHeight - h - 8)) + 'px'; };
+  place();
   const close = () => { pop.remove(); document.removeEventListener('mousedown', outside, true); document.removeEventListener('keydown', key, true); };
   const outside = e => { if (!pop.contains(e.target)) close(); };
   const save = async () => {
