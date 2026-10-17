@@ -2968,8 +2968,12 @@ const attendCount = (dd, s) => Object.values(dd.reports).filter(r => (r.att || {
 const settleCandidates = dd => dd.students.filter(s => s.status === 'newcomer').map(s => ({ s, n: attendCount(dd, s) })).filter(x => x.n >= SETTLE_COUNT);
 function birthdaysOf(dd, month) {
   const mm = pad2(month); const out = [];
-  dd.students.filter(s => s.status !== 'left' && (s.birth || '').slice(5, 7) === mm).forEach(s => out.push({ day: +s.birth.slice(8, 10), name: s.name, sub: (classOf(dd, s) || {}).name || s.classId || '', age: s.birth.slice(0, 4) }));
-  dd.doc.staff.filter(t => t.status !== 'left' && /^\d{4}-\d{2}-\d{2}$/.test(t.birth || '') && t.birth.slice(5, 7) === mm).forEach(t => out.push({ day: +t.birth.slice(8, 10), name: t.name, sub: t.role || '교사', age: '' }));
+  dd.students.filter(s => s.status !== 'left' && (s.birth || '').slice(5, 7) === mm).forEach(s => out.push({ day: +s.birth.slice(8, 10), name: s.name, sub: (classOf(dd, s) || {}).name || s.classId || '', age: s.birth.slice(0, 4), birth: s.birth }));
+  // 교사·임원 명단과 출석부에 같은 사람(이름·생일이 같음)이 있으면 한 번만 보이고, 직책을 옆에 붙인다
+  dd.doc.staff.filter(t => t.status !== 'left' && /^\d{4}-\d{2}-\d{2}$/.test(t.birth || '') && t.birth.slice(5, 7) === mm).forEach(t => {
+    const same = out.find(x => normName(x.name) === normName(t.name) && x.birth === t.birth);
+    if (same) { if (t.role && !String(same.sub).includes(t.role)) same.sub = [same.sub, t.role].filter(Boolean).join(' · '); return; }
+    out.push({ day: +t.birth.slice(8, 10), name: t.name, sub: t.role || '교사', age: '', birth: t.birth }); });
   return out.sort((a, b) => a.day - b.day || a.name.localeCompare(b.name, 'ko'));
 }
 function homeExtras(dd) {
