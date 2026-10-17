@@ -779,7 +779,7 @@ function studentCard(dd, s) {
       <label class="f"><span>어머니</span><input type="text" id="sc-mother" value="${f('mother')}"></label>
       <label class="f" style="grid-column:span 2"><span>주소</span><input type="text" id="sc-address" value="${f('address')}"></label>
       <label class="f" style="grid-column:span 2"><span>비고</span><input type="text" id="sc-note" value="${f('note')}">${noteTagsHTML('sc-note')}</label>
-      ${dd.id === 'young' ? `<label class="f"><span>구분</span><select id="sc-group"><option value="" ${!['라피끄', '팸장'].includes(s.group) ? 'selected' : ''}>청년</option><option value="라피끄" ${s.group === '라피끄' ? 'selected' : ''}>라피끄</option><option value="팸장" ${s.group === '팸장' ? 'selected' : ''}>팸장 (재적에서 빠지고 팸장 탭으로)</option></select></label>` : ''}
+      ${dd.id === 'young' ? `<label class="f"><span>구분</span><select id="sc-group"><option value="" ${!['라피끄', '팸장'].includes(s.group) ? 'selected' : ''}>청년</option>${s.group === '라피끄' || YEAR < 2026 ? `<option value="라피끄" ${s.group === '라피끄' ? 'selected' : ''}>라피끄${YEAR >= 2026 ? ' (2025년까지 — 2026년부터 없음)' : ''}</option>` : ''}<option value="팸장" ${s.group === '팸장' ? 'selected' : ''}>팸장 (재적에서 빠지고 팸장 탭으로)</option></select></label>` : ''}
       <label class="f"><span>제적 처리일</span><input type="date" id="sc-ldate" value="${f('leftDate')}"></label>
       <label class="f"><span>제적 구분 (결혼·직분·이사 등)</span><select id="sc-lkind"><option value="">—</option>${LEFT_KINDS.map(k => `<option ${s.leftKind === k ? 'selected' : ''}>${k}</option>`).join('')}</select></label>
       <label class="f" style="grid-column:span 2"><span>제적 사유</span><input type="text" id="sc-lreason" value="${f('leftReason')}" placeholder="상태가 제적일 때만 씁니다"></label>
