@@ -1768,7 +1768,7 @@ function bylawHTML(t, opt = {}) {
   const P = opt.prev, seen = opt.seenKeys;
   const keyOf = q => { const tok = q.lab ? (/조/.test(q.lab) ? 'art' : blNorm(q.lab)) : ((q.txt.match(/^(\(\d+\)|（\d+）|\d+\s*항|\d+\s*[.)]|[가-하]\s*[.)]|[①-⑳])/) || [])[0] ? blNorm(q.txt.match(/^(\(\d+\)|（\d+）|\d+\s*항|\d+\s*[.)]|[가-하]\s*[.)]|[①-⑳])/)[0]) : 'p' + (pi++)); return art + '|' + tok; };
   const body = (q, key) => { const full = (q.lab || '') + ' ' + q.txt; if (!P) return esc(q.txt);
-    if (P.all.has(blNorm(full)) || P.text.includes(blNorm(q.txt))) return esc(q.txt); const o = P.byKey.get(key);
+    if (P.all.has(blNorm(full)) || P.text.includes(blNorm(q.txt))) return esc(q.txt); const o = P.map ? P.map.get(key) : P.byKey.get(key);
     if (o) { const h = wordDiffHTML(o.txt, q.txt, P.text); if (h == null) return esc(q.txt); q.chg = 1; return h; }
     const h = wordDiffHTML('', q.txt, P.text); if (h == null) return esc(q.txt); q.chg = 2; return h; };
   const flush = () => { if (para) { if (para.lab) { const m = para.lab.match(/제\s*(\d+)\s*조(?:\s*의\s*(\d+))?/); if (m) art = 'A' + m[1] + (m[2] ? '-' + m[2] : ''), pi = 0; } const key = keyOf(para);
@@ -1817,16 +1817,30 @@ function bylawPrev(b, vs) {
   return c.filter(x => x.status !== 'draft' && (x.date || '') < (b.date || '')).sort((x, y) => (x.date < y.date ? 1 : -1))[0] || null;
 }
 const _blDiff = {};
+/* 문단 짝 맞추기: 조문이 지워지거나 끼어들면 뒤 조문 번호가 모두 밀리므로, 번호가 아니라 내용이 비슷한 문단끼리 순서를 지키며 짝을 짓는다 */
+function blSim(a, b) { a = blNorm(a); b = blNorm(b); if (!a || !b) return 0; if (a === b) return 1; const g = x => { const m = new Map(); for (let i = 0; i < x.length - 1; i++) { const k = x.slice(i, i + 2); m.set(k, (m.get(k) || 0) + 1); } return m; }; const A = g(a), B = g(b); let c = 0; A.forEach((v, k) => { c += Math.min(v, B.get(k) || 0); }); return 2 * c / Math.max(1, a.length - 1 + b.length - 1); }
+function blAlign(prev, cur) {
+  const n = prev.length, m = cur.length, S = prev.map(p => cur.map(c => { const v = blSim(p.txt, c.txt); return v >= 0.45 ? v : 0; }));
+  const D = Array.from({ length: n + 1 }, () => new Float64Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) D[i][j] = Math.max(D[i + 1][j], D[i][j + 1], S[i][j] ? S[i][j] + D[i + 1][j + 1] : 0);
+  const pairs = []; let i = 0, j = 0;
+  while (i < n && j < m) { if (S[i][j] && Math.abs(D[i][j] - (S[i][j] + D[i + 1][j + 1])) < 1e-9) { pairs.push([i, j]); i++; j++; } else if (D[i][j] === D[i + 1][j]) i++; else j++; }
+  return pairs;
+}
 function bylawDiffOpt(b, vs) {
   const pv = bylawPrev(b, vs); if (!pv) return {};
   const ck = b.id + '|' + pv.id + '|' + blNorm(b.text).length + '|' + blNorm(pv.text).length; if (_blDiff.k === ck) return _blDiff.opt;
   const ps = bylawParas(pv.text); const P = { all: new Set(), byKey: new Map(), heads: new Set() };
   ps.forEach(q => { if (q.head) P.heads.add(q.head); else { P.all.add(blNorm(q.full)); if (!P.byKey.has(q.key)) P.byKey.set(q.key, q); } }); P.text = ps.filter(q => !q.head).map(q => blNorm(q.full)).join('');
+  const prevRaw = ps.filter(q => !q.head && !/^=+/.test(q.full.trim())), curRaw = bylawParas(b.text).filter(q => !q.head);
+  const pairs = blAlign(prevRaw, curRaw); P.map = new Map(); const used = new Set(); pairs.forEach(([i, j]) => { P.map.set(curRaw[j].key, prevRaw[i]); used.add(i); });
   const seenKeys = new Set(); const cur = []; bylawHTML(b.text, { prev: P, seenKeys, collect: cur });
   const curText = cur.filter(q => !q.head).map(q => blNorm(q.full)).join('');
-  const removed = ps.filter(q => !q.head && !/^=+/.test(q.full.trim()) && !seenKeys.has(q.key) && !curText.includes(blNorm(q.txt)));
+  const removed = prevRaw.filter((q, i) => !used.has(i) && !curText.includes(blNorm(q.txt)));
   const artName = (q, src) => /\d+\s*차\s*수정\s*:|공포\s*서기/.test(q.txt) ? '개정 이력' : (() => { const a = q.key.split('|')[0]; if (a === 'pre') return '머리말'; const m = a.match(/^A(\d+)(?:-(\d+))?$/); return m ? `제${m[1]}조${m[2] ? '의' + m[2] : ''}` : a; })();
-  const changes = [...cur.filter(q => !q.head && q.chg).map(q => ({ art: artName(q), kind: q.chg === 1 ? '바뀜' : '새로 생김', html: String(q.html || '').replace(/^\s*[:：]\s*/, '') })), ...removed.map(q => ({ art: artName(q), kind: '빠짐', html: `<del class="bl-del">${esc(q.txt.trim().replace(/^[:：]\s*/, ''))}</del>` }))];
+  // 번호가 밀린 조문은 "바뀜 (옛 제18조)"처럼 앞 판 번호를 함께, 지워진 조문은 "옛 제17조"로 따로 묶는다
+  const was = q => { const o = P.map.get(q.key); const a0 = o && artName(o), a1 = artName(q); return a0 && a0 !== a1 && !/개정 이력|머리말/.test(a0) ? ` (옛 ${a0})` : ''; };
+  const changes = [...cur.filter(q => !q.head && q.chg).map(q => ({ art: artName(q), kind: (q.chg === 1 ? '바뀜' : '새로 생김') + was(q), html: String(q.html || '').replace(/^\s*[:：]\s*/, '') })), ...removed.map(q => ({ art: /개정 이력|머리말/.test(artName(q)) ? artName(q) : `옛 ${artName(q)}`, kind: '빠짐', html: `<del class="bl-del">${esc(q.txt.trim().replace(/^[:：]\s*/, ''))}</del>` }))];
   const opt = { prev: P, pv, removed, changes, nChg: cur.filter(q => q.chg === 1).length, nNew: cur.filter(q => q.chg === 2).length };
   _blDiff.k = ck; _blDiff.opt = opt; return opt;
 }
@@ -1860,7 +1874,7 @@ VIEWS.bylaws = async () => {
         ${edit ? `<div class="row" style="margin-top:10px"><button class="btn s" id="bl-add">새 개정안 추가</button>${isYoung || kind === 'gideon' ? '<button class="btn s" id="bl-import">역대 회칙 가져오기 (JSON)</button>' : ''}</div>` : ''}</div>
       ${b.text.trim() ? (() => { const o = bylawDiffOpt(b, vs); if (!o.pv) return `<div class="card"><h2>앞 판에서 바뀐 점</h2><div class="note">이 판보다 앞선 판이 없어 비교할 수 없습니다.</div></div>`;
         const groups = []; o.changes.forEach(c => { let g = groups.find(x => x.art === c.art); if (!g) groups.push(g = { art: c.art, items: [] }); g.items.push(c); });
-        return `<div class="card bl-chgcard"><h2>${esc(b.revision || '')}에서 바뀐 점 <span class="r">${esc(o.pv.revision || '')} 대비 · 조문 ${groups.length}곳</span></h2>${groups.length ? groups.map(g => `<div class="bl-cg"><div class="bl-cg-h">${esc(g.art)} ${[...new Set(g.items.map(x => x.kind))].map(k => `<span class="pill ${k === '빠짐' ? 'bad' : k === '새로 생김' ? 'ok' : 'warn'}">${k}</span>`).join(' ')}</div>${g.items.map(x => `<div class="bl-cg-b">${x.html}</div>`).join('')}</div>`).join('') : '<div class="note">앞 판과 글자가 같습니다.</div>'}</div>`; })() : ''}
+        return `<div class="card bl-chgcard"><h2>${esc(b.revision || '')}에서 바뀐 점 <span class="r">${esc(o.pv.revision || '')} 대비 · 조문 ${groups.length}곳</span></h2>${groups.length ? groups.map(g => `<div class="bl-cg"><div class="bl-cg-h">${esc(g.art)} ${[...new Set(g.items.map(x => x.kind))].map(k => `<span class="pill ${k === '빠짐' ? 'bad' : k.startsWith('새로 생김') ? 'ok' : 'warn'}">${esc(k)}</span>`).join(' ')}</div>${g.items.map(x => `<div class="bl-cg-b">${x.html}</div>`).join('')}</div>`).join('') : '<div class="note">앞 판과 글자가 같습니다.</div>'}</div>`; })() : ''}
       ${isYoung && (b.summary || []).length ? `<div class="card"><h2>${b.status === 'current' ? '총회 판정 기준 (현행 회칙 요약)' : '이 판의 총회 판정 기준 (요약)'}</h2><div class="tw"><table class="bl-sum"><tbody>${(b.summary || []).map(x => Array.isArray(x) ? x : [x.no, x.title, x.body]).map(([n, t, d]) => `<tr><th style="white-space:nowrap">${esc(n)}</th><td><b>${esc(t)}</b> <span class="note">${esc(d)}</span></td></tr>`).join('')}</tbody></table></div></div>` : ''}
       ${isYoung ? `<div class="card"><h2>판정 기준값 <span class="r">${edit ? '개정되면 여기 숫자만 고치면 됩니다' : ''}</span></h2><div class="fields" style="grid-template-columns:1fr 1fr">
         ${[['ageMin', '회원 최소 나이'], ['ageMax', '회원 최대 나이'], ['voterMonths', '선거권: 수료 후 개월'], ['voterRate', '선거권: 1년 출석률(%)'], ['presAgeMax', '회장 최대 나이 (0=제한 없음)'], ['presYears', '회장 출석 연수'], ['vpYears', '부회장 출석 연수'], ['apptYears', '임명직 출석 연수'], ['sameRoleMax', '같은 직위 연속 최대 연수 (9조)'], ['chairTeamMax', '회장단 연속 최대 연수 (0=제한 없음)'], ['quorumWeeks', '정족수: 직전 몇 주']].map(([k, l]) => `<label class="f"><span>${l}</span><input type="number" data-rp="${esc(k)}" value="${R[k] ?? ''}" ${edit ? '' : 'readonly'}></label>`).join('')}
