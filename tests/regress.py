@@ -241,7 +241,7 @@ with sync_playwright() as p:
     # ── 업무 잇기 기능 (2026-10-14 사용자 승인) ──
     def t_R15():
         pg = login(b, 'elem')
-        LS = pg.evaluate("()=>{const d=new Date(); d.setDate(d.getDate()-d.getDay()); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}")
+        LS = '2026-10-11'  # 체험 모드의 '지난 주일'은 2026-10-11로 고정
         go(pg, 'weekly', f"{{date:'{LS}'}}")
         n = pg.evaluate("()=>document.querySelectorAll('[data-famdone]').length")
         pg.click('[data-famdone]'); pg.wait_for_timeout(1200)

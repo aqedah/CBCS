@@ -1621,16 +1621,18 @@ function judge(dd, s, base, R) {
   if (ys && ys.school) why.push(`주일학교 출신 — 청년부 시작 ${ys.date} (만 19세 되는 해 1월)`);
   else if (ys && ys.evang) why.push(`전도 — 청년부 등록일 ${ys.date}`);
   else if (ys && ys.floored) why.push(`청년부 등록 ${ys.date} (만 19세 되는 해 1월, 그 전은 중고등부)`);
+  // 위 줄들은 참고 설명이다. 판정표의 "사유"에는 왜 안 되는지(또는 무엇을 확인할지)만 남기고, 참고 설명은 엑셀 상세에만 둔다
+  const info = why.filter(w => !/확인 필요/.test(w));
   // 4조 회원
   let member = 'ok';
   if (s.status === 'left') { member = 'no'; why.push('제적'); }
   if (s.group === '라피끄') { member = 'no'; why.push('라피끄 소속'); }
   if (age === null) { if (member === 'ok') member = 'check'; why.push('생년월일 없음'); }
-  else if (age < R.ageMin || age > R.ageMax) { member = 'no'; why.push(`만 ${age}세`); }
-  if (s.married) { const my = marriedYear(s), by = +String(base).slice(0, 4); if (my && my >= by) why.push(`${my}년 결혼 — 결혼한 해까지는 회원(관례)`); else { member = 'no'; why.push(my ? `${my}년 결혼(기혼)` : '기혼'); } }
+  else if (age < R.ageMin || age > R.ageMax) { member = 'no'; why.push(age < R.ageMin ? `${R.ageMin}세 미만(만 ${age}세)` : `${R.ageMax}세 초과(만 ${age}세)`); }
+  if (s.married) { const my = marriedYear(s), by = +String(base).slice(0, 4); if (my && my >= by) { const w = `${my}년 결혼 — 결혼한 해까지는 회원(관례)`; why.push(w); info.push(w); } else { member = 'no'; why.push(my ? `${my}년 결혼(기혼)` : '기혼'); } }
   if (s.churchRole) { member = 'no'; why.push(`직분자(${s.churchRole})`); }
   if (s.otherCell) { member = 'no'; why.push('타 목장 소속'); }
-  const memberWhy = why.slice();
+  const memberWhy = why.filter(w => !info.includes(w));
   // 5조 선거권
   let voter = member;
   const sinceNew = ys && ys.rejoined && !(s.newcomerDone > ys.date) ? ys.date : (s.newcomerDone || (ys ? ys.date : ''));
@@ -1638,16 +1640,16 @@ function judge(dd, s, base, R) {
   if (voter !== 'no') { if (faithUnknown(s)) { voter = 'check'; why.push('신급 모름'); } else if (!isBaptized(s)) { voter = 'no'; why.push(`세례교인 아님(${s.faith})`); } }
   if (voter !== 'no') {
     if (!sinceNew) { voter = 'check'; why.push('출석 시작일 모름'); }
-    else if (sinceNew > addMonths(base, -R.voterMonths)) { voter = 'no'; why.push(`${s.newcomerDone ? '새가족반 수료' : '출석 시작'} ${R.voterMonths}개월 미만`); }
+    else if (sinceNew > addMonths(base, -R.voterMonths)) { voter = 'no'; why.push(`${R.voterMonths}개월 미만(${s.newcomerDone ? '새가족반 수료' : '출석 시작'} ${sinceNew})`); }
     if (rate === null) { if (voter === 'ok') voter = 'check'; why.push('출석 기록 없음'); }
     else if (cnt * 100 < R.voterRate * yearReps.length) { // 반올림하지 않고 정확히 비교 (31/52=59.6%는 미달)
       const need = Math.ceil(yearReps.length * R.voterRate / 100); const pending = yearReps.filter(r => r.missing && r.date >= today()).length; // 아직 안 온 주일(총회 당일 등)
-      if (pending && cnt + pending >= need) { if (voter === 'ok') voter = 'check'; why.push(`출석률 ${(cnt / yearReps.length * 100).toFixed(1)}% (${cnt}/${yearReps.length}) — 남은 ${pending}주(${yearReps.filter(r => r.missing && r.date >= today()).map(r => r.date.slice(5).replace('-', '/')).join(', ')}) 출석하면 ${need}주 충족`); }
-      else { voter = 'no'; why.push(`출석률 ${(cnt / yearReps.length * 100).toFixed(1)}% (${cnt}/${yearReps.length}, 기준 ${need}주 이상)`); } }
+      if (pending && cnt + pending >= need) { if (voter === 'ok') voter = 'check'; why.push(`출석률 ${R.voterRate}% 미만(${(cnt / yearReps.length * 100).toFixed(1)}%) — 남은 ${pending}주 출석하면 충족`); }
+      else { voter = 'no'; why.push(`출석률 ${R.voterRate}% 미만(${(cnt / yearReps.length * 100).toFixed(1)}%)`); } }
   }
-  const voterWhy = why.slice();
+  const voterWhy = why.filter(w => !info.includes(w));
   // 11조 후보 자격 — 판정과 함께 그 칸의 사유도 모은다
-  const byR = (years, need, ageMax) => { const r = memberWhy.slice(); if (s.expelled) r.push(`제명 이력(${s.expelled})`); if (ageMax && age !== null && age > ageMax) r.push(`만 ${age}세 — ${ageMax}세 초과`); if (faithUnknown(s)) r.push('신급 모름'); else if (!isBaptized(s)) r.push(`세례교인 아님(${s.faith})`); if (years === null) r.push('출석 시작일 모름'); else if (years < need) r.push(`출석 ${Math.floor(years * 10) / 10}년 — ${need}년 미만`); return r; };
+  const byR = (years, need, ageMax) => { const r = memberWhy.slice(); if (s.expelled) r.push(`제명 이력(${s.expelled})`); if (ageMax && age !== null && age > ageMax) r.push(`${ageMax}세 초과(만 ${age}세)`); if (faithUnknown(s)) r.push('신급 모름'); else if (!isBaptized(s)) r.push(`세례교인 아님(${s.faith})`); if (years === null) r.push('출석 시작일 모름'); else if (years < need) r.push(`${need}년 미만(출석 ${Math.floor(years * 10) / 10}년)`); return r; };
   const rsn = { member: memberWhy, voter: voterWhy, pres: byR(yYears, R.presYears, R.presAgeMax), vp: byR(yYears, R.vpYears, 0), appt: byR(cYears, R.apptYears, 0) };
   const by = (years, need, ageMax, bap) => { if (member === 'no' || s.expelled) return 'no'; if (ageMax && age !== null && age > ageMax) return 'no'; if (bap && !faithUnknown(s) && !isBaptized(s)) return 'no'; if (years !== null && years < need) return 'no'; if ((ageMax && age === null) || (bap && !s.faith) || years === null || member === 'check') return 'check'; return 'ok'; };
   let pres = by(yYears, R.presYears, R.presAgeMax, true), vp = by(yYears, R.vpYears, 0, true); let appt = by(cYears, R.apptYears, 0, true);
@@ -1700,7 +1702,10 @@ function assemblyJudge(dd, a) {
   const MIN_WHY = '교역자 — 발언권·선거권 (회칙 5조 2항)', MIN_NO = '교역자 — 피선거권 없음 (회칙 5조 2항)';
   const list = pool.map(s => { const j = judge(dd, s, a.date, R);
     if (s.minister) { Object.assign(j, { rate: null, cnt: null, voter: 'ok', pres: 'no', vp: 'no', appt: 'no', fam: true, minister: true, why: [MIN_WHY], rsn: { member: [], voter: [MIN_WHY], pres: [MIN_NO], vp: [MIN_NO], appt: [MIN_NO] } }); return j; }
-    if (isFamP(s)) { j.voter = 'ok'; j.rsn = j.rsn || {}; j.rsn.voter = ['팸장 — 결의권자']; j.why.unshift('팸장 — 결의권자'); j.fam = true; } return applyOverride(a, j); })
+    if (isFamP(s)) { j.voter = 'ok'; j.rsn = j.rsn || {}; j.rsn.voter = ['팸장 — 결의권자']; j.why.unshift('팸장 — 결의권자'); j.fam = true;
+      // 청년부 회원이 아닌 팸장(장년부 소속 교사 등): 교역자와 같이 회칙 5조 2항 — 피선거권 없음
+      if (s.pseudo || j.member === 'no') { j.teacher = true; const T = '교사 — 피선거권 없음 (회칙 5조 2항)'; ['pres', 'vp', 'appt'].forEach(k => { j[k] = 'no'; j.rsn[k] = [T]; }); j.rsn.member = [T]; } }
+    return applyOverride(a, j); })
     .sort((x, y) => (x.fam ? 1 : 0) - (y.fam ? 1 : 0) || (x.minister ? 1 : 0) - (y.minister ? 1 : 0) || x.s.name.localeCompare(y.s.name, 'ko'));
   const excluded = dd.students.filter(s => s.status !== 'left' && !isGrad(s) && !s.churchRole && !inPool(s)).map(s => ({ s, why: outWhy(s) })).sort((x, y) => x.why.localeCompare(y.why, 'ko') || x.s.name.localeCompare(y.s.name, 'ko'));
   list.forEach(j => { j.speak = speakOf(dd, j, a.date); }); excluded.forEach(x => { x.speak = AWAY.includes(x.s.status) && speakOf(dd, { s: x.s, voter: 'no' }, a.date); });
@@ -2086,7 +2091,7 @@ function readMemberInfo(s) { if ($('#mi-origin')) s.origin = $('#mi-origin').val
 function officerSum(j) {
   const P = [['pres', '회장'], ['vp', '부회장'], ['appt', '임명직']]; const ok = P.filter(([k]) => j[k] === 'ok').map(x => x[1]); const ck = P.filter(([k]) => j[k] === 'check').map(x => x[1]);
   if (j.minister) return { ok: '해당 없음', why: '교역자 — 피선거권 없음 (회칙 5조 2항)', cls: 'mute' };
-  if (j.fam && !ok.length && !ck.length) return { ok: '불가', why: '팸장 — 청년부 회원이 아님', cls: 'mute' };
+  if (j.teacher || (j.fam && !ok.length && !ck.length)) return { ok: '불가', why: '교사 — 피선거권 없음 (회칙 5조 2항)', cls: 'mute' };
   const why = (P.map(([k]) => (j.rsn && j.rsn[k] || [])[0]).find(Boolean) || '').replace(/\s+/g, ' ');
   return { ok: ok.length ? ok.join('·') + ' 가능' : ck.length ? ck.join('·') + ' 확인 필요' : '불가', why: ok.length === 3 ? '' : why, cls: ok.length ? 'ok' : ck.length ? 'warn' : 'mute' };
 }
