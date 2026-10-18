@@ -1589,6 +1589,12 @@ const bylawKind = b => (b && b.kind) || 'young';
 const bylawsOf = (dd, k) => dd.bylaws.filter(b => bylawKind(b) === k);
 const currentOf = (dd, k) => { const l = bylawsOf(dd, k); return l.find(b => b.status === 'current') || l[0]; };
 const currentBylaw = dd => currentOf(dd, 'young');
+/* 그 날짜에 효력이 있던 청년부 회칙: 회칙은 통과일로부터 효력 — 총회에서 통과된 판은 그 총회 다음부터 적용(같은 날 총회는 앞 판). 판이 없으면 현행 */
+function bylawFor(dd, date) {
+  if (!date) return currentBylaw(dd);
+  const vs = bylawsOf(dd, 'young').filter(b => b.status !== 'draft' && !b.gap && String(b.text || '').trim() && b.date && b.date < date).sort((a, b) => (a.date < b.date ? 1 : -1));
+  return vs[0] || currentBylaw(dd);
+}
 const canYoung = () => canEdit() && (S.dept === 'young' || isCommittee());
 async function saveBylaw(dd, b) { const { unsaved, _id, ...data } = b; await backend.set(`depts/young/bylaws/${b.id}`, data); delete b.unsaved; }
 async function saveAssembly(dd, a) { const { _id, unsaved, ...data } = a; await backend.set(`depts/young/assemblies/${a.id}`, data); delete a.unsaved; if (!dd.assemblies.includes(a)) dd.assemblies.push(a); }
@@ -1668,7 +1674,7 @@ function judge(dd, s, base, R) {
   if (offO.length) why.push('임원 이력: ' + offO.map(o => `${o.year} ${o.role}`).join(' · '));
   if (offT.length) why.push('팀장·팸장: ' + offT.map(o => `${o.year} ${o.role}`).join(' · '));
   const histList = offs.filter(o => ['임원', '팀장', '팸장'].includes(roleKind(o.role))).map(o => `${o.year} ${o.role}`); const hist = histList.join(' · '); // 총회자료 '이력' 칸: 오래된 연도부터
-  return { s, age, rate, cnt, of: yearReps.length, ys, cs, yYears, cYears, member, voter, pres, vp, appt, why, rsn, est: !!(ys && ys.est), offs, hist, histList };
+  return { s, age, rate, cnt, of: yearReps.length, ys, cs, since: sinceNew || '', yYears, cYears, member, voter, pres, vp, appt, why, rsn, est: !!(ys && ys.est), offs, hist, histList };
 }
 const JP = { ok: ['ok', '해당'], no: ['mute', '아님'], check: ['warn', '확인'] };
 const jpill = (v, reasons) => `<span class="pill ${JP[v][0]}">${JP[v][1]}</span>${v !== 'ok' && reasons && reasons.length ? `<div class="pwhy">${reasons.map(esc).join('<br>')}</div>` : ''}`;
@@ -1676,21 +1682,22 @@ function applyOverride(a, j) { const o = (a.overrides || {})[j.s.id]; if (o && o
 // 판정 대상: 출석부의 재적 회원 + 팸장(팸장은 결의권자). 장기결석·군입대 등, 제적, 결혼·직분(자격 종료), 타 목장 소속은 판정표에서 빼고 아래에 따로 적는다
 /* 총회 판정 확정: 그날의 판정 결과를 총회 문서에 그대로 저장해 둔다. 확정 뒤에는 회원 상태·출석·회칙이 바뀌어도
    이 총회의 화면·출력·엑셀이 확정 당시 결과로 나온다. "지금 기준으로 다시 보기"로 현재 계산과 비교할 수 있다. */
-/* 발언권자: 결의권은 없지만 교회 등록(처음 출석) 6개월이 지난 사람. 결의권자는 당연히 발언권이 있으므로 따로 표기하지 않는다 */
+/* 발언권자: 결의권은 없지만 회원으로서 새가족반 수료(기록이 없으면 청년부 출석 시작) 뒤 6개월이 지난 사람 (회칙 5조).
+   결의권자는 당연히 발언권이 있으므로 따로 표기하지 않는다 */
 const SPEAK_MONTHS = 6;
 function speakOf(dd, j, base) {
-  if (j.speak !== undefined) return j.speak; if (j.voter === 'ok') return false;
-  let cs = j.cs; if (!cs && dd) { const s = (dd.students || []).find(x => x.id === j.s.id); if (s) cs = churchStart(dd, s); }
-  return !!(cs && cs.date && cs.date <= addMonths(base, -SPEAK_MONTHS));
+  if (j.speak !== undefined) return j.speak; if (j.voter === 'ok' || j.member === 'no') return false;
+  let since = j.since; if (since === undefined) { const s = (dd.students || []).find(x => x.id === j.s.id) || j.s; const ys = youngStart(dd, s); since = s.newcomerDone || (ys ? ys.date : ''); }
+  return !!(since && since <= addMonths(base, -SPEAK_MONTHS));
 }
 function assemblySnapshot(dd, J) {
   const mini = s => ({ id: s.id, name: s.name, birth: s.birth || '', faith: s.faith || '', sex: s.sex || '', pseudo: !!s.pseudo });
-  return { at: today(), bylaw: (currentBylaw(dd) || {}).revision || '', R: clone(J.R), q: clone(J.q),
+  return { at: today(), bylaw: (bylawFor(dd, J.date) || {}).revision || '', R: clone(J.R), q: clone(J.q),
     list: J.list.map(j => { const { s, ...rest } = j; return { ...clone(rest), s: mini(s) }; }), excluded: (J.excluded || []).map(x => ({ s: mini(x.s), why: x.why, speak: !!x.speak })) };
 }
 function assemblyJudge(dd, a) {
   if (a.snapshot && !S.sub.asLive) return { ...clone(a.snapshot), snap: true };
-  const R = (currentBylaw(dd) || {}).params || RULE_2025;
+  const R = (bylawFor(dd, a.date) || {}).params || RULE_2025;
   const fam = famLeaders(dd, YEAR); const famSet = new Set(fam.map(x => normName(x.name))); const isFamP = s => famSet.has(normName(s.name));
   const outWhy = s => s.status === 'left' ? '제적' : isGrad(s) ? statusName(s) : s.churchRole ? `직분(${s.churchRole})` : s.otherCell ? '타 목장 소속' : s.group === '라피끄' ? '라피끄' : AWAY.includes(s.status) ? statusName(s) : s.status === 'newcomer' ? '새친구' : '';
   const inPool = s => isFamP(s) || (s.status === 'active' && !outWhy(s));
@@ -1709,7 +1716,7 @@ function assemblyJudge(dd, a) {
     .sort((x, y) => (x.fam ? 1 : 0) - (y.fam ? 1 : 0) || (x.minister ? 1 : 0) - (y.minister ? 1 : 0) || x.s.name.localeCompare(y.s.name, 'ko'));
   const excluded = dd.students.filter(s => s.status !== 'left' && !isGrad(s) && !s.churchRole && !inPool(s)).map(s => ({ s, why: outWhy(s) })).sort((x, y) => x.why.localeCompare(y.why, 'ko') || x.s.name.localeCompare(y.s.name, 'ko'));
   list.forEach(j => { j.speak = speakOf(dd, j, a.date); }); excluded.forEach(x => { x.speak = AWAY.includes(x.s.status) && speakOf(dd, { s: x.s, voter: 'no' }, a.date); });
-  return { R, list, q: quorumOf(dd, a.date, R, a.quorumBasis || 'check'), excluded }; // 기준 기본값: 출석부 체크 수 (2026 임원회의 결정)
+  return { R, date: a.date, list, q: quorumOf(dd, a.date, R, a.quorumBasis || 'check'), excluded }; // 기준 기본값: 출석부 체크 수 (2026 임원회의 결정)
 }
 function lastSundayOfYear(y) { const d = new Date(y, 11, 31); d.setDate(d.getDate() - d.getDay()); return iso(d); }
 // 총회 순서 기본안 (한국성서선교회 대의원총회 순서를 청년부에 맞춘 것). 임시총회는 1·2·3·4·9·13·14·15·16만. 임원 교체는 1월 첫 주에 따로 하므로 이·취임 순서는 없음
@@ -2116,15 +2123,15 @@ function bylawArticles(text, nums) {
   lines.forEach(l => { const n = artNo(l); if (n != null) { cur = nums.includes(n) ? { n, lines: [l.trim()] } : null; if (cur) out.push(cur); return; } if (/^\s*제\s*\d+\s*장/.test(l)) { cur = null; return; } if (cur && l.trim()) cur.lines.push(l.trim()); });
   return nums.map(n => out.find(x => x.n === n)).filter(Boolean);
 }
-function bylawArtHTML(dd, nums, title) {
-  const b = currentBylaw(dd) || {}; const arts = bylawArticles(b.text, nums); if (!arts.length) return '';
+function bylawArtHTML(dd, nums, title, date) {
+  const b = bylawFor(dd, date) || {}; const arts = bylawArticles(b.text, nums); if (!arts.length) return '';
   return `<div class="bl-basis"><div class="bl-basis-h">${esc(title)} <span>— 청년부 회칙 ${esc(b.revision || '')}</span></div>${arts.map(a => `<div class="bl-art">${a.lines.map((l, i) => `<div${i ? '' : ' class="h"'}>${esc(l.replace(/\s{2,}/g, ' '))}</div>`).join('')}</div>`).join('')}</div>`;
 }
 function assemblyPaper(dd, a, J) {
   const voters = J.list.filter(j => j.voter === 'ok');
-  return `<section class="paper"><div class="hd"><div><h1>${esc(a.title)} 자료</h1><div class="sub">중앙성서교회 청년부 · 회칙 ${esc((currentBylaw(dd) || {}).revision || '')} 기준</div></div><div class="meta">${fmtK(a.date)}${a.place ? ' · ' + esc(a.place) : ''}</div></div>
+  return `<section class="paper"><div class="hd"><div><h1>${esc(a.title)} 자료</h1><div class="sub">중앙성서교회 청년부 · 회칙 ${esc((bylawFor(dd, a.date) || {}).revision || '')} 기준</div></div><div class="meta">${fmtK(a.date)}${a.place ? ' · ' + esc(a.place) : ''}</div></div>
     <h2>1. 정족수 (회칙 13조)</h2><table class="kv"><tbody><tr><th>직전 ${J.q.rows.length}주 출석</th><td>${J.q.rows.map(r => `${r.date.slice(5).replace('-', '/')} ${r.p}명`).join(' · ')}</td></tr><tr><th>평균</th><td>${J.q.avg.toFixed(1)}명</td></tr><tr><th>정족수</th><td><b>${J.q.need}명</b> (평균의 ${J.R.quorumNum}/${J.R.quorumDen})</td></tr></tbody></table>
-    ${bylawArtHTML(dd, [13], '정족수 기준 조항')}
+    ${bylawArtHTML(dd, [13], '정족수 기준 조항', a.date)}
     <h2>현 임원 구성</h2><table class="kv"><tbody>${(() => { const g = staffByKind(dd); return ['임원', '팀장', '팸장'].map(k => `<tr><th>${k}</th><td>${g[k].map(x => `${esc(x.role)} ${esc(x.name)}`).join(', ') || '—'}</td></tr>`).join(''); })()}</tbody></table>
     <h2>2. 결의권 판정표 (회칙 5조)</h2><h3>결의권자 (${voters.length}명${voters.some(j => j.fam && !j.minister) ? ` · 그중 팸장 ${voters.filter(j => j.fam && !j.minister).length}명` : ''}${voters.some(j => j.minister) ? ` · 교역자 ${voters.filter(j => j.minister).length}명` : ''})</h3><table class="tight"><thead><tr><th class="n">번호</th><th>이름</th><th>구분</th><th class="n">1년 출석률</th><th>임원 자격</th><th>사유</th></tr></thead><tbody>${voters.map((j, i) => { const o = officerSum(j); return `<tr><td class="n">${i + 1}</td><td>${esc(j.s.name)}</td><td>${j.minister ? '교역자' : j.fam ? '팸장' : '회원'}</td><td class="n">${j.rate != null ? j.rate + '%' : '—'}</td><td>${o.ok}</td><td style="font-size:11px">${esc(o.why)}</td></tr>`; }).join('')}</tbody></table>
     ${(() => { const vr = j => ((j.rsn && j.rsn.voter) || j.why || []).map(x => String(x).replace(/\s+/g, ' ')).filter(Boolean).join(' · ');
@@ -2133,9 +2140,9 @@ function assemblyPaper(dd, a, J) {
       const sp = j => speakOf(dd, j, a.date); const nsp = arr => arr.filter(sp).length;
       const row = (j, i) => `<tr><td class="n">${i + 1}</td><td>${esc(j.s.name)}</td><td>${j.minister ? '교역자' : j.fam ? '팸장' : sp(j) ? '<b>발언권자</b>' : '회원'}</td><td class="n">${j.rate != null ? j.rate + '%' : ''}</td><td style="font-size:11px">${esc(vr(j))}</td></tr>`;
       const exSp = ex.filter(x => x.speak !== undefined ? x.speak : AWAY.includes(x.s.status) && speakOf(dd, { s: x.s, voter: 'no' }, a.date));
-      return `<p class="note" style="margin:6px 0 0">발언권자: 결의권은 없지만 교회 등록 ${SPEAK_MONTHS}개월이 지나 총회에서 발언할 수 있는 사람</p><h3>확인 필요 (${ck.length}명${nsp(ck) ? ` · 그중 발언권자 ${nsp(ck)}명` : ''})</h3><table class="tight">${head}<tbody>${ck.map(row).join('') || '<tr><td colspan="5">없음</td></tr>'}</tbody></table>
+      return `<p class="note" style="margin:6px 0 0">발언권자: 결의권은 없지만 새가족반 수료 뒤 ${SPEAK_MONTHS}개월이 지나 총회에서 발언할 수 있는 회원 (회칙 5조)</p><h3>확인 필요 (${ck.length}명${nsp(ck) ? ` · 그중 발언권자 ${nsp(ck)}명` : ''})</h3><table class="tight">${head}<tbody>${ck.map(row).join('') || '<tr><td colspan="5">없음</td></tr>'}</tbody></table>
       <h3>해당 아님 (${no.length + ex.length}명${nsp(no) + exSp.length ? ` · 그중 발언권자 ${nsp(no) + exSp.length}명` : ''})</h3><table class="tight">${head}<tbody>${no.map(row).join('')}${ex.map((x, i) => `<tr><td class="n">${no.length + i + 1}</td><td>${esc(x.s.name)}</td><td>${exSp.includes(x) ? '<b>발언권자</b>' : AWAY.includes(x.s.status) ? '회원' : '회원 아님'}</td><td class="n"></td><td style="font-size:11px">${esc(x.why)}${AWAY.includes(x.s.status) ? ' — 회원 자격 일시 정지' : ''}</td></tr>`).join('') || (no.length ? '' : '<tr><td colspan="5">없음</td></tr>')}</tbody></table>`; })()}
-    ${bylawArtHTML(dd, [4, 5, 6, 11], '판정 기준 조항 (회원 자격 4조 · 결의권 5조 · 결석과 제명 6조 · 임원 자격 11조)')}
+    ${bylawArtHTML(dd, [4, 5, 6, 11], '판정 기준 조항 (회원 자격 4조 · 결의권 5조 · 결석과 제명 6조 · 임원 자격 11조)', a.date)}
     <h2>3. 후보자 명단 (회칙 11조)</h2><table><thead><tr><th>직위</th><th>후보</th><th>비고</th></tr></thead><tbody>${[...ASSEMBLY_POS, ...ASSEMBLY_POS_SUB].map(p => { const c = (a.candidates || []).filter(x => x.pos === p); return c.length ? c.map((x, i) => `<tr>${i ? '' : `<th rowspan="${c.length}">${p}</th>`}<td>${esc(x.name)}</td><td>${esc(x.note || '')}</td></tr>`).join('') : ''; }).join('') || '<tr><td colspan="3">후보 미정</td></tr>'}</tbody></table>
     <div class="ft"><b>중앙성서교회 청년부</b><span>CBCS에서 생성 · ${esc(a.date)}-총회자료.pdf</span></div></section>`;
 }
@@ -2159,7 +2166,7 @@ function printAsPDF(fileName) {
 async function exportAssemblyXLSX(dd, a, J) {
   const X = await loadLib('xlsx', 'XLSX');
   const pill = k => (JP[k] || ['', ''])[1]; const fam = s => (classOf(dd, s) || {}).name || '';
-  const bl = currentBylaw(dd) || {}; const g = staffByKind(dd); const cnt = k => J.list.filter(j => j.voter === k).length;
+  const bl = bylawFor(dd, a.date) || {}; const g = staffByKind(dd); const cnt = k => J.list.filter(j => j.voter === k).length;
   const voters = J.list.filter(j => j.voter === 'ok');
   const sheet = (rows, widths) => { const ws = X.utils.aoa_to_sheet(rows); ws['!cols'] = widths.map(w => ({ wch: w })); return ws; };
   const wb = X.utils.book_new();
@@ -2167,7 +2174,7 @@ async function exportAssemblyXLSX(dd, a, J) {
     [`${a.title} 자료`], ['중앙성서교회 청년부'], [],
     ['총회 날짜', a.date], ['구분', a.kind || ''], ['장소', a.place || ''], ['판정 기준 회칙', bl.revision || ''], [],
     ['정족수 (회칙 13조)'], ...J.q.rows.map(r => ['  ' + r.date, r.p]), ['직전 평균 출석', +J.q.avg.toFixed(1)], ['정족수', J.q.need, `평균의 ${J.R.quorumNum}/${J.R.quorumDen}`], [],
-    ['결의권자 (회칙 5조)', cnt('ok')], ['확인 필요', cnt('check')], ['해당 아님', cnt('no')], ['발언권자 (결의권 없음 · 교회 등록 6개월 이상)', J.list.filter(j => speakOf(dd, j, a.date)).length + (J.excluded || []).filter(x => x.speak).length], [],
+    ['결의권자 (회칙 5조)', cnt('ok')], ['확인 필요', cnt('check')], ['해당 아님', cnt('no')], ['발언권자 (결의권 없음 · 새가족반 수료 뒤 6개월 이상)', J.list.filter(j => speakOf(dd, j, a.date)).length + (J.excluded || []).filter(x => x.speak).length], [],
     ['현 임원 구성'], ...['임원', '팀장', '팸장'].map(k => [k, g[k].map(x => `${x.role} ${x.name}`).join(', ')]), [],
     ['만든 날', today(), 'CBCS에서 생성']], [18, 14, 60]), '요약');
   const kindOf = j => j.minister ? '교역자' : j.fam ? '팸장' : speakOf(dd, j, a.date) ? '발언권자' : '회원';
@@ -2206,7 +2213,7 @@ VIEWS.assembly = async () => {
   const unBapt = dd.students.filter(s => s.status !== 'left' && !isBaptized(s));
   const col = (k, label) => { const ok = J.list.filter(j => j[k] === 'ok'), ck = J.list.filter(j => j[k] === 'check'); return `<div class="cand-col"><h3>${label} <span class="note">${ok.length}명${ck.length ? ` · 확인 ${ck.length}` : ''}</span></h3><div class="row" style="gap:4px">${ok.map(j => `<button class="chip" data-mi="${esc(j.s.id)}">${esc(j.s.name)}</button>`).join('') || '<span class="note">없음</span>'}</div>${ck.length ? `<div class="note" style="margin-top:6px">확인 필요: ${ck.map(j => `<a href="#" data-mi="${esc(j.s.id)}">${esc(j.s.name)}</a>`).join(', ')}</div>` : ''}</div>`; };
   const R = J.R;
-  return `<div class="topbar"><div><h1>총회 자료</h1><div class="sub">${esc(a.title)} · ${fmtK(a.date)} · 회칙 ${esc((currentBylaw(dd) || {}).revision || '')} 기준 자동 판정${a.unsaved ? ' · <b>아직 저장 안 됨</b>' : ''}</div></div>
+  return `<div class="topbar"><div><h1>총회 자료</h1><div class="sub">${esc(a.title)} · ${fmtK(a.date)} · 회칙 ${esc((bylawFor(dd, a.date) || {}).revision || '')} 기준 자동 판정${a.unsaved ? ' · <b>아직 저장 안 됨</b>' : ''}</div></div>
     <div class="row">${asmPicker(list, a)}${canEdit() && edit && !a.unsaved ? (a.snapshot ? `<button class="btn" id="as-live">${S.sub.asLive ? '확정 판정 보기' : '지금 기준으로 다시 보기'}</button><button class="btn d" id="as-unlock">확정 풀기</button>` : `<button class="btn p" id="as-lock">판정 확정</button>`) : ''}${canEdit() ? `<button class="btn" id="as-print">총회 자료 출력</button><button class="btn" id="as-sign">출석 확인표 출력</button>${a.unsaved ? '' : asmExportBtns()}` : ''}</div></div>
   <div class="stack">
     ${a.snapshot ? `<div class="hint ${S.sub.asLive ? '' : 'info'}">${S.sub.asLive ? `<b>지금 기준으로 다시 계산한 판정</b>을 보고 있습니다. 출력·엑셀은 여전히 ${esc(a.snapshot.at)} 확정 판정으로 나옵니다.` : `<b>${esc(a.snapshot.at)}에 판정을 확정했습니다</b> (회칙 ${esc(a.snapshot.bylaw)} 기준). 이 총회의 화면·출력·엑셀은 확정 당시 결과로 나오며, 그 뒤 회원 상태나 출석이 바뀌어도 달라지지 않습니다.`}</div>` : ''}
@@ -2231,7 +2238,7 @@ VIEWS.assembly = async () => {
       ${edit ? `<div class="row" style="margin-top:10px"><select id="cd-pos" style="width:auto">${[...ASSEMBLY_POS, ...ASSEMBLY_POS_SUB].map(p => `<option>${p}</option>`).join('')}</select><select id="cd-sid" style="flex:1">${J.list.filter(j => j.member !== 'no').map(j => `<option value="${esc(j.s.id)}">${esc(j.s.name)}</option>`).join('')}</select><input type="text" id="cd-note" placeholder="비고 (추천인 등)" style="flex:1"><button class="btn" id="cd-add">후보 추가</button></div>` : ''}</div>
     <div class="card"><h2><span>판정표 <span class="row" style="display:inline-flex;gap:4px;margin-left:8px">${[['ok', '결의권자'], ['check', '확인 필요'], ['no', '해당 아님'], ['border', '55~65% 경계'], ['all', '전체']].map(([k, l]) => `<button class="btn s ${filter === k ? 'p' : ''}" data-vf="${esc(k)}">${l}</button>`).join('')}</span></span><span class="r">직전 1년 = ${esc(yrReps[0].date)} ~ ${esc(yrReps[yrReps.length - 1].date)} (총회 당일 포함) · 달력상 주일 ${yrReps.length}주가 분모 · 보고서 없는 주일 ${yrReps.filter(r => r.missing).length}주는 결석으로 셈 · "(추정)"은 소속 이력·출석 기록으로 짐작한 날짜</span></h2>
       <div class="tw"><table class="judge"><thead><tr><th class="n no">No.</th><th>이름</th><th class="n">나이</th><th>청년부 출석 시작</th><th class="n">1년 출석</th><th class="ystrip-h"><div class="ystrip">${stripHead}</div></th><th>선거권</th><th>회장</th><th>부회장</th><th>임명직</th><th>이력</th>${edit ? '<th></th>' : ''}</tr></thead><tbody>
-      ${rows.map((j, i) => `${j.fam && !j.minister && (i === 0 || !rows[i - 1].fam) ? `<tr class="j-div"><td colspan="12">팸장 <span class="note">회원은 아니지만 결의권자로 넣습니다</span></td></tr>` : ''}${j.minister && (i === 0 || !rows[i - 1].minister) ? `<tr class="j-div"><td colspan="12">교역자 <span class="note">회칙 5조 2항 — 발언권·선거권은 있고 피선거권은 없습니다</span></td></tr>` : ''}<tr${j.fam ? ' class="j-fam"' : ''}><td class="n no">${i + 1}</td><td>${esc(j.s.name)}${j.minister ? ' <span class="pill warn">교역자</span>' : j.fam ? ' <span class="pill info">팸장</span>' : ''}</td><td class="n">${j.age ?? ''}</td><td>${j.ys ? esc(j.ys.date) + (j.ys.est ? ' <span class="note">(추정)</span>' : j.ys.school ? ' <span class="note">(주일학교)</span>' : j.ys.evang ? ' <span class="note">(등록일)</span>' : '') : ''}</td><td class="n"><button class="btn s" data-attd="${esc(j.s.id)}" title="주별 출석 근거 보기">${j.rate === null ? '근거' : `${j.cnt}/${j.of} (${j.rate}%)`}</button></td><td><div class="ystrip">${strip(j)}</div></td><td>${jpill(j.voter, j.rsn.voter)}${speakOf(dd, j, a.date) ? ' <span class="pill info" title="교회 등록 6개월 이상 — 발언권">발언권</span>' : ''}</td><td>${jpill(j.pres, j.rsn.pres)}</td><td>${jpill(j.vp, j.rsn.vp)}</td><td>${jpill(j.appt, j.rsn.appt)}</td><td class="why">${[...(j.histList || []), ...j.why.filter(w => /^보정/.test(w))].map(x => `<div class="hist-line">${esc(x)}</div>`).join('')}</td>${edit ? `<td>${j.s.pseudo ? (j.minister ? '<span class="note">교역자</span>' : '<span class="note" title="학생 카드가 없는 팸장(교사·임원 명단)">팸장</span>') : `<button class="btn s" data-mi="${esc(j.s.id)}">정보</button>`}</td>` : ''}</tr>`).join('') || '<tr><td colspan="13" class="note">해당자가 없습니다.</td></tr>'}
+      ${rows.map((j, i) => `${j.fam && !j.minister && (i === 0 || !rows[i - 1].fam) ? `<tr class="j-div"><td colspan="12">팸장 <span class="note">회원은 아니지만 결의권자로 넣습니다</span></td></tr>` : ''}${j.minister && (i === 0 || !rows[i - 1].minister) ? `<tr class="j-div"><td colspan="12">교역자 <span class="note">회칙 5조 2항 — 발언권·선거권은 있고 피선거권은 없습니다</span></td></tr>` : ''}<tr${j.fam ? ' class="j-fam"' : ''}><td class="n no">${i + 1}</td><td>${esc(j.s.name)}${j.minister ? ' <span class="pill warn">교역자</span>' : j.fam ? ' <span class="pill info">팸장</span>' : ''}</td><td class="n">${j.age ?? ''}</td><td>${j.ys ? esc(j.ys.date) + (j.ys.est ? ' <span class="note">(추정)</span>' : j.ys.school ? ' <span class="note">(주일학교)</span>' : j.ys.evang ? ' <span class="note">(등록일)</span>' : '') : ''}</td><td class="n"><button class="btn s" data-attd="${esc(j.s.id)}" title="주별 출석 근거 보기">${j.rate === null ? '근거' : `${j.cnt}/${j.of} (${j.rate}%)`}</button></td><td><div class="ystrip">${strip(j)}</div></td><td>${jpill(j.voter, j.rsn.voter)}${speakOf(dd, j, a.date) ? ' <span class="pill info" title="새가족반 수료 뒤 6개월 이상 — 발언권 (회칙 5조)">발언권</span>' : ''}</td><td>${jpill(j.pres, j.rsn.pres)}</td><td>${jpill(j.vp, j.rsn.vp)}</td><td>${jpill(j.appt, j.rsn.appt)}</td><td class="why">${[...(j.histList || []), ...j.why.filter(w => /^보정/.test(w))].map(x => `<div class="hist-line">${esc(x)}</div>`).join('')}</td>${edit ? `<td>${j.s.pseudo ? (j.minister ? '<span class="note">교역자</span>' : '<span class="note" title="학생 카드가 없는 팸장(교사·임원 명단)">팸장</span>') : `<button class="btn s" data-mi="${esc(j.s.id)}">정보</button>`}</td>` : ''}</tr>`).join('') || '<tr><td colspan="13" class="note">해당자가 없습니다.</td></tr>'}
       </tbody></table></div>
       ${J.excluded && J.excluded.length ? `<details class="judge-out" style="margin-top:10px"><summary>판정에서 뺀 사람 ${J.excluded.length}명 <span class="note">장기결석·군입대·학업 등은 회원이지만 자격을 잠시 멈춘 사람, 새친구·타 목장·라피끄는 회원이 아닌 사람 — 결혼·직분으로 자격이 끝난 사람은 아예 넣지 않음</span></summary><div class="row" style="gap:4px;flex-wrap:wrap;margin-top:6px">${J.excluded.map(x => `<span class="chip">${esc(x.s.name)} <span class="note">${esc(x.why)}</span></span>`).join('')}</div></details>` : ''}</div>
   </div>`;
