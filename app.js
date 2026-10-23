@@ -933,7 +933,7 @@ function reportList(dd, opts = {}) {
       <div class="row">${sundayPicker(pick, dd)}${status}<button class="btn p big" id="w-new">${!cur ? '작성 시작' : cur.status === 'done' ? '열어서 수정' : '이어서 작성'}</button>${cur ? `<button class="btn" data-prev="${esc(pick)}">보기</button>` : ''}</div></div></div>` : '';
   const months = {}; older.forEach(r => { (months[ym(r.date)] = months[ym(r.date)] || []).push(r); });
   const olderHTML = Object.keys(months).sort().reverse().map(m => `<details class="card fold"><summary>${m.replace('-', '년 ')}월 <span class="note">${months[m].length}장</span></summary>${reportTable(dd, months[m], edit)}</details>`).join('');
-  return `<div class="topbar"><div><h1>주일 보고서${opts.title || ''}</h1><div class="sub">${edit ? '최근 보고서가 펼쳐져 있고, 그 전은 달별로 접혀 있습니다' : '열람 전용 · 작성·수정은 PC에서'}</div></div></div>
+  return `<div class="topbar"><div><h1>주일 보고서${opts.title || ''}</h1><div class="sub">${edit ? '최근 보고서가 펼쳐져 있고, 그 전은 달별로 접혀 있습니다' : '열람 전용 · 작성·수정은 PC에서'}</div></div>${edit && !isMobile() ? '<div class="row"><button class="btn" id="w-upload">보고서 파일 올리기 (HWP·PDF)</button></div>' : ''}</div>
   ${opts.pick || ''}
   ${writePanel}
   <div class="recent">
@@ -988,7 +988,7 @@ function editor(dd, r) {
   const s = reportStats(dd, r);
   const ev = allEvents(dd).filter(e => ym(e.date) === ym(r.date));
   const tp = new Set(r.teachersPresent || []);
-  return `<div class="topbar"><div><h1>${fmtK(r.date)} 주일 보고서</h1><div class="sub">${esc(dd.doc.name)} · ${+r.date.slice(5,7)}월 ${weekIndex(r.date)}주${r.imported ? ' · HWP에서 변환된 자료' : ''}</div></div><div class="row"><button class="btn" id="w-back">목록</button><button class="btn" id="w-save">임시 저장</button><button class="btn p" id="w-done">작성 완료</button></div></div>
+  return `<div class="topbar"><div><h1>${fmtK(r.date)} 주일 보고서</h1><div class="sub">${esc(dd.doc.name)} · ${+r.date.slice(5,7)}월 ${weekIndex(r.date)}주${r.imported ? ' · HWP에서 변환된 자료' : ''}${r.file ? ` · 원본 <a href="#" id="w-orig">${esc(r.file.name)}</a>` : ''}</div></div><div class="row"><button class="btn" id="w-back">목록</button><button class="btn" id="w-save">임시 저장</button><button class="btn p" id="w-done">작성 완료</button></div></div>
   ${r.flags && r.flags.length ? `<div class="flags" style="margin-bottom:12px">확인 필요: ${r.flags.map(esc).join(' / ')} <button class="btn s" id="w-clear-flags">확인했음</button></div>` : ''}
   <div class="stack">
     <div class="card"><h2>1. 예배 현황 <span class="r"><button class="btn s" id="w-prev">지난주에서 가져오기</button></span></h2><div class="fields">
@@ -1041,11 +1041,13 @@ function bindAttButtons(dd, r, keep) {
 BIND.weekly = () => {
   const dd = D();
   if (S.sub.preview) { bindPaper(); return; }
+  const wu = $('#w-upload'); if (wu) wu.onclick = () => rpUploadDialog(dd);
   if (!S.sub.date) { const n = $('#w-new'); if (n) n.onclick = () => { const dt = $('#w-date').value; if (!dt) return; S.sub = { date: dt }; render(); }; const wd = $('#w-date'); if (wd) wd.onchange = e => { S.sub.pick = e.target.value; renderHere(); }; const wy = $('#w-year'); if (wy) wy.onchange = () => { const y = +wy.value; const cur = $('#w-date').value; const md = cur.slice(5); const days = sundaysOfYear(y); S.sub.pick = days.find(d => d.slice(5) >= md) || days[days.length - 1]; renderHere(); }; document.querySelectorAll('[data-sun-step]').forEach(b => b.onclick = () => { const d = new Date($('#w-date').value + 'T00:00:00'); d.setDate(d.getDate() + +b.dataset.sunStep); S.sub.pick = iso(d); renderHere(); }); document.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => { S.sub = { date: b.dataset.edit }; render(); }); document.querySelectorAll('[data-prev]').forEach(b => b.onclick = () => { S.sub = { preview: b.dataset.prev }; render(); }); return; }
   const r = dd.reports[S.sub.date] || blankReport(dd, S.sub.date); dd.reports[S.sub.date] = r;
   const keep = () => collect(dd, r);
   $('#w-back').onclick = async () => { keep(); await saveReport(dd, r); S.sub = {}; render(); };
   $('#w-save').onclick = async () => { keep(); await saveReport(dd, r); toast('임시 저장했습니다'); };
+  const wo = $('#w-orig'); if (wo) wo.onclick = async e => { e.preventDefault(); const f = await backend.get(`depts/${dd.id}/reportFiles/${r.date}`); if (!f || !f.data) { toast('원본 파일을 찾지 못했습니다'); return; } const bin = atob(f.data); const u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([u8], { type: f.type || 'application/octet-stream' })); a.download = f.name || 'report'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); };
   // 지난주에서 가져오기: 매주 비슷한 칸(예배 종류·사회자·기도·설교자·작성자)만 골라 채운다. 출석·헌금·새친구·완료 상태는 가져오지 않는다
   const wp = $('#w-prev'); if (wp) wp.onclick = () => { keep(); const prev = Object.values(dd.reports).filter(x => x.date < r.date && (x.preacher || x.presider || x.prayer || x.writer)).sort((a, b) => a.date < b.date ? 1 : -1)[0];
     if (!prev) { toast('가져올 지난 보고서가 없습니다'); return; }
@@ -1513,6 +1515,331 @@ function planBanner(dd, plan, compact) {
     ${!compact && (plan.goals || []).length ? `<ol class="goals">${plan.goals.map(g => `<li>${esc(g)}</li>`).join('')}</ol>` : ''}
     ${!compact && ev.length ? `<div class="note" style="margin-top:6px">이번·다음 달 계획: ${ev.map(e => `${+e.date.slice(5, 7)}/${+e.date.slice(8)} ${esc(e.title)}`).join(' · ')}</div>` : ''}</div>`;
 }
+
+/* @@RP-START ───────────── 주일 보고서 파일(HWP) 올리기 ─────────────
+   tools/parse_reports.py(교육부 4부서 양식 HWP → 보고서)를 브라우저로 옮긴 것. 표를 칸 단위로 읽어 부서 양식대로 뽑는다.
+   결과는 이름 기준 기록(rec)이고, 저장할 때 출석부 학생과 이름으로 이어 붙인다(rpToReport). */
+function hwpCellsFromBytes(sections) {
+  const tables = [], body = []; const openT = {}; let curCell = {}; let pendLv = null;
+  const lvKeys = o => Object.keys(o).map(Number);
+  for (const d of sections) {
+    const dv = new DataView(d.buffer, d.byteOffset, d.byteLength); let i = 0;
+    while (i + 4 <= d.length) {
+      const h = dv.getUint32(i, true); i += 4; const tag = h & 0x3ff, level = (h >>> 10) & 0x3ff; let size = h >>> 20; if (size === 0xfff) { size = dv.getUint32(i, true); i += 4; }
+      const rec = d.subarray(i, i + size); i += size;
+      if (tag === 71 && rec.length >= 4 && String.fromCharCode(rec[3], rec[2], rec[1], rec[0]) === 'tbl ') pendLv = level;
+      else if (tag === 77 && pendLv !== null) {
+        const rv = new DataView(rec.buffer, rec.byteOffset, rec.byteLength); const rows = rv.getUint16(4, true), cols = rv.getUint16(6, true);
+        const t = { id: tables.length, level, rows, cols, cells: [], parent: null }; const pl = pendLv - 1; if (curCell[pl]) t.parent = [curCell[pl]._tid, curCell[pl]._idx];
+        tables.push(t); openT[level] = t; lvKeys(openT).filter(k => k > level).forEach(k => delete openT[k]); lvKeys(curCell).filter(k => k >= level).forEach(k => delete curCell[k]); pendLv = null;
+      } else if (tag === 72) {
+        const t = openT[level]; if (!t) { lvKeys(curCell).filter(k => k >= level).forEach(k => delete curCell[k]); continue; }
+        let col = 0, row = 0, cs = 0, rs = 0; if (rec.length >= 16) { const rv = new DataView(rec.buffer, rec.byteOffset, rec.byteLength); col = rv.getUint16(8, true); row = rv.getUint16(10, true); cs = rv.getUint16(12, true); rs = rv.getUint16(14, true); }
+        const cell = { row, col, rowspan: rs, colspan: cs, paras: [], _tid: t.id, _idx: t.cells.length }; t.cells.push(cell); curCell[level] = cell; lvKeys(curCell).filter(k => k > level).forEach(k => delete curCell[k]);
+      } else if (tag === 67) { const txt = hwpParaText(rec); const c = curCell[level - 1]; if (c) c.paras.push(txt); else if (level === 1) body.push(txt); }
+      else if (tag === 66 && level === 0) { curCell = {}; Object.keys(openT).forEach(k => delete openT[k]); }
+    }
+  }
+  return { tables, body };
+}
+async function hwpCells(buf) {
+  const CFB = await loadLib('cfb', 'CFB'); const pako = await loadLib('pako', 'pako');
+  const cfb = CFB.read(new Uint8Array(buf), { type: 'array' }); const hdr = CFB.find(cfb, 'FileHeader'); if (!hdr) throw new Error('한글(HWP 5.0) 파일이 아닙니다');
+  const compressed = hdr.content[36] & 1; if (hdr.content[36] & 4) throw new Error('배포용(보호된) 한글 파일은 읽을 수 없습니다');
+  const secs = cfb.FullPaths.map((p, i) => [p, cfb.FileIndex[i]]).filter(([p]) => /BodyText\/Section\d+$/i.test(p)).sort((a, b) => +a[0].match(/(\d+)$/)[1] - +b[0].match(/(\d+)$/)[1]).map(([, e]) => { const d = new Uint8Array(e.content); return compressed ? pako.inflateRaw(d) : d; });
+  return hwpCellsFromBytes(secs);
+}
+const RP = (() => {
+  const DEPT_NAME = { kinder: '유치부', elem: '초등부', youth: '중고등부', young: '청년부' };
+  const ROLE_WORDS = ['부장선생님', '선생님', '전도사님', '목사님', '장로님', '집사님', '권사님', '담임목사', '담임 목사', '부장', '부감', '총무', '회계', '서기', '교사', '전도사', '목사', '장로', '집사', '권사', '회장', '부회장', '팸장', '학생', '어린이', '청년'];
+  const ONLINE_WORDS = ['온라인', '본당', '1부', '2부', '3부', '타 교회', '타교회', '교회', '줌', 'zoom', '영상', '유튜브', '가정예배', '집에서', '유치부', '초등부', '중고등부', '청년부', '대예배', '통합예배', '인증'];
+  const clean = s => s == null ? '' : [...String(s)].filter(ch => { const o = ch.codePointAt(0); return !((o >= 0xD800 && o <= 0xDFFF) || (o >= 0xE000 && o <= 0xF8FF) || (o >= 0xF0000 && o <= 0x10FFFF)); }).join('').replace(/ /g, ' ').trim();
+  const key = s => clean(s).replace(/\s+/g, '');
+  const short = (s, n = 60) => { s = clean(String(s)).replace(/\n/g, ' '); return s.length <= n ? s : s.slice(0, n) + '…'; };
+  const ctext = (c, sep = ' ') => c ? clean(c.paras.map(clean).filter(Boolean).join(sep)) : '';
+  const cparas = c => { if (!c) return []; const out = []; c.paras.forEach(p => p.split('\n').forEach(l => { l = clean(l); if (l) out.push(l); })); return out; };
+  const toInt = (s, d = 0) => { const m = clean(String(s)).replace(/,/g, '').match(/-?\d+/); return m ? +m[0] : d; };
+  const plusSum = s => { s = clean(String(s)).replace(/ /g, ''); const nums = (s.match(/\d+/g) || []).map(Number); if (!nums.length) return [0, 0]; if (s.includes('+') && nums.length >= 2) return [nums.reduce((a, b) => a + b, 0), nums.slice(1).reduce((a, b) => a + b, 0)]; return [nums[0], 0]; };
+  const amount = s => { const m = clean(String(s)).match(/\d[\d,]*/); return m ? +m[0].replace(/,/g, '') : null; };
+  const stripRole = s => { s = clean(s).replace(/\(.*?\)/g, '').trim(); for (const w of ROLE_WORDS) if (s.endsWith(w) && s.length > w.length) { s = s.slice(0, -w.length).trim(); break; } return s.replace(/ /g, ''); };
+  const splitItems = (s, seps = ',/、;') => { const out = []; let buf = '', depth = 0; for (const ch of clean(s)) { if ('([{（'.includes(ch)) depth++; else if (')]}）'.includes(ch)) depth = Math.max(0, depth - 1); if (depth === 0 && seps.includes(ch)) { out.push(buf); buf = ''; } else buf += ch; } out.push(buf); return out.map(clean).filter(x => x && !['-', '–', '—', '·'].includes(x)); };
+  const nameNote = item => { item = clean(item); const m = item.match(/^([^(（]+)[(（](.*)[)）]\s*$/); return m ? [m[1].replace(/ /g, ''), clean(m[2])] : [item.replace(/ /g, ''), '']; };
+  const NAME_RE = /^[가-힣A-Za-z]{1,5}(\s[가-힣]{1,2})?\s*(\(.*\))?$/;
+  const looksLikeNames = raw => { const items = splitItems(raw, ',/+'); if (!items.length) return true; const bad = items.filter(x => !NAME_RE.test(clean(x)) && !['-', '없음'].includes(clean(x))); return bad.length === 0 || (bad.length <= 1 && clean(raw).length < 40); };
+  const noteInsteadOfNames = (rec, cid, raw) => { const note = `[출석 칸 메모] ${clean(raw)}`; if (!rec.special.includes(clean(raw))) rec.special = clean((rec.special ? rec.special + '\n' : '') + note); const tag = '출석 명단 칸에 이름 대신 설명문이 있어 학생별 출석을 만들지 않음'; if (!rec.flags.includes(tag)) rec.flags.push(tag); };
+  const normItem = item => { const [nm, note] = nameNote(item); return note ? `${nm}(${note})` : nm; };
+  const presentList = (raw, seps = ',/+') => splitItems(raw, seps).map(normItem);
+  const isOnline = note => ONLINE_WORDS.some(w => note.toLowerCase().includes(w));
+  const namesWithReason = s => { const out = {}; splitItems(s, ',').forEach(item => { const [nm, note] = nameNote(item); nm.split(/[/·]/).filter(Boolean).forEach(n => { n = n.replace(/ /g, ''); if (n && !['-', '없음', 'X', 'x'].includes(n)) out[n] = note; }); }); return out; };
+  const covering = t => { const cov = new Map(); t.cells.forEach(c => { for (let r = c.row; r < c.row + Math.max(1, c.rowspan); r++) for (let cc = c.col; cc < c.col + Math.max(1, c.colspan); cc++) cov.set(r + ',' + cc, c); }); return { get: (r, c) => cov.get(r + ',' + c) }; };
+  const cellAt = (cov, r, c, ex) => { const cell = cov.get(r, c); return !cell || cell === ex ? '' : ctext(cell); };
+  const rowsOf = t => { const rows = {}; t.cells.forEach(c => (rows[c.row] = rows[c.row] || []).push(c)); Object.values(rows).forEach(a => a.sort((x, y) => x.col - y.col)); return rows; };
+  const findCell = (t, label, exact = true) => { const k = key(label); return t.cells.find(c => { const tt = key(ctext(c)); return exact ? tt === k : tt.includes(k); }) || null; };
+  const rightOf = (t, c) => c ? covering(t).get(c.row, c.col + Math.max(1, c.colspan)) || null : null;
+  const below = (t, c) => c ? covering(t).get(c.row + Math.max(1, c.rowspan), c.col) || null : null;
+  const valueOf = (t, label, exact = true) => ctext(rightOf(t, findCell(t, label, exact)));
+  const weekLabel = date => { const [, m, d] = date.split('-').map(Number); return `${m}월 ${Math.floor((d - 1) / 7) + 1}주`; };
+  const p2 = n => String(n).padStart(2, '0');
+  const dateFromText = s => { s = clean(s); let m = s.match(/(20\d\d)\s*[.년]?\s*(\d{1,2})\s*[.월]?\s*(\d{1,2})/); if (m) return `${m[1]}-${p2(+m[2])}-${p2(+m[3])}`;
+    m = s.match(/(?<!\d)(\d\d)\.\s*(\d{1,2})\.\s*(\d{1,2})/); if (m) return `20${m[1]}-${p2(+m[2])}-${p2(+m[3])}`;
+    m = s.match(/(?<!\d)(20\d{6})(?!\d)/); if (m) return `${m[1].slice(0, 4)}-${m[1].slice(4, 6)}-${m[1].slice(6)}`;
+    m = s.match(/(?<!\d)(\d{6})(?!\d)/); if (m) return `20${m[1].slice(0, 2)}-${m[1].slice(2, 4)}-${m[1].slice(4)}`; return ''; };
+  const stripRoleList = s => splitItems(s, ',').map(stripRole).filter(n => n && !/^\d+명?$/.test(n));
+  const baseRecord = (dept, source) => ({ dept, date: '', weekLabel: '', type: `${DEPT_NAME[dept]} 주일예배`, presider: '', prayer: '', text: '', title: '', preacher: '', notice: '', counts: { regM: 0, regF: 0, reg: 0, attM: 0, attF: 0, att: 0, online: 0, attRaw: '' }, att: {}, absent: {}, newcomers: [], offering: { sunday: 0, tithe: 0, thanks: 0, other: 0, raw: '' }, teachersPresent: [], teachersAbsent: {}, teachersPresentCount: 0, activity: '', meeting: '', special: '', schedule: [], classRows: [], writer: '', flags: [], source });
+  const setCounts = (rec, regM, regF, reg, attM, attF, att, online = 0, attRaw = '') => { Object.assign(rec.counts, { regM, regF, reg, attM, attF, att, online, attRaw }); if (reg !== regM + regF) rec.flags.push(`등록 합계(${reg})와 남+여(${regM}+${regF})가 다름`); if (att !== attM + attF) rec.flags.push(`출석 합계(${att})와 남+여(${attM}+${attF})가 다름`); };
+  const firstLastNum = paras => { const nums = []; paras.forEach(p => { p = clean(p); if (/^\d[\d\s+]*$/.test(p)) nums.push(p); else { const m = p.match(/^(\d+)\s*\+\s*([가-힣][가-힣\s,/·]*)$/); if (m) nums.push(`${m[1]}+${splitItems(m[2], ',/·').length}`); } });
+    let extra = 0; paras.forEach(p => { const m = clean(p).match(/^\(?\+\s*(\d+)/); if (m) extra += +m[1]; }); if (!nums.length) return ['', '']; if (nums.length === 1) return [nums[0], '']; let last = nums[nums.length - 1]; if (extra) last = `${last}+${extra}`; return [nums[0], last]; };
+  const addAtt = (rec, raw, slash = false) => { if (slash && raw.includes('/')) { splitItems(raw, '/').forEach((g, gi) => splitItems(g, ',+').forEach(item => { const [nm, note] = nameNote(item); if (!nm || ['-', '없음'].includes(nm)) return; rec.att[nm] = gi > 0 || isOnline(note) ? 'O' : 'P'; })); return; }
+    splitItems(raw, ',/+').forEach(item => { const [nm, note] = nameNote(item); if (!nm || ['-', '없음'].includes(nm)) return; rec.att[nm] = isOnline(note) ? 'O' : 'P'; }); };
+  const JOINT = ['세대통합', '세대 통합', '통합예배', '통합 예배'];
+  const finish = (rec, fnameDate, bodyDate) => {
+    const blob = [rec.presider, rec.prayer, rec.preacher, rec.title, rec.text, rec.offering.raw, rec.counts.attRaw, (rec.activity || '').split('\n')[0], rec._jointNote || '', rec._core || ''].map(clean).join(' ');
+    if (JOINT.some(w => blob.includes(w))) rec.type = `${DEPT_NAME[rec.dept]} 세대통합예배`; delete rec._core; delete rec._jointNote;
+    // 날짜: 양식을 복사해 쓰다 본문 날짜를 안 고친 경우가 많아, 주일인 날짜를 먼저 쓴다(파일 이름 → 본문 순)
+    const ok = d => /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(d || ''), sun = d => ok(d) && new Date(d + 'T00:00:00').getDay() === 0;
+    const pick = [fnameDate, bodyDate].find(sun) || [fnameDate, bodyDate].find(ok) || '';
+    if (ok(bodyDate) && ok(fnameDate) && bodyDate !== fnameDate) rec.flags.push(`파일 이름 날짜(${fnameDate})와 본문 날짜(${bodyDate})가 다름 — ${pick} 사용`);
+    rec.date = pick; if (!ok(bodyDate)) rec.flags.push('본문에서 날짜를 읽지 못함' + (pick ? '(파일 이름 사용)' : '')); if (rec.date) rec.weekLabel = weekLabel(rec.date);
+    const sp = o => Object.fromEntries(Object.entries(o).map(([k, v]) => [k.replace(/ /g, ''), v])); rec.att = sp(rec.att); rec.absent = sp(rec.absent);
+    const both = Object.keys(rec.att).filter(k => k in rec.absent).sort(); if (both.length) rec.flags.push('출석 명단과 결석 명단에 모두 있는 이름: ' + both.join(', '));
+    return rec; };
+  const inlineBlock = (T0, ...labels) => { for (const lab of labels) { const c = rightOf(T0, findCell(T0, lab)); if (c && c.rowspan >= 3 && cparas(c).length >= 3) return c; } return null; };
+  const parseInlineSermon = (rec, lines) => { let cur = null; const blob = lines.map(clean).join(' '); ['presider', 'prayer', 'text', 'title', 'preacher', 'notice'].forEach(f => { if (clean(rec[f]) === blob || (rec[f] && key(rec[f]) === key(blob))) rec[f] = ''; });
+    const buf = { 기도: [], 본문: [], 제목: [], 설교자: [], 사회: [], 기타: [] }; const LABELS = [['설교본문', '본문'], ['성경봉독', '본문'], ['본문', '본문'], ['설교제목', '제목'], ['제목', '제목'], ['설교자', '설교자'], ['설교', '제목'], ['대표기도', '기도'], ['예배기도', '기도'], ['기도', '기도'], ['사회', '사회']];
+    for (let ln of lines) { ln = clean(ln.replace(/^[\s\-–•□■▪◦]+/, '')); if (!ln) continue; if (/[:：]/.test(ln)) { const [lab, ...rest] = ln.split(/[:：]/); const v = rest.join(':'); const k2 = key(lab); const hit = (LABELS.find(([a]) => k2.endsWith(a) || k2 === a) || [])[1]; if (hit) { cur = hit; if (clean(v)) buf[cur].push(clean(v)); continue; } } (cur ? buf[cur] : buf.기타).push(ln); }
+    if (buf.기도.length) rec.prayer = buf.기도.join(' '); if (buf.본문.length) rec.text = buf.본문.join(' '); if (buf.제목.length) rec.title = buf.제목.join(' '); if (buf.설교자.length) rec.preacher = buf.설교자.join(' '); if (buf.사회.length) rec.presider = buf.사회.join(' ');
+    const note = buf.기타.join(' '); rec._jointNote = note; if (note) rec.special = clean(note + (rec.special ? '\n' + rec.special : ''));
+    rec.flags.push('예배 현황 칸에 안내문 형태로 적혀 있어 설교 정보를 그 안에서 읽음: "' + short(lines.join(' '), 50) + '"'); };
+  const headInfo = (T0, rec) => { const head = cparas(T0.cells[0]).join(' '); const m = head.match(/작성자\s*[:：]\s*(\S+)/); rec.writer = m ? m[1] : ''; return dateFromText(head); };
+  const countsFrom = (T0, rec, hm, hf, ht) => { const vals = {}; [['m', hm], ['f', hf], ['t', ht]].forEach(([k, h]) => { const cell = below(T0, h); const [a, b] = firstLastNum(cparas(cell)); const [tot, onl] = plusSum(b); vals[k] = [toInt(a), tot, onl, clean(b)]; if (!b) rec.flags.push(`출석현황 ${ctext(h)} 칸에서 등록/출석 두 값을 못 읽음: "${ctext(cell)}"`); });
+    setCounts(rec, vals.m[0], vals.f[0], vals.t[0], vals.m[1], vals.f[1], vals.t[1], vals.t[2], `${vals.m[3]} / ${vals.f[3]} / ${vals.t[3]}`); return vals; };
+  const sortedRows = t => Object.entries(rowsOf(t)).map(([r, c]) => [+r, c]).sort((a, b) => a[0] - b[0]);
+
+  function parseKinder(tables, body, rec) {
+    const T0 = tables[0]; const head = ctext(T0.cells[0]); const bodyDate = dateFromText(head);
+    for (const c of T0.cells) { const m = ctext(c).match(/작성자\s*[:：]\s*(\S+)/); if (m) { rec.writer = m[1]; break; } }
+    rec._core = T0.cells.map(c => ctext(c)).join(' '); const jointHead = JOINT.some(w => rec._core.includes(w));
+    const T1 = tables.find(t => findCell(t, '예배기도'));
+    if (T1) { rec.prayer = valueOf(T1, '예배기도'); rec.text = valueOf(T1, '설교본문'); rec.title = valueOf(T1, '설교제목'); rec.preacher = valueOf(T1, '설교자');
+      const vals = {}; [['m', '남학생'], ['f', '여학생'], ['t', '합계']].forEach(([k, l]) => { const h = findCell(T1, l); const cell = below(T1, h); const [a, b] = firstLastNum(cparas(cell)); vals[k] = [toInt(a), plusSum(b)[0], clean(b)]; if (!b) rec.flags.push(`출석현황 ${ctext(h)} 칸에서 총원/출석 두 값을 못 읽음: "${ctext(cell)}"`); if (b.includes('+')) rec.flags.push(`출석현황 ${ctext(h)} 출석에 추가 표기가 있음: "${ctext(cell)}"`); });
+      setCounts(rec, vals.m[0], vals.f[0], vals.t[0], vals.m[1], vals.f[1], vals.t[1], 0, `${vals.m[2]} / ${vals.f[2]} / ${vals.t[2]}`);
+    } else rec.flags.push('예배 현황 표를 찾지 못함');
+    const T2 = tables.find(t => findCell(t, '헌금 집계액'));
+    if (T2) { const rows = rowsOf(T2); const hc = findCell(T2, '헌금 집계액'); const lines = cparas(below(T2, hc)); rec.offering.raw = lines.join(' / ');
+      lines.forEach(ln => { const amt = ln.includes(':') ? amount(ln.split(':').slice(1).join(':')) : amount(ln); if (amt == null) { if (ln.includes(':') && !['-', '', '–'].includes(clean(ln.split(':').slice(1).join(':')))) rec.flags.push(`헌금 항목을 숫자로 읽지 못함: "${ln}"`); return; }
+        if (ln.includes('주정') || ln.includes('주일')) rec.offering.sunday += amt; else if (ln.includes('십일조')) rec.offering.tithe += amt; else if (ln.includes('감사') || ln.includes('부활')) rec.offering.thanks += amt; else rec.offering.other += amt; });
+      const hdr = findCell(T2, '새 친구 이름');
+      if (hdr) for (let r = hdr.row + 1; r < T2.rows; r++) { const cells = (rows[r] || []).filter(c => c.col < hc.col); if (!cells.length) continue; const vals = cells.map(c => ctext(c, '\n'));
+        splitItems((vals[0] || '').replace(/\n/g, ','), ',/').forEach(item => { const m = clean(item).match(/^([가-힣]{2,4})\s*(.*)$/); const [nm, note] = m ? [m[1], clean(m[2])] : [clean(item).replace(/ /g, ''), '']; if (!['-', '–'].includes(nm)) rec.newcomers.push({ name: nm, note, school: vals[1] && vals[1] !== '-' ? vals[1] : '', by: vals[2] && vals[2] !== '-' ? vals[2] : '' }); }); }
+    } else rec.flags.push('헌금/새친구 표를 찾지 못함');
+    if (jointHead && rec.offering.sunday > 0) rec.flags.push('제목줄에 (세대통합예배) 표기가 있으나 유치부 설교·헌금이 기록되어 있음(지난 양식 잔재인지 확인 필요)');
+    let studentAbsent = {};
+    const T3 = tables.find(t => findCell(t, '참석 인원', false) && t.rows === 1);
+    if (T3) { let cur = null; const buf = { 참석: [], 회의: [], 교사결석: [], 학생결석: [], 특이: [] }; const after = l => l.includes(':') ? l.split(':').slice(1).join(':') : '';
+      cparas(T3.cells[0]).forEach(ln => { const l2 = clean(ln.replace(/^[^\w가-힣■□▣▶●○◎◇◆※-]*/, '')); const k2 = key(l2);
+        if (k2.startsWith('참석인원')) { cur = '참석'; buf[cur].push(l2.includes(':') ? after(l2) : l2); } else if (k2.startsWith('회의내용')) { cur = '회의'; buf[cur].push(after(l2)); }
+        else if (k2.startsWith('-교사결석사유') || k2.startsWith('교사결석사유')) { cur = '교사결석'; buf[cur].push(after(l2)); } else if (k2.startsWith('-학생결석사유') || k2.startsWith('학생결석사유')) { cur = '학생결석'; buf[cur].push(after(l2)); }
+        else if (k2.startsWith('특이사항')) { cur = '특이'; buf[cur].push(after(l2)); } else if (k2.startsWith('※')) buf.특이.push(l2); else if (cur) buf[cur].push(l2.replace(/^-\s*/, '')); });
+      let pres = clean(buf.참석.join(' ')); const m = pres.match(/\/?\s*(\d+)\s*명/); if (m) { rec.teachersPresentCount = +m[1]; pres = pres.slice(0, m.index); }
+      rec.teachersPresent = stripRoleList(pres); if (rec.teachersPresentCount && rec.teachersPresentCount !== rec.teachersPresent.length) rec.flags.push(`교사 참석 인원(${rec.teachersPresentCount}명)과 명단 수(${rec.teachersPresent.length})가 다름`);
+      rec.meeting = clean(buf.회의.filter(Boolean).join('\n')); rec.teachersAbsent = namesWithReason(buf.교사결석.join(' ')); studentAbsent = namesWithReason(buf.학생결석.join(' ')); rec.special = clean(buf.특이.filter(Boolean).join('\n'));
+    } else rec.flags.push('교사회의 표를 찾지 못함');
+    const T4 = tables.find(t => findCell(t, '금주 출석한 학생'));
+    if (T4) { const cov = covering(T4); const hCls = findCell(T4, '반명'); const rows = rowsOf(T4); let hReg, hPres, hTea, hN1, hN2;
+      (rows[hCls.row] || []).forEach(c => { const k2 = key(ctext(c)); if (k2 === '등록') hReg = c; else if (k2.includes('출석한학생')) hPres = c; else if (k2 === '선생님') hTea = c; else if (k2 === '재적') hN1 = c; else if (k2 === '출석') hN2 = c; });
+      if (!(hReg && hPres && hTea && hN1 && hN2)) { rec.flags.push('출석 세부현황 표 머리글을 다 찾지 못함'); return bodyDate; }
+      const rosterAll = {};
+      for (let r = hCls.row + 1; r < T4.rows; r++) { const cc = cov.get(r, hCls.col); if (!cc || cc.row !== r) continue; let cid = key(ctext(cc)); if (!cid || cid.includes('합계')) continue; if (cid.endsWith('반')) cid = cid.replace('반', '');
+        const span = Math.max(1, cc.rowspan); const teachers = []; let lead = '';
+        for (let rr = r; rr < r + span; rr++) for (let col = hTea.col; col < hTea.col + Math.max(1, hTea.colspan); col++) { const tc = cov.get(rr, col); if (tc && tc.row === rr && ctext(tc)) { const nm = stripRole(ctext(tc)); if (tc.rowspan > span) lead = nm; else if (!teachers.includes(nm)) teachers.push(nm); } else if (tc && tc.row < r && tc.rowspan > span) lead = stripRole(ctext(tc)); }
+        const roster = splitItems(ctext(cov.get(r, hReg.col)), ',/+'); const pcell = cov.get(r, hPres.col); let presentRaw = ctext(pcell); if (!looksLikeNames(presentRaw)) { noteInsteadOfNames(rec, cid, presentRaw); presentRaw = ''; }
+        const present = presentList(presentRaw); const reg = toInt(cellAt(cov, r, hN1.col, pcell)), att = toInt(cellAt(cov, r, hN2.col, pcell));
+        rec.classRows.push({ classId: cid, teacher: teachers.join(', '), lead, roster: roster.map(x => nameNote(x)[0]), present, reg, att }); roster.forEach(x => { rosterAll[nameNote(x)[0]] = cid; }); addAtt(rec, presentRaw);
+        if (reg && reg !== roster.length) rec.flags.push(`${cid} 재적(${reg})과 등록 명단 수(${roster.length})가 다름`); if (att !== present.length && !['', '-'].includes(presentRaw)) rec.flags.push(`${cid} 출석(${att})과 출석 명단 수(${present.length})가 다름`); }
+      const sa = {}; Object.entries(studentAbsent).forEach(([nm, reason]) => { if (!(nm in rosterAll) && !(nm in rec.att)) { const cand = [...new Set([...Object.keys(rosterAll), ...Object.keys(rec.att)].filter(x => x.endsWith(nm) && x.length > nm.length))]; if (cand.length === 1) nm = cand[0]; } sa[nm] = reason; });
+      Object.keys(rosterAll).forEach(nm => { if (!(nm in rec.att)) rec.absent[nm] = sa[nm] || ''; });
+      Object.entries(sa).forEach(([nm, reason]) => { if (!(nm in rec.absent) && !(nm in rec.att)) { rec.absent[nm] = reason; rec.flags.push(`학생 결석사유의 ${nm}이(가) 등록 명단에 없음`); } else if (nm in rec.att) rec.flags.push(`학생 결석사유의 ${nm}이(가) 출석 명단에도 있음`); });
+    } else rec.flags.push('출석 세부현황 표를 찾지 못함');
+    return bodyDate;
+  }
+  function elemOffering(rec, raw) { const o = rec.offering; const total = raw ? amount(raw.split('(')[0]) : null; if (total == null) { if (raw) rec.flags.push(`헌금 집계를 숫자로 읽지 못함: "${raw}"`); return; }
+    const inner = raw.includes('(') ? raw.slice(raw.indexOf('(') + 1, raw.lastIndexOf(')')) : '';
+    if (inner.includes('전액') || !inner) { if (inner.split('.')[0].includes('십일조') && !inner.includes('전액 주일')) o.tithe = total; else o.sunday = total; return; }
+    let s = 0; inner.split(/,(?!\s*\d{3})|\//).forEach(seg => { const a = amount(seg); if (a == null) return; if (seg.includes('주일') || seg.includes('주정')) o.sunday += a; else if (seg.includes('십일조')) o.tithe += a; else if (/감사|부활|추수|맥추/.test(seg)) o.thanks += a; else o.other += a; s += a; });
+    if (s !== total) { if (s === 0) o.sunday = total; else rec.flags.push(`헌금 세부 합(${s})이 총액(${total})과 다름: "${raw}"`); } }
+  function elemBody(rec, body) { const lines = body.map(clean).filter(Boolean); if (!lines.length) return; const secs = []; let cur = null;
+    lines.forEach(ln => { if (key(ln).startsWith('보고서에덧붙이는')) return; const m = ln.match(/^(\d+)\.\s*(.*)$/); if (m) { cur = { title: m[2], lines: [] }; secs.push(cur); } else if (cur) cur.lines.push(ln); else { cur = { title: '', lines: [ln] }; secs.push(cur); } });
+    const extra = [];
+    secs.forEach(s => { if (s.title.includes('결석') && s.title.includes('학생')) { const items = []; s.lines.forEach(ln => { if (ln.startsWith('-') || !items.length) items.push(ln.replace(/^-+/, '').trim()); else items[items.length - 1] += ' ' + ln; });
+        items.forEach(it => { const i = it.indexOf(':'); const namesPart = i >= 0 ? it.slice(0, i) : it, reason = clean(i >= 0 ? it.slice(i + 1) : ''); splitItems(namesPart, ',/').forEach(item => { const [nm] = nameNote(item); if (!nm) return; if (nm in rec.att) { if (rec.att[nm] === 'P' && !isOnline(reason)) rec.flags.push(`결석 사유 명단의 ${nm}이(가) 반별 출석 명단에도 있음`); return; } rec.absent[nm] = reason; }); });
+      } else extra.push((s.title ? s.title + '\n' : '') + s.lines.join('\n')); });
+    if (extra.length) rec.special = clean((rec.special ? rec.special + '\n\n' : '') + '[별건]\n' + extra.join('\n\n')); }
+  function parseElem(tables, body, rec) {
+    const T0 = tables[0]; const bodyDate = headInfo(T0, rec);
+    rec.presider = valueOf(T0, '사회자'); rec.prayer = valueOf(T0, '대표기도'); rec.text = valueOf(T0, '설교본문'); rec.title = valueOf(T0, '설교제목'); rec.preacher = valueOf(T0, '설교자'); rec.notice = valueOf(T0, '광고');
+    const blk = inlineBlock(T0, '사회자', '대표기도'); if (blk) parseInlineSermon(rec, cparas(blk));
+    const vals = countsFrom(T0, rec, findCell(T0, '남학생'), findCell(T0, '여학생'), findCell(T0, '합계')); if (vals.t[2] !== vals.m[2] + vals.f[2]) rec.flags.push(`온라인·본당 합계(${vals.t[2]})와 남+여(${vals.m[2]}+${vals.f[2]})가 다름`);
+    let hdr = findCell(T0, '이름');
+    if (hdr) { const rows = rowsOf(T0), cov = covering(T0); for (let r = hdr.row + 1; r < T0.rows; r++) { const first = cov.get(r, hdr.col); if (!first || key(ctext(first)) === '헌금집계') break; if (first.row !== r) continue; const v = (rows[r] || []).map(c => ctext(c)); if (v[0] && !['-', '–'].includes(v[0])) rec.newcomers.push({ name: v[0].replace(/ /g, ''), school: v[1] || '', by: v[2] || '' }); } }
+    const raw = valueOf(T0, '헌금 집계'); rec.offering.raw = raw; elemOffering(rec, raw);
+    hdr = findCell(T0, '예배·활동 및 회의 내용') || findCell(T0, '예배·활동 및 회의내용'); const big = hdr ? below(T0, hdr) : null; let schedMonth = null;
+    if (big) { let sec = null; const secs = { 활동: [], 회의: [], 일정: [] }; const after = ln => ln.includes(':') ? ln.split(':').slice(1).join(':') : '';
+      cparas(big).forEach(ln => { const k2 = key(ln);
+        if (k2.startsWith('교사출석')) { rec.teachersPresent = stripRoleList(after(ln)); sec = null; } else if (k2.startsWith('결석')) { rec.teachersAbsent = namesWithReason(after(ln)); sec = null; } else if (k2.startsWith('특이사항')) { rec.special = clean(after(ln)); sec = '특이'; }
+        else if (/^1\.\s*예배/.test(ln)) sec = '활동'; else if (/^2\./.test(ln)) sec = '회의'; else if (/^3\./.test(ln)) { sec = '일정'; const m2 = ln.match(/(\d{1,2})월/); schedMonth = m2 ? +m2[1] : null; }
+        else if (sec === '활동') secs.활동.push(ln.replace(/^\d+\)\s*/, '')); else if (sec === '회의') secs.회의.push(ln.replace(/^\d+\)\s*/, '')); else if (sec === '특이') rec.special = clean(rec.special + '\n' + ln); else if (sec === '일정') secs.일정.push(ln); });
+      rec.activity = secs.활동.join('\n'); rec.meeting = secs.회의.join('\n'); rec.teachersPresentCount = rec.teachersPresent.length;
+    } else rec.flags.push('예배·활동 및 회의 내용 칸을 찾지 못함');
+    tables.slice(1).forEach(t => sortedRows(t).forEach(([, cells]) => { if (cells.length < 2) return; const lab = ctext(cells[0]), val = ctext(cells[1]); if (!val) return; const m2 = lab.match(/\((\d{1,2})일\)/); const month = schedMonth || (bodyDate ? +bodyDate.slice(5, 7) : 0); const y = (bodyDate || '2026').slice(0, 4); rec.schedule.push({ date: m2 && month ? `${y}-${p2(month)}-${p2(+m2[1])}` : '', title: val, label: lab }); }));
+    const hCls = findCell(T0, '구분');
+    if (hCls) { const cov = covering(T0); let hReg, hAtt, hPres, hTea; (rowsOf(T0)[hCls.row] || []).forEach(c => { const k2 = key(ctext(c)); if (k2 === '재적') hReg = c; else if (k2 === '출석') hAtt = c; else if (k2.includes('출석한학생')) hPres = c; else if (k2.includes('담임')) hTea = c; });
+      if (hReg && hAtt && hPres) for (let r = hCls.row + 1; r < T0.rows; r++) { const cc = cov.get(r, hCls.col); if (!cc || cc.row !== r) continue; const cid = key(ctext(cc));
+        if (cid.includes('합계')) { if (cov.get(r, hReg.col) === cc) break; const treg = toInt(ctext(cov.get(r, hReg.col))); const [tatt] = plusSum(ctext(cov.get(r, hAtt.col))); if (rec.counts.reg && treg !== rec.counts.reg) rec.flags.push(`반별 표 합계 재적(${treg})이 출석현황 등록 합계(${rec.counts.reg})와 다름`); if (rec.counts.att && tatt !== rec.counts.att) rec.flags.push(`반별 표 합계 출석(${short(ctext(cov.get(r, hAtt.col)), 30)})이 출석현황 출석 합계(${rec.counts.att})와 다름`); break; }
+        if (!/^\d학년$/.test(cid)) { if (cid.startsWith('중앙성서교회')) break; continue; }
+        const pcell = cov.get(r, hPres.col); let presentRaw = ctext(pcell); let attRaw = cellAt(cov, r, hAtt.col, pcell); const regRaw = cellAt(cov, r, hReg.col, pcell);
+        if (!looksLikeNames(presentRaw)) { noteInsteadOfNames(rec, cid, presentRaw); presentRaw = ''; } if (attRaw && !/^[\d\s+]+$/.test(attRaw)) { noteInsteadOfNames(rec, cid, attRaw); attRaw = ''; }
+        const present = presentList(presentRaw); const [att] = plusSum(attRaw); rec.classRows.push({ classId: cid, teacher: hTea ? stripRole(ctext(cov.get(r, hTea.col))) : '', present, reg: toInt(regRaw), att, attRaw }); addAtt(rec, presentRaw, true);
+        if (att !== present.length && !['', '-'].includes(presentRaw)) rec.flags.push(`${cid} 출석(${short(attRaw, 30)})과 출석 명단 수(${present.length})가 다름`); } }
+    if (!rec.classRows.length) rec.flags.push('반별 출석 표를 찾지 못함');
+    elemBody(rec, body); return bodyDate;
+  }
+  const GRADE = { 중등부1학년: '중1', 중등부2학년: '중2', 중등부3학년: '중3', 고등부1학년: '고1', 고등부2학년: '고2', 고등부3학년: '고3', 중1: '중1', 중2: '중2', 중3: '중3', 고1: '고1', 고2: '고2', 고3: '고3' };
+  const normGrade = s => { const k = key(s); if (GRADE[k]) return GRADE[k]; if (k.includes('새친구') || k.includes('장기결석')) return '새친구·장기결석'; const m = k.match(/^(중|고)(?:등부)?\s*(\d)학?년?$/); return m ? m[1] + m[2] : k; };
+  function parseYouth(tables, body, rec) {
+    const T0 = tables[0]; const bodyDate = headInfo(T0, rec);
+    rec.presider = valueOf(T0, '사회자'); rec.prayer = valueOf(T0, '대표기도'); rec.text = valueOf(T0, '설교본문'); rec.title = valueOf(T0, '설교제목'); rec.preacher = valueOf(T0, '설교자'); rec.notice = valueOf(T0, '광고');
+    const blk = inlineBlock(T0, '사회자', '대표기도'); if (blk) parseInlineSermon(rec, cparas(blk));
+    const rc = T0.cells.find(c => key(ctext(c)).includes('등록된학생')); let regT = null, attT = null; if (rc) { const nums = cparas(rc).filter(p => /^\d+$/.test(clean(p))).map(Number); if (nums.length >= 2) [regT, attT] = nums; }
+    countsFrom(T0, rec, findCell(T0, '남학생'), findCell(T0, '여학생'), findCell(T0, '총계') || findCell(T0, '합계'));
+    if (regT != null && regT !== rec.counts.reg) rec.flags.push(`등록된학생 수(${regT})와 총계 열 등록(${rec.counts.reg})이 다름`); if (attT != null && attT !== rec.counts.att) rec.flags.push(`출석한 학생 수(${attT})와 총계 열 출석(${rec.counts.att})이 다름`);
+    let hdr = findCell(T0, '이름');
+    if (hdr) { const rows = rowsOf(T0), cov = covering(T0); const ci = {}; (rows[hdr.row] || []).forEach(c => { const k2 = key(ctext(c)); if (k2 === '구분') ci.kind = c.col; else if (k2 === '이름') ci.name = c.col; else if (k2.includes('학교')) ci.school = c.col; else if (k2.includes('인도')) ci.by = c.col; });
+      for (let r = hdr.row + 1; r < T0.rows; r++) { const first = cov.get(r, 0); if (!first || key(ctext(first)) === '헌금집계') break; const nm = ctext(cov.get(r, ci.name ?? 3)); if (nm && !['-', '–'].includes(nm)) rec.newcomers.push({ name: nm.replace(/ /g, ''), school: ci.school != null ? ctext(cov.get(r, ci.school)) : '', by: ci.by != null ? ctext(cov.get(r, ci.by)) : '', kind: ci.kind != null ? key(ctext(cov.get(r, ci.kind))) : '' }); } }
+    const hc = findCell(T0, '헌금 집계');
+    if (hc) { const lines = []; (rowsOf(T0)[hc.row] || []).filter(c => c.col > hc.col).forEach(c => lines.push(...cparas(c))); rec.offering.raw = lines.join(' / ');
+      lines.forEach(ln => { const v = ln.includes(':') ? ln.split(':').slice(1).join(':') : ln; const a = amount(v); if (a == null) { if (!['', '-', '–'].includes(clean(v))) rec.flags.push(`헌금 항목을 숫자로 읽지 못함: "${ln}"`); return; } if (ln.includes('주정') || ln.includes('주일')) rec.offering.sunday += a; else if (ln.includes('십일조')) rec.offering.tithe += a; else if (ln.includes('감사')) rec.offering.thanks += a; else rec.offering.other += a; }); }
+    hdr = findCell(T0, '예배·활동 및 회의내용') || findCell(T0, '예배·활동 및 회의 내용'); const big = hdr ? below(T0, hdr) : null;
+    if (big) { let sec = null; const secs = { 활동: [], 회의: [], 일정: [] };
+      cparas(big).forEach(ln => { if (/^1\.\s*교사/.test(ln)) sec = null; else if (/^2\.\s*예배/.test(ln)) { sec = '활동'; const rest = ln.replace(/^2\.\s*예배\s*및\s*활동\s*내용\s*/, ''); if (rest) secs.활동.push(rest); }
+        else if (/^3\./.test(ln)) { sec = '회의'; const rest = ln.includes('등') ? ln.replace(/^3\.\s*[^가-힣]*[가-힣·\s]*?등\s*/, '') : ''; if (rest && rest !== ln) secs.회의.push(rest); }
+        else if (/^4\./.test(ln)) sec = '일정'; else if (/^5\./.test(ln)) sec = null; else if (sec) secs[sec].push(ln); });
+      rec.activity = secs.활동.join('\n'); rec.meeting = secs.회의.join('\n'); secs.일정.join(' ').split('▲').map(clean).filter(Boolean).forEach(t => rec.schedule.push({ date: '', title: t })); }
+    tables.slice(1).forEach(t => { const rows = sortedRows(t); const h = t.cells.length ? ctext(t.cells[0]) : ''; const hk = key(h);
+      if (hk === '구분' && findCell(t, '출석')) rows.forEach(([, cells]) => { if (cells.length < 2) return; const lab = key(ctext(cells[0]));
+          if (lab === '출석') { rec.teachersPresent = stripRoleList(ctext(cells[1])); rec.teachersPresentCount = cells.length > 2 ? toInt(ctext(cells[2])) : rec.teachersPresent.length; if (rec.teachersPresentCount !== rec.teachersPresent.length) rec.flags.push(`교사 출석 소계(${rec.teachersPresentCount}명)와 명단 수(${rec.teachersPresent.length})가 다름`); }
+          else if (lab === '결석') { rec.teachersAbsent = Object.fromEntries(Object.entries(namesWithReason(ctext(cells[1]))).map(([k, v]) => [stripRole(k), v])); } });
+      else if (hk === '학년') { let listed = 0; rows.forEach(([r, cells]) => { if (r === 0 || cells.length < 2) return; const lab = ctext(cells[0]); if (key(lab).includes('총계')) { const n = toInt(ctext(cells[1])); if (n !== listed) rec.flags.push(`결석자 총계(${n}명)와 반별 결석자 수 합(${listed})이 다름`); return; }
+          const names = namesWithReason(ctext(cells[1])); Object.assign(rec.absent, names); listed += Object.keys(names).length; const n = cells.length > 2 ? toInt(ctext(cells[2])) : Object.keys(names).length; if (n !== Object.keys(names).length) rec.flags.push(`${normGrade(lab)} 결석 소계(${n}명)와 결석자 명단 수(${Object.keys(names).length})가 다름`); }); }
+      else if (/\d+월\s*\d+일/.test(h)) rows.forEach(([, cells]) => { if (cells.length < 2) return; const lab = ctext(cells[0]), val = ctext(cells[1], ' '); const m2 = lab.match(/(\d{1,2})월\s*(\d{1,2})일/); const y = (bodyDate || '2026').slice(0, 4); const d = m2 ? `${y}-${p2(+m2[1])}-${p2(+m2[2])}` : ''; val.split('▲').map(clean).filter(Boolean).forEach(x => rec.schedule.push({ date: d, title: x })); }); });
+    if (!rec.teachersPresent.length) rec.flags.push('교사 출결 표를 읽지 못함');
+    const hCls = T0.cells.find(c => key(ctext(c)) === '구분' && c.row > 10);
+    if (hCls) { const cov = covering(T0); let hTea, hPres, hReg, hAtt; (rowsOf(T0)[hCls.row] || []).forEach(c => { const k2 = key(ctext(c)); if (k2.includes('담임')) hTea = c; else if (k2.includes('출석한학생')) hPres = c; else if (k2 === '재적') hReg = c; else if (k2 === '출석') hAtt = c; });
+      if (hPres && hReg && hAtt) for (let r = hCls.row + 1; r < T0.rows; r++) { const cc = cov.get(r, hCls.col); if (!cc || cc.row !== r) continue; const lab = ctext(cc);
+        if (key(lab).includes('총계') || key(lab).includes('합계')) { const treg = toInt(ctext(cov.get(r, hReg.col))), tatt = toInt(ctext(cov.get(r, hAtt.col))); if (rec.counts.reg && treg !== rec.counts.reg) rec.flags.push(`반별 표 총계 재적(${treg})이 출석현황 등록(${rec.counts.reg})과 다름`); if (rec.counts.att && tatt !== rec.counts.att) rec.flags.push(`반별 표 총계 출석(${tatt})이 출석현황 출석(${rec.counts.att})과 다름`); break; }
+        if (key(lab).startsWith('중앙성서교회')) break; const cid = normGrade(lab); const pcell = cov.get(r, hPres.col); let presentRaw = ctext(pcell); if (!looksLikeNames(presentRaw)) { noteInsteadOfNames(rec, cid, presentRaw); presentRaw = ''; }
+        const present = presentList(presentRaw); const attS = cellAt(cov, r, hAtt.col, pcell); const [att] = plusSum(attS); rec.classRows.push({ classId: cid, teacher: hTea ? stripRole(ctext(cov.get(r, hTea.col))) : '', present, reg: toInt(cellAt(cov, r, hReg.col, pcell)), att }); addAtt(rec, presentRaw);
+        if (att !== present.length && !['', '-'].includes(presentRaw)) rec.flags.push(`${cid} 출석(${short(attS, 30)})과 출석 명단 수(${present.length})가 다름`); } }
+    if (!rec.classRows.length) rec.flags.push('반별 출석 표를 찾지 못함');
+    return bodyDate;
+  }
+  const MARK_P = new Set(['0', 'O', 'o', '○', '◯', 'ㅇ', '〇', '●']), MARK_X = new Set(['X', 'x', '×', 'Ｘ', '✕']), MARK_O = new Set(['△', '▲', '온', '온라인', '본당']);
+  function parseYoung(tables, body, rec) {
+    const T0 = tables[0]; const bodyDate = headInfo(T0, rec);
+    rec.prayer = valueOf(T0, '예배기도') || valueOf(T0, '대표기도'); rec.text = valueOf(T0, '설교본문'); rec.title = valueOf(T0, '설교제목'); rec.preacher = valueOf(T0, '설교자');
+    const blk = inlineBlock(T0, '예배기도', '대표기도'); if (blk) parseInlineSermon(rec, cparas(blk));
+    const rc = T0.cells.find(c => key(ctext(c)).includes('등록된청년수')); let regT = null, attT = null; if (rc) { const nums = cparas(rc).filter(p => /^\d+$/.test(clean(p))).map(Number); if (nums.length >= 2) [regT, attT] = nums; }
+    countsFrom(T0, rec, findCell(T0, '남청년'), findCell(T0, '여청년'), findCell(T0, '합계'));
+    const d1 = regT != null && regT !== rec.counts.reg, d2 = attT != null && attT !== rec.counts.att;
+    if (d1 && d2) rec.flags.push(`등록된 청년수(${regT})/출석한 청년수(${attT}) 칸이 합계 열(${rec.counts.reg}/${rec.counts.att})과 다름`); else if (d1) rec.flags.push(`등록된 청년수(${regT})와 합계 열 등록(${rec.counts.reg})이 다름`); else if (d2) rec.flags.push(`출석한 청년수(${attT})와 합계 열 출석(${rec.counts.att})이 다름`);
+    const hdr = findCell(T0, '새 친구 이름');
+    if (hdr) { const cov = covering(T0), rows = rowsOf(T0); for (let r = hdr.row + 1; r < T0.rows; r++) { const first = cov.get(r, hdr.col); if (!first || first.row !== r || key(ctext(first)) === '헌금집계') break; const v = (rows[r] || []).map(c => ctext(c)); if (v[0] && !['-', '–'].includes(v[0])) rec.newcomers.push({ name: v[0].replace(/ /g, ''), school: v[1] || '', by: v[2] || '' }); } }
+    const raw = valueOf(T0, '헌금 집계'); rec.offering.raw = raw; const amt = amount(raw); if (amt != null) rec.offering.other = amt; else rec.flags.push(raw ? `헌금 집계를 숫자로 읽지 못함: "${raw}"` : '헌금 집계 칸이 비어 있음');
+    const hc = findCell(T0, '교사회의 참여명단');
+    if (hc) { (rowsOf(T0)[hc.row + 1] || []).forEach(c => { const t = ctext(c); const m2 = t.match(/참석한\s*교사\s*[:：]?\s*(\d+)/); if (m2) { rec.teachersPresentCount = +m2[1]; const rest = clean(t.replace(/예배에\s*참석한\s*교사\s*[:：]?\s*\d+\s*\(?명?\)?/, '')); if (rest) rec.meeting = rest; } else if (t) rec.meeting = clean(rec.meeting ? rec.meeting + '\n' + t : t); });
+      const mc = rightOf(T0, hc); if (mc && mc.row === hc.row && !['회의내용', ''].includes(key(ctext(mc)))) rec.meeting = clean((rec.meeting ? rec.meeting + '\n' : '') + ctext(mc)); }
+    const lesson = valueOf(T0, '공과 내용 및 본문'); if (lesson) rec.activity = '공과: ' + lesson;
+    const hTea = findCell(T0, '선생님');
+    if (hTea) { const cov = covering(T0), rows = rowsOf(T0); let hCnt, hReg; (rows[hTea.row] || []).forEach(c => { const k2 = key(ctext(c)); if (k2 === '교사') hCnt = c; else if (k2 === '재적') hReg = c; }); const hAtt = hReg ? cov.get(hReg.row, hReg.col + Math.max(1, hReg.colspan)) : null; const unknown = new Set();
+      for (let r = hTea.row + 1; r < T0.rows; r++) { const cc = cov.get(r, hTea.col); if (!cc || cc.row !== r) continue; const lab = ctext(cc);
+        if (key(lab).includes('합계')) { const treg = hReg ? toInt(ctext(cov.get(r, hReg.col))) : 0, tatt = hAtt ? toInt(ctext(cov.get(r, hAtt.col))) : 0; if (rec.counts.reg && treg && treg !== rec.counts.reg) rec.flags.push(`팸별 표 합계 재적(${treg})이 출석현황 합계 등록(${rec.counts.reg})과 다름`); if (rec.counts.att && tatt && tatt !== rec.counts.att) rec.flags.push(`팸별 표 합계 출석(${tatt})이 출석현황 합계 출석(${rec.counts.att})과 다름`); break; }
+        if (key(lab).startsWith('중앙성서교회')) break; const span = Math.max(1, cc.rowspan); const present = [], absent = [], online = [];
+        for (let rr = r; rr < r + span; rr++) { const cells = (rows[rr] || []).filter(c => c.col > cc.col + Math.max(1, cc.colspan) - 1 && (!hCnt || c.col < hCnt.col)).sort((a, b) => a.col - b.col); let i = 0;
+          while (i < cells.length) { const t = ctext(cells[i]); if (MARK_P.has(t) || MARK_X.has(t) || MARK_O.has(t)) { const [nm2, note] = nameNote(i + 1 < cells.length ? ctext(cells[i + 1]) : ''); if (nm2) { if (MARK_P.has(t)) (isOnline(note) ? online : present).push(nm2); else if (MARK_O.has(t)) online.push(nm2); else absent.push(nm2); } i += 2; }
+            else { if (t && !/^[\d\s명]+$/.test(t)) unknown.add(nameNote(t)[0]); i += 1; } } }
+        const reg = hReg ? toInt(ctext(cov.get(r, hReg.col))) : 0, att = hAtt ? toInt(ctext(cov.get(r, hAtt.col))) : 0, cnt = hCnt ? toInt(ctext(cov.get(r, hCnt.col))) : 0;
+        const leaders = splitItems(lab, ',/·').map(x => nameNote(x)[0]); if (!leaders.length) continue; const cid = leaders.join('·') + ' 팸'; if (!present.length && !absent.length && !online.length && reg === 0) continue;
+        rec.classRows.push({ classId: cid, teacher: leaders.join(', '), teacherCount: cnt, present: [...present, ...online.map(n => `${n}(온라인)`)], absent, reg, att });
+        present.forEach(n => { rec.att[n] = 'P'; }); online.forEach(n => { rec.att[n] = 'O'; }); absent.forEach(n => { rec.absent[n] = ''; });
+        const listed = present.length + absent.length + online.length; if (reg && reg !== listed) rec.flags.push(`${cid} 재적(${reg})과 명단 수(${listed})가 다름`); if (att !== present.length + online.length) rec.flags.push(`${cid} 출석(${att})과 O 표시 수(${present.length + online.length})가 다름`); }
+      if (unknown.size) rec.flags.push('출석 표시(O/X)가 없는 이름: ' + [...unknown].sort().join(', ')); }
+    if (!rec.classRows.length) rec.flags.push('팸별 출석 표를 찾지 못함');
+    return bodyDate;
+  }
+  const PARSERS = { kinder: parseKinder, elem: parseElem, youth: parseYouth, young: parseYoung };
+  // 부서 짐작: 첫 칸 제목(유치부·초등부·중고등부·청년부)
+  const guessDept = tables => { const t = tables.length ? ctext(tables[0].cells[0]) + ' ' + tables.slice(0, 2).map(x => x.cells.slice(0, 3).map(c => ctext(c)).join(' ')).join(' ') : ''; return /청년부/.test(t) ? 'young' : /중고등부|중등부|고등부/.test(t) ? 'youth' : /초등부/.test(t) ? 'elem' : /유치부|영아부|영유치/.test(t) ? 'kinder' : ''; };
+  function parse(tables, body, dept, fileName) {
+    const rec = baseRecord(dept, fileName); if (!tables.length) throw new Error('표가 없습니다 — 교육부 주일 보고서 양식이 아닌 것 같습니다');
+    const bodyDate = PARSERS[dept](tables, body, rec); return finish(rec, dateFromText(fileName), bodyDate);
+  }
+  return { parse, guessDept, dateFromText, clean, nameNote };
+})();
+
+/* PDF는 표 구조가 없어 기본 칸만 글자로 찾는다(출석 명단은 못 읽음) */
+function rpFromPdfText(text, dept, fileName) {
+  const L = String(text || '').split('\n').map(x => x.replace(/\s+/g, ' ').trim()).filter(Boolean); const flat = L.join('\n');
+  const after = re => { const m = flat.match(re); return m ? RP.clean(m[1]) : ''; };
+  const rec = { dept, date: '', weekLabel: '', type: `${{ kinder: '유치부', elem: '초등부', youth: '중고등부', young: '청년부' }[dept]} 주일예배`, presider: after(/사\s*회\s*자\s*[:：]?\s*([^\n]+)/), prayer: after(/(?:대표|예배)\s*기도\s*[:：]?\s*([^\n]+)/), text: after(/설교\s*본문\s*[:：]?\s*([^\n]+)/), title: after(/설교\s*제목\s*[:：]?\s*([^\n]+)/), preacher: after(/설\s*교\s*자\s*[:：]?\s*([^\n]+)/), notice: '', counts: {}, att: {}, absent: {}, newcomers: [], offering: { sunday: 0, tithe: 0, thanks: 0, other: 0, raw: after(/헌금\s*집계\S*\s*[:：]?\s*([^\n]+)/) }, teachersPresent: [], teachersAbsent: {}, activity: '', meeting: '', special: '', schedule: [], classRows: [], writer: after(/작성자\s*[:：]\s*(\S+)/), flags: ['PDF는 표를 칸 단위로 읽을 수 없어 출석 명단·반별 표는 가져오지 않음 — 출석은 보고서에서 직접 체크하세요'], source: fileName };
+  const amt = (rec.offering.raw.match(/\d[\d,]*/) || [''])[0].replace(/,/g, ''); if (amt) rec.offering.sunday = +amt;
+  const d = [RP.dateFromText(fileName), RP.dateFromText(L.slice(0, 6).join(' '))].find(x => x && new Date(x + 'T00:00:00').getDay() === 0) || RP.dateFromText(fileName) || RP.dateFromText(L.slice(0, 6).join(' '));
+  rec.date = d; if (d) rec.weekLabel = `${+d.slice(5, 7)}월 ${Math.floor((+d.slice(8, 10) - 1) / 7) + 1}주`; return rec;
+}
+/* 이름 기준 기록 → 앱 보고서: 출석부와 이름으로 잇는다. 같은 이름이 둘 이상이거나 없으면 "이름만"으로 남기고 확인 필요 표시 */
+function rpToReport(dd, rec, fileName) {
+  const pool = dd.students; const live = s => s.status !== 'left';
+  const find = nm => { const k = normName(nm); let c = pool.filter(s => normName(s.name) === k && live(s)); if (!c.length) c = pool.filter(s => normName(s.name) === k); return c; };
+  const att = {}, attU = {}, absent = {}, absU = {}, flags = [...rec.flags]; const dup = new Set();
+  Object.entries(rec.att).forEach(([nm, v]) => { const c = find(nm); if (c.length === 1) att[c[0].id] = v; else { attU[nm] = v; if (c.length > 1) dup.add(nm); } });
+  Object.entries(rec.absent).forEach(([nm, v]) => { const c = find(nm); if (c.length === 1) { if (!att[c[0].id]) absent[c[0].id] = v; } else { absU[nm] = v; if (c.length > 1) dup.add(nm); } });
+  if (Object.keys(attU).length) flags.push('출석부에 없는 출석자: ' + Object.keys(attU).join(', '));
+  if (dup.size) flags.push('출석부에 같은 이름이 여럿이라 잇지 못함: ' + [...dup].join(', '));
+  const { counts, offering, ...rest } = rec;
+  return { ...blankReport(dd, rec.date), ...rest, counts: { ...counts }, offering: { ...offering }, att, attUnmatched: attU, absent, absentUnmatched: absU, flags, united: /세대통합/.test(rec.type), imported: true, status: 'done', source: '파일 올리기: ' + fileName };
+}
+async function rpReadFile(dd, f) {
+  const buf = await f.arrayBuffer(); const ext = (f.name.split('.').pop() || '').toLowerCase();
+  if (ext === 'hwp') { const { tables, body } = await hwpCells(buf); const dept = RP.guessDept(tables); if (dept && dept !== dd.id) throw new Error(`${DEPTS[dept]} 보고서입니다 — ${DEPTS[dd.id]}에는 넣지 않습니다`); return { buf, rec: RP.parse(tables, body, dd.id, f.name) }; }
+  if (ext === 'pdf') return { buf, rec: rpFromPdfText(await pdfToText(buf), dd.id, f.name) };
+  throw new Error('주일 보고서는 한글(HWP) 또는 PDF 파일만 올릴 수 있습니다 (HWPX는 한글에서 HWP로 저장해 주세요)');
+}
+function rpUploadDialog(dd) {
+  openModal(`<h2>주일 보고서 파일 올리기<button class="btn s" id="modal-close">닫기</button></h2>
+    <p class="note">교육부 주일 보고서 양식의 한글(HWP) 파일을 여러 개 한꺼번에 고를 수 있습니다. 날짜·설교·헌금·출석 명단·결석 사유·교사 출결·활동을 읽어, 저장하기 전에 표로 보여 줍니다. PDF는 표를 읽을 수 없어 설교·헌금 등 기본 칸만 가져옵니다. 파일은 이 컴퓨터의 브라우저 안에서만 읽습니다.</p>
+    <input type="file" id="rp-files" multiple accept=".hwp,.pdf"><div id="rp-prev" style="margin-top:10px"></div>`);
+  $('#modal-close').onclick = closeModal;
+  $('#rp-files').onchange = async e => { const files = [...e.target.files]; if (!files.length) return; const box = $('#rp-prev'); box.innerHTML = `<div class="note">${files.length}개 파일을 읽는 중…</div>`; const items = [];
+    for (const f of files) { try { const { buf, rec } = await rpReadFile(dd, f); if (!rec.date) throw new Error('날짜를 찾지 못했습니다 — 파일 이름에 날짜(예: 20261004)를 넣어 주세요'); const doc = rpToReport(dd, rec, f.name); const same = items.find(y => y.doc && y.doc.date === doc.date); if (same) throw new Error(`${doc.date} 보고서가 이 묶음에 이미 있습니다(${same.f.name})`); items.push({ f, buf, doc, ex: dd.reports[doc.date] }); } catch (err) { items.push({ f, err: err.message || '읽기 실패' }); } }
+    const nAtt = d => Object.keys(d.att).length, nU = d => Object.keys(d.attUnmatched).length;
+    box.innerHTML = `<div class="tw"><table class="tight"><thead><tr><th>파일</th><th>날짜</th><th>설교 제목 · 설교자</th><th class="n">헌금</th><th class="n">출석(연결/이름만)</th><th>확인할 것</th><th>저장 방법</th></tr></thead><tbody>${items.map((x, i) => x.err ? `<tr><td class="wrap">${esc(x.f.name)}</td><td colspan="5" class="note">${esc(x.err)}</td><td><span class="pill bad">건너뜀</span></td></tr>` : `<tr><td class="wrap">${esc(x.f.name)}</td><td>${esc(x.doc.date)}</td><td class="wrap">${esc(x.doc.title || '—')} · ${esc(x.doc.preacher || '—')}</td><td class="n">${won((x.doc.offering.sunday || 0) + (x.doc.offering.tithe || 0) + (x.doc.offering.thanks || 0) + (x.doc.offering.other || 0))}</td><td class="n">${nAtt(x.doc)}${nU(x.doc) ? ` / <b>${nU(x.doc)}</b>` : ''}</td><td class="wrap" style="font-size:11px">${x.doc.flags.length ? x.doc.flags.map(esc).join('<br>') : '<span class="note">없음</span>'}</td>
+      <td>${x.ex ? `<select data-rpmode="${i}" style="width:auto"><option value="fill">이미 있음 — 빈 칸만 채우기</option><option value="replace">파일 내용으로 바꾸기</option><option value="skip">건너뛰기</option></select>${x.ex.status === 'done' ? '<div class="note">이미 작성 완료된 보고서</div>' : ''}` : '<span class="pill ok">새로 만들기</span>'}</td></tr>`).join('')}</tbody></table></div>
+      <div class="row" style="margin-top:8px"><button class="btn p" id="rp-go" ${items.some(x => !x.err) ? '' : 'disabled'}>저장</button><span class="note">"이름만"은 출석부에서 이름을 찾지 못한 출석자입니다. 저장한 뒤 보고서에서 확인할 수 있습니다.</span></div><pre class="progress" id="rp-prog"></pre>`;
+    const go = $('#rp-go'); if (go) go.onclick = async () => { go.disabled = true; const prog = $('#rp-prog'); const res = [];
+      for (const [i, x] of items.entries()) { if (x.err) continue; const mode = x.ex ? ($(`[data-rpmode="${i}"]`) || {}).value || 'fill' : 'new'; if (mode === 'skip') { res.push(`${x.doc.date} 건너뜀`); continue; } prog.textContent = `저장 중 · ${x.f.name}`;
+        try { let fileInfo = null;
+          if (x.f.size < 650 * 1024) { const u8 = new Uint8Array(x.buf); let bin = ''; for (let k = 0; k < u8.length; k += 0x8000) bin += String.fromCharCode.apply(null, u8.subarray(k, k + 0x8000)); await backend.set(`depts/${dd.id}/reportFiles/${x.doc.date}`, { name: x.f.name, type: x.f.type || '', size: x.f.size, data: btoa(bin), at: today() }); fileInfo = { name: x.f.name, size: x.f.size, at: today() }; }
+          if (mode === 'new' || mode === 'replace') { const d = { ...x.doc, ...(fileInfo ? { file: fileInfo } : {}) }; const { _id, ...data } = d; await backend.set(`depts/${dd.id}/reports/${d.date}`, data); dd.reports[d.date] = d; dd.reportBase = dd.reportBase || {}; dd.reportBase[d.date] = clone(d); }
+          else { const r = x.ex; const TXT = ['presider', 'prayer', 'text', 'title', 'preacher', 'notice', 'writer', 'activity', 'meeting', 'special'];
+            TXT.forEach(k => { if (!String(r[k] || '').trim() && x.doc[k]) r[k] = x.doc[k]; });
+            ['att', 'attUnmatched', 'absent', 'absentUnmatched', 'teachersAbsent'].forEach(k => { r[k] = { ...(x.doc[k] || {}), ...(r[k] || {}) }; }); Object.keys(r.att).forEach(id => { if (r.absent) delete r.absent[id]; });
+            if (!(r.offering && ((r.offering.sunday || 0) + (r.offering.tithe || 0) + (r.offering.thanks || 0) + (r.offering.other || 0)))) r.offering = { ...x.doc.offering };
+            if (!(r.teachersPresent || []).length) r.teachersPresent = x.doc.teachersPresent; if (!(r.newcomers || []).length) r.newcomers = x.doc.newcomers; if (!(r.classRows || []).length) r.classRows = x.doc.classRows;
+            r.flags = [...new Set([...(r.flags || []), ...x.doc.flags])]; if (fileInfo) r.file = fileInfo; await saveReport(dd, r); }
+          res.push(`${x.doc.date} ${mode === 'new' ? '새로 저장' : mode === 'replace' ? '파일 내용으로 바꿈' : '빈 칸 채움'}${fileInfo ? ' · 원본 보관' : ' · 원본은 650KB가 넘어 보관 안 함'}`);
+        } catch (err) { res.push(`${x.doc.date} 실패 — ${err.code || err.message}`); } }
+      prog.textContent = res.join('\n'); toast('보고서 파일을 저장했습니다'); const done = $('#rp-go'); if (done) { done.textContent = '닫고 목록 보기'; done.disabled = false; done.onclick = () => { closeModal(); renderHere(); }; } };
+  };
+}
+/* @@RP-END */
 
 /* ───────────── 청년부 회칙·총회 ───────────── */
 // 판정 기준값: 회칙 판마다 저장(params). 개정안이 통과되어 "현행"으로 지정되면 그 판의 값으로 자동 판정
@@ -3375,7 +3702,7 @@ BIND.outings = () => {
 };
 /* ───────────── 자료 내려받기 · 영수증 사진 정리 (교육위원회) ─────────────
    새 자료 종류(하위 묶음)를 만들면 아래 두 목록에 이름을 추가해야 내려받기에 포함된다. */
-const BACKUP_DEPT_SUBS = ['monthlySnaps', 'bylawFiles', 'students', 'reports', 'expenses', 'incomes', 'events', 'notices', 'assets', 'plans', 'timeline', 'officers', 'retreats', 'receipts', 'receiptImgs', 'bylaws', 'assemblies', 'outings', 'meetings', 'meetingFiles']; // care(심방 카드)는 부서 관리자만 읽을 수 있어 넣지 못함
+const BACKUP_DEPT_SUBS = ['reportFiles', 'monthlySnaps', 'bylawFiles', 'students', 'reports', 'expenses', 'incomes', 'events', 'notices', 'assets', 'plans', 'timeline', 'officers', 'retreats', 'receipts', 'receiptImgs', 'bylaws', 'assemblies', 'outings', 'meetings', 'meetingFiles']; // care(심방 카드)는 부서 관리자만 읽을 수 있어 넣지 못함
 const BACKUP_TOP = ['scholarship', 'archive', 'promotions', 'vehicles', 'siblings', 'meta'];
 async function collectAll(withImgs, say) {
   const raw = []; const miss = []; const put = (path, x) => { const { _id, ...data } = x; raw.push({ path, data }); };
