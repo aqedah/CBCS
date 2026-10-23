@@ -595,3 +595,5 @@ details.card.principle>summary:hover .pr-tg{border-color:var(--accent);color:var
 .cls h3 .btn.s{margin-left:6px;vertical-align:middle}
 .clamp2{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;white-space:normal;line-height:1.45}
 table.roster td.wrap{min-width:0}
+.rp-drop{border:2px dashed var(--line);border-radius:10px;padding:16px;text-align:center;background:var(--bg)}
+.rp-drop.on{border-color:var(--accent);background:var(--accent-soft)}

@@ -1815,14 +1815,25 @@ async function rpReadFile(dd, f) {
 function rpUploadDialog(dd) {
   openModal(`<h2>주일 보고서 파일 올리기<button class="btn s" id="modal-close">닫기</button></h2>
     <p class="note">교육부 주일 보고서 양식의 한글(HWP) 파일을 여러 개 한꺼번에 고를 수 있습니다. 날짜·설교·헌금·출석 명단·결석 사유·교사 출결·활동을 읽어, 저장하기 전에 표로 보여 줍니다. PDF는 표를 읽을 수 없어 설교·헌금 등 기본 칸만 가져옵니다. 파일은 이 컴퓨터의 브라우저 안에서만 읽습니다.</p>
-    <input type="file" id="rp-files" multiple accept=".hwp,.pdf"><div id="rp-prev" style="margin-top:10px"></div>`);
+    <div id="rp-drop" class="rp-drop"><b>여기로 파일이나 폴더를 끌어다 놓으세요</b><div class="row" style="justify-content:center;gap:6px;margin-top:8px"><label class="btn p" for="rp-files">파일 고르기 (여러 개)</label><input type="file" id="rp-files" multiple accept=".hwp,.pdf" hidden><label class="btn" for="rp-dir">폴더째 고르기</label><input type="file" id="rp-dir" webkitdirectory multiple hidden><button class="btn s" id="rp-clear">목록 비우기</button></div>
+      <div class="note" style="margin-top:6px">파일 고르기 창에서는 Ctrl(맥은 ⌘)이나 Shift를 누른 채 여러 개를 고르세요. 다른 폴더의 파일은 한 번 더 고르면 목록에 더해집니다. 폴더째 고르면 그 안(하위 폴더 포함)의 HWP·PDF를 모두 읽습니다.</div></div>
+    <div id="rp-prev" style="margin-top:10px"></div>`);
   $('#modal-close').onclick = closeModal;
-  $('#rp-files').onchange = async e => { const files = [...e.target.files]; if (!files.length) return; const box = $('#rp-prev'); box.innerHTML = `<div class="note">${files.length}개 파일을 읽는 중…</div>`; const items = [];
-    for (const f of files) { try { const { buf, rec } = await rpReadFile(dd, f); if (!rec.date) throw new Error('날짜를 찾지 못했습니다 — 파일 이름에 날짜(예: 20261004)를 넣어 주세요'); const doc = rpToReport(dd, rec, f.name); const same = items.find(y => y.doc && y.doc.date === doc.date); if (same) throw new Error(`${doc.date} 보고서가 이 묶음에 이미 있습니다(${same.f.name})`); items.push({ f, buf, doc, ex: dd.reports[doc.date] }); } catch (err) { items.push({ f, err: err.message || '읽기 실패' }); } }
+  // 고른 파일을 계속 모은다(같은 이름·크기는 한 번만). 파일 고르기·폴더 고르기·끌어다 놓기 모두 여기로
+  const picked = []; const cache = new Map(); let busy = false, again = false;
+  const addFiles = list => { [...list].filter(f => /\.(hwp|pdf)$/i.test(f.name) && !/^~\$/.test(f.name)).forEach(f => { if (!picked.some(x => x.name === f.name && x.size === f.size)) picked.push(f); }); run(); };
+  $('#rp-files').onchange = e => { addFiles(e.target.files); e.target.value = ''; };
+  $('#rp-dir').onchange = e => { addFiles(e.target.files); e.target.value = ''; };
+  $('#rp-clear').onclick = () => { picked.length = 0; $('#rp-prev').innerHTML = ''; };
+  const dz = $('#rp-drop'); dz.ondragover = e => { e.preventDefault(); dz.classList.add('on'); }; dz.ondragleave = () => dz.classList.remove('on');
+  const walk = async (entry, out) => { if (entry.isFile) { out.push(await new Promise((ok, no) => entry.file(ok, no))); return; } if (entry.isDirectory) { const rd = entry.createReader(); let batch; do { batch = await new Promise((ok, no) => rd.readEntries(ok, no)); for (const en of batch) await walk(en, out); } while (batch.length); } };
+  dz.ondrop = async e => { e.preventDefault(); dz.classList.remove('on'); const its = [...(e.dataTransfer.items || [])].map(it => it.webkitGetAsEntry && it.webkitGetAsEntry()).filter(Boolean); if (its.length) { const out = []; for (const en of its) await walk(en, out); addFiles(out); } else addFiles(e.dataTransfer.files); };
+  const run = async () => { if (busy) { again = true; return; } busy = true; const files = picked.slice().sort((a, b) => a.name.localeCompare(b.name, 'ko')); const box = $('#rp-prev'); if (!files.length) { busy = false; return; } box.innerHTML = `<div class="note">${files.length}개 파일을 읽는 중…</div>`; const items = [];
+    for (const f of files) { try { const ck = f.name + '|' + f.size; if (!cache.has(ck)) cache.set(ck, await rpReadFile(dd, f)); const { buf, rec } = cache.get(ck); if (!rec.date) throw new Error('날짜를 찾지 못했습니다 — 파일 이름에 날짜(예: 20261004)를 넣어 주세요'); const doc = rpToReport(dd, rec, f.name); const same = items.find(y => y.doc && y.doc.date === doc.date); if (same) throw new Error(`${doc.date} 보고서가 이 묶음에 이미 있습니다(${same.f.name})`); items.push({ f, buf, doc, ex: dd.reports[doc.date] }); } catch (err) { items.push({ f, err: err.message || '읽기 실패' }); } }
     const nAtt = d => Object.keys(d.att).length, nU = d => Object.keys(d.attUnmatched).length;
     box.innerHTML = `<div class="tw"><table class="tight"><thead><tr><th>파일</th><th>날짜</th><th>설교 제목 · 설교자</th><th class="n">헌금</th><th class="n">출석(연결/이름만)</th><th>확인할 것</th><th>저장 방법</th></tr></thead><tbody>${items.map((x, i) => x.err ? `<tr><td class="wrap">${esc(x.f.name)}</td><td colspan="5" class="note">${esc(x.err)}</td><td><span class="pill bad">건너뜀</span></td></tr>` : `<tr><td class="wrap">${esc(x.f.name)}</td><td>${esc(x.doc.date)}</td><td class="wrap">${esc(x.doc.title || '—')} · ${esc(x.doc.preacher || '—')}</td><td class="n">${won((x.doc.offering.sunday || 0) + (x.doc.offering.tithe || 0) + (x.doc.offering.thanks || 0) + (x.doc.offering.other || 0))}</td><td class="n">${nAtt(x.doc)}${nU(x.doc) ? ` / <b>${nU(x.doc)}</b>` : ''}</td><td class="wrap" style="font-size:11px">${x.doc.flags.length ? x.doc.flags.map(esc).join('<br>') : '<span class="note">없음</span>'}</td>
       <td>${x.ex ? `<select data-rpmode="${i}" style="width:auto"><option value="fill">이미 있음 — 빈 칸만 채우기</option><option value="replace">파일 내용으로 바꾸기</option><option value="skip">건너뛰기</option></select>${x.ex.status === 'done' ? '<div class="note">이미 작성 완료된 보고서</div>' : ''}` : '<span class="pill ok">새로 만들기</span>'}</td></tr>`).join('')}</tbody></table></div>
-      <div class="row" style="margin-top:8px"><button class="btn p" id="rp-go" ${items.some(x => !x.err) ? '' : 'disabled'}>저장</button><span class="note">"이름만"은 출석부에서 이름을 찾지 못한 출석자입니다. 저장한 뒤 보고서에서 확인할 수 있습니다.</span></div><pre class="progress" id="rp-prog"></pre>`;
+      <div class="row" style="margin-top:8px"><button class="btn p" id="rp-go" ${items.some(x => !x.err) ? '' : 'disabled'}>${items.filter(x => !x.err).length}건 저장</button><span class="note">${items.length}개 파일 중 읽은 것 ${items.filter(x => !x.err).length}개</span><span class="note">"이름만"은 출석부에서 이름을 찾지 못한 출석자입니다. 저장한 뒤 보고서에서 확인할 수 있습니다.</span></div><pre class="progress" id="rp-prog"></pre>`;
     const go = $('#rp-go'); if (go) go.onclick = async () => { go.disabled = true; const prog = $('#rp-prog'); const res = [];
       for (const [i, x] of items.entries()) { if (x.err) continue; const mode = x.ex ? ($(`[data-rpmode="${i}"]`) || {}).value || 'fill' : 'new'; if (mode === 'skip') { res.push(`${x.doc.date} 건너뜀`); continue; } prog.textContent = `저장 중 · ${x.f.name}`;
         try { let fileInfo = null;
@@ -1837,6 +1848,7 @@ function rpUploadDialog(dd) {
           res.push(`${x.doc.date} ${mode === 'new' ? '새로 저장' : mode === 'replace' ? '파일 내용으로 바꿈' : '빈 칸 채움'}${fileInfo ? ' · 원본 보관' : ' · 원본은 650KB가 넘어 보관 안 함'}`);
         } catch (err) { res.push(`${x.doc.date} 실패 — ${err.code || err.message}`); } }
       prog.textContent = res.join('\n'); toast('보고서 파일을 저장했습니다'); const done = $('#rp-go'); if (done) { done.textContent = '닫고 목록 보기'; done.disabled = false; done.onclick = () => { closeModal(); renderHere(); }; } };
+    busy = false; if (again) { again = false; run(); }
   };
 }
 /* @@RP-END */
