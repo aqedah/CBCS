@@ -1808,6 +1808,18 @@ function rpToReport(dd, rec, fileName) {
 }
 /* 부서: fixed(부서 계정)면 그 부서만, 아니면(교육위원회) 파일 안 제목으로 정하고 모르면 fallback */
 const rpDeptOfText = t => /청년부/.test(t) ? 'young' : /중고등부|중등부|고등부/.test(t) ? 'youth' : /초등부/.test(t) ? 'elem' : /유치부|영아부|영유치/.test(t) ? 'kinder' : '';
+/* 이미 있는 보고서와 파일 내용이 다른 칸 */
+const rpOffSum = o => (o && ((o.sunday || 0) + (o.tithe || 0) + (o.thanks || 0) + (o.other || 0))) || 0;
+function rpDiff(ex, doc) { if (!ex) return []; const out = []; const nn = v => String(v || '').replace(/\s+/g, '');
+  [['title', '설교 제목'], ['preacher', '설교자'], ['text', '설교 본문'], ['prayer', '기도'], ['presider', '사회']].forEach(([k, l]) => { if (nn(doc[k]) && nn(ex[k]) !== nn(doc[k])) out.push(`${l}: "${ex[k] || '빈 칸'}" → "${doc[k]}"`); });
+  if (rpOffSum(doc.offering) !== rpOffSum(ex.offering)) out.push(`헌금: ${won(rpOffSum(ex.offering))} → ${won(rpOffSum(doc.offering))}`);
+  const nm = id => (S.data && Object.values(S.data).map(d => d && d.students && d.students.find(x => x.id === id)).find(Boolean) || {}).name || id;
+  const A0 = new Set([...Object.keys(ex.att || {}).map(nm), ...Object.keys(ex.attUnmatched || {})]), A1 = new Set([...Object.keys(doc.att).map(nm), ...Object.keys(doc.attUnmatched)]);
+  const gone = [...A0].filter(x => !A1.has(x)), added = [...A1].filter(x => !A0.has(x));
+  if (gone.length || added.length) out.push(`출석 명단: ${A0.size}명 → ${A1.size}명${gone.length ? ' · 빠짐 ' + gone.join(', ') : ''}${added.length ? ' · 더해짐 ' + added.join(', ') : ''}`);
+  return out; }
+// 앱 밖 파일에서 옮겨 온 보고서(예전 변환·파일 올리기)는 새 파일로 바꾸는 것이 기본, 앱에서 직접 쓴 보고서는 빈 칸만 채우기가 기본
+const rpFromFile = r => !!(r && (r.imported || /^raw\/|^파일 올리기/.test(r.source || '')));
 async function rpReadFile(f, fixed, fallback) {
   const buf = await f.arrayBuffer(); const ext = (f.name.split('.').pop() || '').toLowerCase();
   const pick = g => { if (fixed) { if (g && g !== fixed) throw new Error(`${DEPTS[g]} 보고서입니다 — ${DEPTS[fixed]}에는 넣지 않습니다`); return fixed; } const d = g || rpDeptOfText(f.name) || fallback; if (!d) throw new Error('어느 부서 보고서인지 알 수 없습니다'); return d; };
@@ -1838,23 +1850,23 @@ function rpUploadDialog(dd0) {
     const fb = multi ? ($('#rp-fb') || {}).value || 'kinder' : '';
     for (const f of files) { try { const ck = f.name + '|' + f.size + '|' + fb; if (!cache.has(ck)) cache.set(ck, await rpReadFile(f, multi ? '' : dd0.id, fb)); const { buf, rec, dept, guessed } = cache.get(ck); const dd = multi ? await loadDept(dept) : dd0;
         if (!rec.date) throw new Error('날짜를 찾지 못했습니다 — 파일 이름에 날짜(예: 20261004)를 넣어 주세요'); const doc = rpToReport(dd, rec, f.name); if (guessed) doc.flags.unshift(`부서를 알 수 없어 ${DEPTS[dept]}에 넣음`);
-        const same = items.find(y => y.doc && y.dd === dd && y.doc.date === doc.date); if (same) throw new Error(`${DEPTS[dd.id]} ${doc.date} 보고서가 이 묶음에 이미 있습니다(${same.f.name})`); items.push({ f, buf, doc, dd, ex: dd.reports[doc.date] }); } catch (err) { items.push({ f, err: err.message || '읽기 실패' }); } }
+        const same = items.find(y => y.doc && y.dd === dd && y.doc.date === doc.date); if (same) throw new Error(`${DEPTS[dd.id]} ${doc.date} 보고서가 이 묶음에 이미 있습니다(${same.f.name})`); const ex = dd.reports[doc.date]; items.push({ f, buf, doc, dd, ex, diff: rpDiff(ex, doc) }); } catch (err) { items.push({ f, err: err.message || '읽기 실패' }); } }
     const nAtt = d => Object.keys(d.att).length, nU = d => Object.keys(d.attUnmatched).length;
     box.innerHTML = `<div class="tw"><table class="tight"><thead><tr><th>파일</th>${multi ? '<th>부서</th>' : ''}<th>날짜</th><th>설교 제목 · 설교자</th><th class="n">헌금</th><th class="n">출석(연결/이름만)</th><th>확인할 것</th><th>저장 방법</th></tr></thead><tbody>${items.map((x, i) => x.err ? `<tr><td class="wrap">${esc(x.f.name)}</td><td colspan="${multi ? 6 : 5}" class="note">${esc(x.err)}</td><td><span class="pill bad">건너뜀</span></td></tr>` : `<tr><td class="wrap">${esc(x.f.name)}</td>${multi ? `<td><b>${esc(DEPTS[x.dd.id])}</b></td>` : ''}<td>${esc(x.doc.date)}</td><td class="wrap">${esc(x.doc.title || '—')} · ${esc(x.doc.preacher || '—')}</td><td class="n">${won((x.doc.offering.sunday || 0) + (x.doc.offering.tithe || 0) + (x.doc.offering.thanks || 0) + (x.doc.offering.other || 0))}</td><td class="n">${nAtt(x.doc)}${nU(x.doc) ? ` / <b>${nU(x.doc)}</b>` : ''}</td><td class="wrap" style="font-size:11px">${x.doc.flags.length ? x.doc.flags.map(esc).join('<br>') : '<span class="note">없음</span>'}</td>
-      <td>${x.ex ? `<select data-rpmode="${i}" style="width:auto"><option value="fill">이미 있음 — 빈 칸만 채우기</option><option value="replace">파일 내용으로 바꾸기</option><option value="skip">건너뛰기</option></select>${x.ex.status === 'done' ? '<div class="note">이미 작성 완료된 보고서</div>' : ''}` : '<span class="pill ok">새로 만들기</span>'}</td></tr>`).join('')}</tbody></table></div>
+      <td>${x.ex ? `<select data-rpmode="${i}" style="width:auto"><option value="replace" ${rpFromFile(x.ex) ? 'selected' : ''}>이미 있음 — 파일 내용으로 바꾸기</option><option value="fill" ${rpFromFile(x.ex) ? '' : 'selected'}>빈 칸만 채우기</option><option value="skip">건너뛰기</option></select><div class="note">${rpFromFile(x.ex) ? '지금 것도 파일에서 옮긴 보고서' : '앱에서 직접 쓴 보고서 — 빈 칸만 채우기를 권함'}</div>${x.diff.length ? `<div style="font-size:11px;margin-top:4px"><b>다른 점</b><br>${x.diff.map(esc).join('<br>')}</div>` : '<div class="note">내용이 같음</div>'}` : '<span class="pill ok">새로 만들기</span>'}</td></tr>`).join('')}</tbody></table></div>
       <div class="row" style="margin-top:8px"><button class="btn p" id="rp-go" ${items.some(x => !x.err) ? '' : 'disabled'}>${items.filter(x => !x.err).length}건 저장</button><span class="note">${items.length}개 파일 중 읽은 것 ${items.filter(x => !x.err).length}개</span><span class="note">"이름만"은 출석부에서 이름을 찾지 못한 출석자입니다. 저장한 뒤 보고서에서 확인할 수 있습니다.</span></div><pre class="progress" id="rp-prog"></pre>`;
     const go = $('#rp-go'); if (go) go.onclick = async () => { go.disabled = true; const prog = $('#rp-prog'); const res = [];
       for (const [i, x] of items.entries()) { if (x.err) continue; const dd = x.dd; const mode = x.ex ? ($(`[data-rpmode="${i}"]`) || {}).value || 'fill' : 'new'; if (mode === 'skip') { res.push(`${multi ? DEPTS[dd.id] + ' ' : ''}${x.doc.date} 건너뜀`); continue; } prog.textContent = `저장 중 · ${x.f.name}`;
         try { let fileInfo = null;
           if (x.f.size < 650 * 1024) { const u8 = new Uint8Array(x.buf); let bin = ''; for (let k = 0; k < u8.length; k += 0x8000) bin += String.fromCharCode.apply(null, u8.subarray(k, k + 0x8000)); await backend.set(`depts/${dd.id}/reportFiles/${x.doc.date}`, { name: x.f.name, type: x.f.type || '', size: x.f.size, data: btoa(bin), at: today() }); fileInfo = { name: x.f.name, size: x.f.size, at: today() }; }
-          if (mode === 'new' || mode === 'replace') { const d = { ...x.doc, ...(fileInfo ? { file: fileInfo } : {}) }; const { _id, ...data } = d; await backend.set(`depts/${dd.id}/reports/${d.date}`, data); dd.reports[d.date] = d; dd.reportBase = dd.reportBase || {}; dd.reportBase[d.date] = clone(d); }
+          if (mode === 'new' || mode === 'replace') { const keepApp = x.ex ? Object.fromEntries(['famDone', 'outingLinks'].filter(k => x.ex[k]).map(k => [k, x.ex[k]])) : {}; const d = { ...x.doc, ...keepApp, ...(fileInfo ? { file: fileInfo } : {}) }; const { _id, ...data } = d; await backend.set(`depts/${dd.id}/reports/${d.date}`, data); dd.reports[d.date] = d; dd.reportBase = dd.reportBase || {}; dd.reportBase[d.date] = clone(d); }
           else { const r = x.ex; const TXT = ['presider', 'prayer', 'text', 'title', 'preacher', 'notice', 'writer', 'activity', 'meeting', 'special'];
             TXT.forEach(k => { if (!String(r[k] || '').trim() && x.doc[k]) r[k] = x.doc[k]; });
             ['att', 'attUnmatched', 'absent', 'absentUnmatched', 'teachersAbsent'].forEach(k => { r[k] = { ...(x.doc[k] || {}), ...(r[k] || {}) }; }); Object.keys(r.att).forEach(id => { if (r.absent) delete r.absent[id]; });
             if (!(r.offering && ((r.offering.sunday || 0) + (r.offering.tithe || 0) + (r.offering.thanks || 0) + (r.offering.other || 0)))) r.offering = { ...x.doc.offering };
             if (!(r.teachersPresent || []).length) r.teachersPresent = x.doc.teachersPresent; if (!(r.newcomers || []).length) r.newcomers = x.doc.newcomers; if (!(r.classRows || []).length) r.classRows = x.doc.classRows;
             r.flags = [...new Set([...(r.flags || []), ...x.doc.flags])]; if (fileInfo) r.file = fileInfo; await saveReport(dd, r); }
-          res.push(`${multi ? DEPTS[dd.id] + ' ' : ''}${x.doc.date} ${mode === 'new' ? '새로 저장' : mode === 'replace' ? '파일 내용으로 바꿈' : '빈 칸 채움'}${fileInfo ? ' · 원본 보관' : ' · 원본은 650KB가 넘어 보관 안 함'}`);
+          res.push(`${multi ? DEPTS[dd.id] + ' ' : ''}${x.doc.date} ${mode === 'new' ? '새로 저장' : mode === 'replace' ? '파일 내용으로 바꿈' + (x.diff.length ? ` (${x.diff.length}곳 바뀜)` : ' (내용 같음)') : '빈 칸 채움' + (x.diff.length ? ' — 이미 내용이 있는 칸은 그대로 둠: ' + x.diff.map(d => d.split(':')[0]).join(', ') : '')}${fileInfo ? ' · 원본 보관' : ' · 원본은 650KB가 넘어 보관 안 함'}`);
         } catch (err) { res.push(`${multi ? DEPTS[dd.id] + ' ' : ''}${x.doc.date} 실패 — ${err.code || err.message}`); } }
       prog.textContent = res.join('\n'); toast('보고서 파일을 저장했습니다'); const done = $('#rp-go'); if (done) { done.textContent = '닫고 목록 보기'; done.disabled = false; done.onclick = () => { closeModal(); renderHere(); }; } };
     busy = false; if (again) { again = false; run(); }
