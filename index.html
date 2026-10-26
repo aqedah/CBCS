@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <!-- 보안 헤더(CSP): 허락한 곳의 스크립트만 실행 — 자료에 HTML·스크립트가 섞여 들어와도 실행되지 않게 하는 이중 잠금 -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://www.gstatic.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://www.gstatic.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; worker-src 'self' blob: https://cdnjs.cloudflare.com; frame-src https://*.firebaseapp.com; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://www.gstatic.com/firebasejs/10.14.1/ https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/ https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/ https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/ https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/ https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/ https://cdn.jsdelivr.net/npm/cfb@1.2.2/ https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/ https://cdn.jsdelivr.net/npm/tesseract.js@v5.1.1/ https://cdn.jsdelivr.net/npm/tesseract.js-core@v5.1.1/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://www.gstatic.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; worker-src 'self' blob: https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/; frame-src https://*.firebaseapp.com; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>CBCS 교육부 관리</title>
 <meta name="description" content="중앙성서교회 교육부(영유치부·초등부·중고등부·청년부·교육위원회)의 주일 보고서·출석부·회계·연간계획을 한곳에서 관리합니다.">
@@ -34,8 +34,8 @@
 <div class="toast" id="toast"></div>
 <div class="modal-bg" id="modal" hidden><div class="modal" id="modal-box"></div></div>
 <script src="config.js?v=202610131605"></script>
-<script src="patches.js?v=202610231930"></script>
+<script src="patches.js?v=202610261500"></script>
 <script src="tour.js?v=202610131605"></script>
-<script type="module" src="app.js?v=202610241200"></script>
+<script type="module" src="app.js?v=202610261500"></script>
 </body>
 </html>
