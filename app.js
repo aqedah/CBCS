@@ -442,7 +442,7 @@ VIEWS.home = async () => {
       ${rows.map(({ d, dd, r, s }) => r ? `<tr><td>${DEPTS[d]}</td><td><span class="pill ok">제출</span></td><td class="n">${s.total}</td><td class="n">${s.p}</td><td class="n">${s.rate}%</td><td class="n">${won(s.offSum)}</td><td class="wrap note">${isUnited(r) ? '<span class="pill info">세대통합</span> ' : ''}${esc((r.special||'').split('\n')[0]).slice(0,60)}</td><td><button class="btn s" data-go="reports" data-sub='${JSON.stringify({ dept: d, preview: ls })}'>보기</button></td></tr>`
         : `<tr><td>${DEPTS[d]}</td><td><span class="pill warn">미제출</span></td><td class="n">${activeStudents(dd).length}</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td></td><td></td></tr>`).join('')}
       </tbody></table></div></div>
-      <div class="card"><h2>부서 연간계획서 <span class="r">확정된 계획서의 표어·말씀</span></h2><div class="tw"><table><thead><tr><th>부서</th><th>${YEAR}년</th><th>표어</th><th>${YEAR + 1}년</th><th></th></tr></thead><tbody>${plans.map(({ d, cur, next }) => `<tr><td>${DEPTS[d]}</td><td>${cur && cur.status === 'confirmed' ? '<span class="pill ok">확정</span>' : cur ? '<span class="pill warn">작성 중</span>' : '<span class="pill mute">없음</span>'}</td><td class="wrap">${esc((cur && cur.slogan) || '')}${cur && cur.verseRef ? ` <span class="note">(${esc(cur.verseRef)})</span>` : ''}</td><td>${next && next.status === 'confirmed' ? `<span class="pill ok">확정</span> <span class="note">${esc(next.slogan)}</span>` : next ? '<span class="pill warn">작성 중</span>' : '<span class="pill mute">미작성</span>'}</td><td><button class="btn s" data-go="plan" data-sub='${JSON.stringify({ dept: d, year: next ? YEAR + 1 : YEAR })}'>보기</button></td></tr>`).join('')}</tbody></table></div></div>
+      <div class="card"><h2>부서 연간계획서 <span class="r">확정된 계획서의 표어·말씀</span></h2><div class="tw"><table><thead><tr><th>부서</th><th>${YEAR}년</th><th>표어</th><th>${YEAR + 1}년</th><th></th></tr></thead><tbody>${plans.map(({ d, cur, next }) => `<tr><td>${DEPTS[d]}</td><td>${cur ? planPill(cur) : '<span class="pill mute">없음</span>'}</td><td class="wrap">${esc((cur && cur.slogan) || '')}${cur && cur.verseRef ? ` <span class="note">(${esc(cur.verseRef)})</span>` : ''}</td><td>${next ? `${planPill(next)}${next.status === 'confirmed' ? ` <span class="note">${esc(next.slogan)}</span>` : ''}` : '<span class="pill mute">미작성</span>'}</td><td><button class="btn s" data-go="plan" data-sub='${JSON.stringify({ dept: d, year: next ? YEAR + 1 : YEAR })}'>보기</button></td></tr>`).join('')}</tbody></table></div></div>
       <div class="grid2">
         <div class="card"><h2>공지 <span class="r">교육위원회 → 전 부서</span></h2><div class="list">${C().notices.sort((a,b) => a.date < b.date ? 1 : -1).map(n => `<div class="item"><div><div class="t">${esc(n.title)}</div><div class="d">${n.date} · ${esc(n.body)}</div></div><button class="btn s d edit-only" data-del-cn="${esc(n._id)}">삭제</button></div>`).join('') || '<div class="note">공지가 없습니다.</div>'}</div>
           <div class="row edit-only" style="margin-top:10px"><input type="text" id="cn-title" placeholder="공지 제목" style="flex:2"><input type="text" id="cn-body" placeholder="내용" style="flex:3"><button class="btn" id="cn-add">올리기</button></div></div>
@@ -1413,108 +1413,276 @@ BIND.monthly = () => { bindMonthNav(); const p = $('#m-print'); if (p) p.onclick
   const us = $('#m-unsnap'); if (us) us.onclick = async () => { await backend.del(`depts/${dd.id}/monthlySnaps/${m}`); dd.msnap[m] = null; renderHere(); toast('고정을 풀었습니다 — 지금 자료로 보입니다'); };
 };
 
-/* ───────────── 연간 계획 ───────────── */
-/* ───────────── 연간 계획서 ───────────── */
+/* ───────────── 연간 계획서 ─────────────
+   작성 순서: 1부 교회 공통 고정 일정(교육위원회) → 2부 예산(총액은 교육위원회, 세부는 부서) → 3부 글 부분 → 4부 조직 → 5부 월별 계획 → 6부 제출용 요약.
+   상태: 작성 중 → 부장 검토 → 교육위원회 제출 → 확정. 확정 뒤 바뀌는 예산은 "변경 기록"에만 적는다.
+   자료: depts/{d}/plans/{year} (부서 계획서) · committee/main/plans/{year} (교회 표어·부서별 총액 배정) · committee/main/events (고정 일정, kind: church·edu) */
+const PLAN_STATUS = { draft: ['작성 중', 'warn'], review: ['부장 검토', 'info'], submitted: ['교육위원회 제출', 'info'], confirmed: ['확정', 'ok'] };
+const planPill = p => { const [l, c] = PLAN_STATUS[p.status] || PLAN_STATUS.draft; return `<span class="pill ${c}">${l}</span>`; };
+const BUDGET_CATS = ['예배·교육비', '행사비', '심방·새가족비', '교사비', '비품·운영비', '예비비'];
+// 지난해 회계의 항목(예배·전도·양육·간식 등)을 예산안 항목으로 묶는다 — "지난해 집행" 칸에 참고로만 쓴다
+const PREV_CAT_MAP = { '예배·전도': '예배·교육비', '양육': '예배·교육비', '간식': '예배·교육비', '선물': '예배·교육비', '교제': '행사비', '행사': '행사비', '수련회': '행사비', '교사': '교사비', '비품': '비품·운영비', '기타': '비품·운영비', '심방': '심방·새가족비', '새가족': '심방·새가족비' };
+const toBudgetCat = c => BUDGET_CATS.includes(c) ? c : (PREV_CAT_MAP[c] || '비품·운영비');
 async function loadPlan(dd, year) {
   dd.plans = dd.plans || {};
   if (!(year in dd.plans)) dd.plans[year] = await backend.get(`depts/${dd.id}/plans/${year}`);
   return dd.plans[year];
 }
-function blankPlan(dd, year) { return { year, status: 'draft', confirmedAt: '', slogan: '', verse: '', verseRef: '', goals: [], methods: '', ministry: '', worship: '', notes: '', budget: year === YEAR ? (dd.doc.budgetPlan || []).map(x => ({ ...x })) : [], updated: today() }; }
+// 교육위원회가 정하는 해마다의 값: 교회 표어, 부서별 예산 총액
+async function loadCPlan(year) {
+  const c = await loadCommittee(); c.plans = c.plans || {};
+  if (!(year in c.plans)) c.plans[year] = (await backend.get(`committee/main/plans/${year}`)) || { year, churchSlogan: '', alloc: {}, note: '' };
+  return c.plans[year];
+}
+async function saveCPlan(cp) { cp.updated = today(); await backend.set(`committee/main/plans/${cp.year}`, cp); C().plans[cp.year] = cp; }
+function blankPlan(dd, year) { return { year, status: 'draft', confirmedAt: '', reviewedAt: '', submittedAt: '', approvedAt: '', slogan: '', verse: '', verseRef: '', goals: [], goalChecks: [], actions: [], review: [], meetings: [], methods: '', ministry: '', worship: '', notes: '', budget: year === YEAR ? (dd.doc.budgetPlan || []).map(x => ({ ...x })) : [], revenue: [], changes: [], updated: today() }; }
+// 지난 판 계획서에 없던 칸을 채운다(저장하지 않음)
+function normPlan(p) { ['goals', 'goalChecks', 'actions', 'review', 'meetings', 'budget', 'revenue', 'changes'].forEach(k => { if (!Array.isArray(p[k])) p[k] = []; }); if (!PLAN_STATUS[p.status]) p.status = p.status === 'confirmed' ? 'confirmed' : 'draft'; return p; }
 async function savePlan(dd, plan) { plan.updated = today(); await backend.set(`depts/${dd.id}/plans/${plan.year}`, plan); dd.plans[plan.year] = plan; if (plan.year === YEAR) { dd.doc.budgetPlan = plan.budget.map(x => ({ ...x })); await saveDeptDoc(dd.id); } }
 const planEvents = (dd, year) => dd.events.filter(e => (e.date || '').startsWith(String(year))).sort((a, b) => a.date < b.date ? -1 : 1);
+const fixedEvents = year => (S.committee ? S.committee.events : []).filter(e => (e.date || '').startsWith(String(year))).sort((a, b) => a.date < b.date ? -1 : 1);
+const budgetTotal = plan => plan.budget.reduce((a, b) => a + (+b.amount || 0), 0);
+const allocOf = (cp, d) => +((cp && cp.alloc && cp.alloc[d]) || 0);
+/* 교회력: 교회 규칙으로 정해지는 날짜를 해마다 계산한다 */
+function nthSunday(y, m, n) { const d = new Date(y, m - 1, 1); const off = (7 - d.getDay()) % 7; return iso(new Date(y, m - 1, 1 + off + (n - 1) * 7)); }
+function easterOf(y) { const a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451), mo = Math.floor((h + l - 7 * m + 114) / 31), da = ((h + l - 7 * m + 114) % 31) + 1; return new Date(y, mo - 1, da); }
+const md = d => `${+d.slice(5, 7)}/${+d.slice(8)}`;
+const shiftDay = (d, n) => { const t = new Date(d + 'T00:00:00'); t.setDate(t.getDate() + n); return iso(t); };
+function churchCalendar(y) {
+  const E = iso(easterOf(y)); const x25 = new Date(y, 11, 25); const xmas = x25.getDay() === 0 ? iso(x25) : shiftDay(iso(x25), -x25.getDay());
+  const rows = [
+    [nthSunday(y, 1, 1), '신년감사주일 · 성찬식(1) · 청지기 임명 · 청지기 헌신예배', 'church', '부서 예배', '1월 첫째 주'],
+    [nthSunday(y, 1, 3), '세계선교주일 (선교헌금 작정)', 'church', '부서 예배', '1월 셋째 주'],
+    [nthSunday(y, 2, 1), '세대통합예배', 'church', '전 부서 합동', '2월 첫째 주'],
+    [nthSunday(y, 2, 1), '장학위원 모임', 'edu', '교육위원회', '2월 첫째 주'],
+    [nthSunday(y, 2, 4), '장학수여식', 'edu', '장학생 부서', '2월 넷째 주'],
+    [nthSunday(y, 3, 1), `교회설립기념주일 (${y - 1956}주년) · 밀알찬양제`, 'church', '전 부서', '3월 첫째 주 · 1956년 설립'],
+    [shiftDay(E, -7), '종려주일', 'church', '부서 예배', `고난주간 ${md(shiftDay(E, -6))}~${md(shiftDay(E, -1))}`],
+    [E, '부활주일', 'church', '부서 예배, 연합 가능', ''],
+    [nthSunday(y, 4, 4), '한국성서대학교주일', 'church', '부서 예배', '4월 넷째 주'],
+    [nthSunday(y, 5, 1), '어린이주일 · 세대통합예배 · 성례식', 'church', '전 부서 합동, 세례 교육 마감', '5월 첫째 주'],
+    [nthSunday(y, 5, 2), '어버이주일', 'church', '부서 예배', '5월 둘째 주'],
+    [nthSunday(y, 5, 3), '교사주일 · 교사헌신예배', 'church', '교사 전원', '5월 셋째 주'],
+    [nthSunday(y, 7, 1), '맥추감사주일', 'church', '부서 예배', '7월 첫째 주'],
+    [nthSunday(y, 8, 1), '세대통합예배', 'church', '전 부서 합동', '8월 첫째 주'],
+    [nthSunday(y, 9, 1), '한국성서선교회주일', 'church', '부서 예배', '9월 첫째 주'],
+    [nthSunday(y, 11, 1), '일본단기선교 · 성례식', 'church', '세례 교육 마감', '11월 첫째 주'],
+    [nthSunday(y, 11, 3), '추수감사주일', 'church', '부서 예배, 별도 행사 없음', '11월 셋째 주'],
+    [xmas, '성탄주일', 'church', '성탄 축하 행사', x25.getDay() === 0 ? '' : `12/25가 ${DAYS[x25.getDay()]}요일 — 날짜는 교회 확인`],
+    [`${y}-12-31`, '송구영신예배', 'church', '전교인', ''],
+    ...Array.from({ length: 12 }, (_, i) => [nthSunday(y, i + 1, 1), '교육위원회 모임 (오후 1시)', 'edu', '부장·총무·회계 보고', '매월 첫째 주일']),
+  ];
+  return rows.map(([date, title, kind, activity, note]) => ({ date, title, kind, activity, note })).sort((a, b) => a.date < b.date ? -1 : 1);
+}
+const fixedKind = k => k === 'edu' ? '교육부 공통' : k === 'church' ? '교회' : '기타';
+/* 1부: 고정 일정 표 (부서는 읽기만, 교육위원회는 고치기) */
+function fixedCalendarCard(year, edit) {
+  const ev = fixedEvents(year);
+  return `<div class="card"><h2>1부. ${year}년 교회 공통 고정 일정 <span class="r">${ev.length}건 · 교육위원회가 정함${edit ? '' : ' · 부서는 고칠 수 없음'}</span></h2>
+    ${ev.length ? `<div class="tw"><table><thead><tr><th>날짜</th><th>일정</th><th>구분</th><th>부서 활동</th><th>비고</th>${edit ? '<th></th>' : ''}</tr></thead><tbody>${ev.map(e => `<tr><td style="white-space:nowrap">${fmtK(e.date).slice(5)}${e.end ? ' ~ ' + fmtK(e.end).slice(5) : ''}</td><td class="wrap">${esc(e.title)}</td><td>${fixedKind(e.kind)}</td><td class="wrap">${esc(e.activity || '')}${/금지/.test(e.activity || '') ? ' <span class="pill bad">부서 행사 금지</span>' : ''}</td><td class="wrap note">${esc(e.note || '')}</td>${edit ? `<td><button class="btn s d" data-del-fx="${esc(e._id || e.id)}">삭제</button></td>` : ''}</tr>`).join('')}</tbody></table></div>` : `<div class="note">${year}년 고정 일정이 아직 없습니다.${edit ? ' 아래 "교회력 자동 채우기"를 누르면 교회 규칙(신년감사·세계선교·세대통합·부활·어린이·어버이·교사·맥추·추수감사·성탄 등)으로 날짜를 계산해 넣습니다.' : ' 교육위원회에 요청하세요.'}</div>`}
+    ${edit ? `<div class="row" style="margin-top:10px;flex-wrap:wrap"><button class="btn" id="fx-auto">${year}년 교회력 자동 채우기</button><span class="note">이미 있는 날짜·이름은 건너뜁니다. 세례식·전교인 수련회·성경학교 기간처럼 교회가 정하는 날은 아래에서 직접 넣습니다.</span></div>
+    <div class="row" style="margin-top:8px;flex-wrap:wrap"><input type="date" id="fx-date" style="width:auto" value="${year}-01-01"><input type="date" id="fx-end" style="width:auto" title="끝나는 날(기간 행사만)"><input type="text" id="fx-title" placeholder="일정 이름" style="flex:1;min-width:160px"><select id="fx-kind" style="width:auto"><option value="church">교회</option><option value="edu">교육부 공통</option></select><input type="text" id="fx-act" placeholder="부서 활동 (예: 부서 행사 금지)" style="width:200px"><input type="text" id="fx-note" placeholder="비고" style="width:140px"><button class="btn" id="fx-add">추가</button></div>` : ''}</div>`;
+}
+/* 5부: 월별 계획표 — 고정 일정은 1부에서, 부서 행사는 연중 계획에서 */
+function monthPlanTable(dd, plan, edit) {
+  const y = plan.year; const fx = fixedEvents(y), ev = planEvents(dd, y);
+  const short = e => `${+e.date.slice(8)}일 ${esc(e.title)}`;
+  const clash = e => fx.some(f => f.date === e.date && /금지/.test(f.activity || ''));
+  return `<div class="tw"><table><thead><tr><th>월</th><th>주일</th><th>고정 일정 (1부)</th><th>부서 행사</th><th>예산 항목</th><th class="n">금액</th><th>담당</th></tr></thead><tbody>${Array.from({ length: 12 }, (_, i) => i + 1).map(m => { const f = fx.filter(e => +e.date.slice(5, 7) === m), d = ev.filter(e => +e.date.slice(5, 7) === m);
+    return `<tr><th style="white-space:nowrap">${m}월</th><td class="note" style="white-space:nowrap">${sundaysOf(y, m).map(d => +d.slice(8)).join('·')}</td><td class="wrap note">${f.map(short).join(' · ')}</td><td class="wrap">${d.map(e => `${short(e)}${clash(e) ? ' <span class="pill bad">겹침</span>' : ''}${edit ? ` <button class="btn s d" data-del-ev="${esc(e._id || e.id)}" title="삭제">×</button>` : ''}`).join('<br>')}</td><td class="wrap">${d.map(e => esc(e.cat || '')).join('<br>')}</td><td class="n">${d.map(e => e.amount ? won(e.amount) : '').join('<br>')}</td><td class="wrap">${d.map(e => esc(e.owner || '')).join('<br>')}</td></tr>`; }).join('')}
+    <tr class="sum"><td colspan="5">부서 행사 금액 합계</td><td class="n">${won(ev.reduce((a, e) => a + (+e.amount || 0), 0))}</td><td></td></tr></tbody></table></div>`;
+}
+/* 지난해 항목별 집행(예산안 항목으로 묶음) */
+function prevActualByCat(dd, year) {
+  const out = {}; dd.expenses.filter(e => (e.date || '').startsWith(String(year))).forEach(e => { const c = toBudgetCat(e.category || ''); out[c] = (out[c] || 0) + (+e.amount || 0); }); return out;
+}
+/* 6부: 제출용 한 장 요약 + 상세 (출력) */
 function planPaper(dd, plan) {
-  const ev = planEvents(dd, plan.year); const total = plan.budget.reduce((a, b) => a + (+b.amount || 0), 0);
-  const byMonth = {}; ev.forEach(e => { const m = +e.date.slice(5, 7); (byMonth[m] = byMonth[m] || []).push(e); });
-  const staff = visibleStaff(dd);
+  const ev = planEvents(dd, plan.year), fx = fixedEvents(plan.year); const total = budgetTotal(plan); const cp = (C().plans || {})[plan.year]; const alloc = allocOf(cp, dd.id);
+  const staff = visibleStaff(dd); const stu = activeStudents(dd).length;
   const para = t => esc(t || '').split('\n').map(l => `<p>${l || '&nbsp;'}</p>`).join('');
-  return `<section class="paper"><div class="hd"><div><h1>${plan.year}년 ${esc(dd.doc.name)} 연간교육계획서</h1><div class="sub">중앙성서교회 교육위원회</div></div><div class="meta">${plan.status === 'confirmed' ? `확정 ${esc(plan.confirmedAt)}` : '작성 중(초안)'}</div></div>
-    <h2>1. 개요</h2><table class="kv"><tbody><tr><th>표어</th><td><b>${esc(plan.slogan)}</b></td></tr><tr><th>주제 말씀</th><td>${esc(plan.verse)} ${plan.verseRef ? `(${esc(plan.verseRef)})` : ''}</td></tr><tr><th>교육 목표</th><td>${(plan.goals || []).filter(Boolean).map((g, i) => `${i + 1}. ${esc(g)}`).join('<br>')}</td></tr></tbody></table>
-    ${plan.methods ? `<h2>2. 교육 방법 및 실천 방안</h2><div class="lines">${para(plan.methods)}</div>` : ''}
-    <h2>3. 조직 편성</h2><table><tbody>${staff.map(t => `<tr><th style="width:18%">${esc(t.role)}</th><td>${esc(t.name)}${t.classId ? ' · ' + esc(t.classId) : ''}</td></tr>`).join('')}</tbody></table>
+  const byCat = {}; plan.budget.forEach(b => { byCat[b.category] = (byCat[b.category] || 0) + (+b.amount || 0); });
+  const goalsHtml = (plan.goals || []).filter(Boolean).map((g, i) => `${i + 1}. ${esc(g)}`).join('<br>');
+  const st = PLAN_STATUS[plan.status] ? PLAN_STATUS[plan.status][0] : '작성 중';
+  const hd = t => `<div class="hd"><div><h1>${plan.year}년 ${esc(dd.doc.name)} ${t}</h1><div class="sub">중앙성서교회 교육위원회</div></div><div class="meta">${st}${plan.confirmedAt ? ` ${esc(plan.confirmedAt)}` : ''}<br>작성 ${esc(plan.updated || '')}</div></div>`;
+  const major = ev.slice(0, 8).map(e => `${+e.date.slice(5, 7)}/${+e.date.slice(8)} ${esc(e.title)}${e.amount ? ` (${won(e.amount)}원)` : ''}`).join(' · ');
+  return `<section class="paper">${hd('연간교육계획 요약')}
+    <table class="kv"><tbody><tr><th>표어</th><td><b>${esc(plan.slogan)}</b>${cp && cp.churchSlogan ? `<div class="note">교회 표어: ${esc(cp.churchSlogan)}</div>` : ''}</td></tr><tr><th>주제성구</th><td>${esc(plan.verse)} ${plan.verseRef ? `(${esc(plan.verseRef)})` : ''}</td></tr><tr><th>교육목표</th><td>${goalsHtml}</td></tr>
+    <tr><th>조직</th><td>${staff.slice(0, 6).map(t => `${esc(t.role)} ${esc(t.name)}`).join(' · ')} / 교사 ${dd.doc.classes.filter(c => c.teacher).length}명 / ${esc(dd.doc.classLabel)} ${dd.doc.classes.length}개</td></tr>
+    <tr><th>재적</th><td>${stu}명 (출석부 기준)</td></tr>
+    <tr><th>${plan.year} 예산 총액</th><td><b>${won(total)}원</b>${alloc ? ` / 배정 ${won(alloc)}원${total > alloc ? ' <b>(초과)</b>' : ''}` : ''}</td></tr>
+    <tr><th>예산 구성</th><td>${BUDGET_CATS.filter(c => byCat[c]).map(c => `${c} ${won(byCat[c])}`).join(' / ')}${Object.keys(byCat).filter(c => !BUDGET_CATS.includes(c)).map(c => ` / ${esc(c)} ${won(byCat[c])}`).join('')}</td></tr>
+    <tr><th>주요 행사</th><td>${major || '—'}</td></tr>
+    ${plan.review.length ? `<tr><th>지난해 반영</th><td>${plan.review.slice(0, 2).map(r => esc(r.apply || r.why || '')).filter(Boolean).join(' · ')}</td></tr>` : ''}</tbody></table>
+    <h2>결재</h2><table><thead><tr><th>부장</th><th>교육디렉터</th><th>교육위원장</th><th>교장</th></tr></thead><tbody><tr><td style="height:48px"></td><td></td><td></td><td></td></tr></tbody></table>
+    <div class="ft"><b>중앙성서교회 교육위원회</b><span>요약 · ${esc(dd.doc.name)}-${plan.year}-연간계획서</span></div></section>
+    <section class="paper" style="margin-top:16px;break-before:page">${hd('연간교육계획서')}
+    <h2>1. 교회 공통 고정 일정</h2><table><thead><tr><th style="width:16%">날짜</th><th>일정</th><th style="width:22%">부서 활동</th></tr></thead><tbody>${fx.map(e => `<tr><td>${fmtK(e.date).slice(5)}</td><td>${esc(e.title)}</td><td>${esc(e.activity || '')}</td></tr>`).join('') || '<tr><td colspan="3">없음</td></tr>'}</tbody></table>
+    <h2>2. 예산안 (총 ${won(total)}원${alloc ? ` / 배정 ${won(alloc)}원` : ''})</h2><table><thead><tr><th>항목</th><th>세부 내용</th><th>쓰는 달·행사</th><th class="n">금액</th><th>비고</th></tr></thead><tbody>${plan.budget.map(b => `<tr><td>${esc(b.category)}</td><td>${esc(b.item)}</td><td>${esc(b.when || '')}</td><td class="n">${won(b.amount)}</td><td>${esc(b.note || '')}</td></tr>`).join('')}<tr class="sum"><td colspan="3">합계</td><td class="n">${won(total)}</td><td></td></tr></tbody></table>
+    ${plan.revenue.length ? `<h3 style="font-size:12px;margin:8px 0 4px">2-3. 수입이 있는 행사</h3><table><thead><tr><th>행사</th><th class="n">인원</th><th class="n">1인 참가비</th><th class="n">참가비 합계</th><th class="n">찬조·기타</th><th class="n">교회 예산</th><th class="n">지출 계획</th></tr></thead><tbody>${plan.revenue.map(r => `<tr><td>${esc(r.title)}</td><td class="n">${r.people || ''}</td><td class="n">${won(r.fee)}</td><td class="n">${won((+r.people || 0) * (+r.fee || 0))}</td><td class="n">${won(r.other)}</td><td class="n">${won(r.church)}</td><td class="n">${won(r.spend)}</td></tr>`).join('')}</tbody></table>` : ''}
+    ${plan.changes.length ? `<h3 style="font-size:12px;margin:8px 0 4px">2-4. 변경 기록</h3><table><thead><tr><th>날짜</th><th>항목</th><th class="n">전</th><th class="n">후</th><th>사유</th><th>승인</th></tr></thead><tbody>${plan.changes.map(c => `<tr><td>${esc(c.date)}</td><td>${esc(c.item)}</td><td class="n">${won(c.before)}</td><td class="n">${won(c.after)}</td><td>${esc(c.why)}</td><td>${esc(c.approved || '')}</td></tr>`).join('')}</tbody></table>` : ''}
+    <h2>3. 표어 · 주제성구 · 교육목표</h2><table class="kv"><tbody><tr><th>표어</th><td><b>${esc(plan.slogan)}</b></td></tr><tr><th>주제성구</th><td>${esc(plan.verse)} ${plan.verseRef ? `(${esc(plan.verseRef)})` : ''}</td></tr></tbody></table>
+    <table style="margin-top:6px"><thead><tr><th style="width:6%">번호</th><th>교육목표</th><th style="width:30%">어떻게 확인하나</th></tr></thead><tbody>${(plan.goals || []).map((g, i) => `<tr><td>${i + 1}</td><td>${esc(g)}</td><td>${esc(plan.goalChecks[i] || '')}</td></tr>`).join('') || '<tr><td colspan="3">없음</td></tr>'}</tbody></table>
+    ${plan.actions.length ? `<h3 style="font-size:12px;margin:8px 0 4px">3-3. 세부실천사항</h3><table><thead><tr><th>목표</th><th>실천사항</th><th>시기</th><th>연결 행사</th><th>연결 예산</th><th>담당</th></tr></thead><tbody>${plan.actions.map(a => `<tr><td>${esc(a.goal)}</td><td>${esc(a.text)}</td><td>${esc(a.when || '')}</td><td>${esc(a.event || '')}</td><td>${esc(a.cat || '')}</td><td>${esc(a.owner || '')}</td></tr>`).join('')}</tbody></table>` : ''}
+    ${plan.methods ? `<h3 style="font-size:12px;margin:8px 0 4px">교육 방법 및 실천 방안</h3><div class="lines">${para(plan.methods)}</div>` : ''}
+    ${plan.review.length ? `<h3 style="font-size:12px;margin:8px 0 4px">3-4. 지난해 돌아보기</h3><table><thead><tr><th>${plan.year - 1} 목표</th><th>되었나</th><th>달랐던 이유</th><th>${plan.year}에 반영</th></tr></thead><tbody>${plan.review.map(r => `<tr><td>${esc(r.goal)}</td><td>${esc(r.done || '')}</td><td>${esc(r.why || '')}</td><td>${esc(r.apply || '')}</td></tr>`).join('')}</tbody></table>` : ''}
+    <h2>4. 조직 · ${esc(dd.doc.classLabel)} 편성 · 정기 모임</h2><table><tbody>${staff.map(t => `<tr><th style="width:18%">${esc(t.role)}</th><td>${esc(t.name)}${t.classId ? ' · ' + esc(t.classId) : ''}</td></tr>`).join('')}</tbody></table>
     <table style="margin-top:6px"><thead><tr><th>${esc(dd.doc.classLabel)}</th><th>담임</th><th>보조</th><th class="n">인원</th></tr></thead><tbody>${dd.doc.classes.map(c => `<tr><td>${esc(c.name)}</td><td>${esc(c.teacher || '')}</td><td>${esc(c.assistant || '')}</td><td class="n">${classStudents(dd, c.id).length}</td></tr>`).join('')}</tbody></table>
-    ${plan.ministry ? `<h2>4. 세부 사역(직무 분담)</h2><div class="lines">${para(plan.ministry)}</div>` : ''}
-    ${plan.worship ? `<h2>5. 예배 순서 및 내용</h2><div class="lines">${para(plan.worship)}</div>` : ''}
-    <h2>6. 연중 계획</h2><table><thead><tr><th style="width:8%">월</th><th>행사·일정</th></tr></thead><tbody>${Array.from({ length: 12 }, (_, i) => i + 1).map(m => `<tr><th>${m}월</th><td>${(byMonth[m] || []).map(e => `${+e.date.slice(8)}일 ${esc(e.title)}`).join(' · ') || ''}</td></tr>`).join('')}</tbody></table>
-    <h2>7. 예산 (총 ${won(total)}원)</h2><table><thead><tr><th>사역</th><th>품목·내역</th><th class="n">금액</th><th>비고</th></tr></thead><tbody>${plan.budget.map(b => `<tr><td>${esc(b.category)}</td><td>${esc(b.item)}</td><td class="n">${won(b.amount)}</td><td>${esc(b.note || '')}</td></tr>`).join('')}<tr class="sum"><td colspan="2">합계</td><td class="n">${won(total)}</td><td></td></tr></tbody></table>
-    ${plan.notes ? `<h2>8. 참고 사항</h2><div class="lines">${para(plan.notes)}</div>` : ''}
+    ${plan.meetings.length ? `<table style="margin-top:6px"><thead><tr><th>모임</th><th>요일·시간</th><th>장소</th><th>참석</th></tr></thead><tbody>${plan.meetings.map(m => `<tr><td>${esc(m.name)}</td><td>${esc(m.when || '')}</td><td>${esc(m.place || '')}</td><td>${esc(m.who || '')}</td></tr>`).join('')}</tbody></table>` : ''}
+    ${plan.ministry ? `<h3 style="font-size:12px;margin:8px 0 4px">세부 사역(직무 분담)</h3><div class="lines">${para(plan.ministry)}</div>` : ''}
+    ${plan.worship ? `<h3 style="font-size:12px;margin:8px 0 4px">예배 순서 및 내용</h3><div class="lines">${para(plan.worship)}</div>` : ''}
+    <h2>5. 월별 행사 계획</h2>${monthPlanTable(dd, plan, false)}
+    ${plan.notes ? `<h2>참고 사항</h2><div class="lines">${para(plan.notes)}</div>` : ''}
     <div class="ft"><b>중앙성서교회 교육위원회</b><span>CBCS에서 생성 · ${esc(dd.doc.name)}-${plan.year}-연간계획서.pdf</span></div></section>`;
+}
+/* 줄을 넣고 빼는 작은 표(실천사항·돌아보기·정기 모임·수입 행사·변경 기록) */
+function rowsEditor(key, rows, cols, edit, extra) {
+  const cell = (r, c, i) => { const v = r[c.k] ?? ''; if (!edit) return `<td class="${c.n ? 'n' : 'wrap'}">${c.n && v !== '' ? won(v) : esc(String(v))}</td>`;
+    if (c.opts) return `<td><select data-re="${key}" data-i="${i}" data-k="${c.k}">${['', ...c.opts].map(o => `<option value="${esc(o)}" ${String(v) === String(o) ? 'selected' : ''}>${esc(o || '—')}</option>`).join('')}</select></td>`;
+    return `<td><input type="${c.n ? 'number' : 'text'}" data-re="${key}" data-i="${i}" data-k="${c.k}" value="${esc(String(v))}" style="width:100%;min-width:${c.w || 80}px" placeholder="${esc(c.p || '')}"></td>`; };
+  return `<div class="tw"><table><thead><tr>${cols.map(c => `<th class="${c.n ? 'n' : ''}">${esc(c.l)}</th>`).join('')}${edit ? '<th></th>' : ''}</tr></thead><tbody>${rows.map((r, i) => `<tr>${cols.map(c => cell(r, c, i)).join('')}${edit ? `<td><button class="btn s d" data-re-del="${key}" data-i="${i}">×</button></td>` : ''}</tr>`).join('') || `<tr><td colspan="${cols.length + 1}" class="note">없음</td></tr>`}${extra || ''}</tbody></table></div>${edit ? `<div class="row" style="margin-top:6px"><button class="btn s" data-re-add="${key}">줄 추가</button></div>` : ''}`;
+}
+function readRowsEditor(key, cols, rows) { const out = rows.map(r => ({ ...r })); document.querySelectorAll(`[data-re="${key}"]`).forEach(el => { const i = +el.dataset.i; if (!out[i]) out[i] = {}; const c = cols.find(x => x.k === el.dataset.k); out[i][el.dataset.k] = c && c.n ? (+el.value || 0) : el.value.trim(); }); return out; }
+const ACTION_COLS = plan => [{ k: 'goal', l: '목표', opts: (plan.goals || []).map((_, i) => String(i + 1)), w: 50 }, { k: 'text', l: '실천사항', w: 200 }, { k: 'when', l: '시기', w: 70, p: '예: 3월' }, { k: 'event', l: '연결 행사', w: 110 }, { k: 'cat', l: '연결 예산', opts: BUDGET_CATS }, { k: 'owner', l: '담당', w: 70 }];
+const REVIEW_COLS = y => [{ k: 'goal', l: `${y - 1} 목표`, w: 160 }, { k: 'done', l: '되었나', opts: ['되었음', '일부', '안 됨'] }, { k: 'why', l: '달랐던 이유', w: 160 }, { k: 'apply', l: `${y}에 반영`, w: 160 }];
+const MEET_COLS = [{ k: 'name', l: '모임', w: 120 }, { k: 'when', l: '요일·시간', w: 110 }, { k: 'place', l: '장소', w: 90 }, { k: 'who', l: '참석', w: 90 }];
+const REV_COLS = [{ k: 'title', l: '행사', w: 120 }, { k: 'people', l: '예상 인원', n: true, w: 60 }, { k: 'fee', l: '1인 참가비', n: true, w: 90 }, { k: 'other', l: '찬조·기타 수입', n: true, w: 90 }, { k: 'church', l: '교회 예산 지원', n: true, w: 90 }, { k: 'spend', l: '지출 계획', n: true, w: 90 }, { k: 'note', l: '비고', w: 80 }];
+const CHG_COLS = [{ k: 'date', l: '날짜', w: 100 }, { k: 'item', l: '항목', w: 120 }, { k: 'before', l: '전 금액', n: true, w: 90 }, { k: 'after', l: '후 금액', n: true, w: 90 }, { k: 'why', l: '사유', w: 140 }, { k: 'approved', l: '승인', w: 80 }];
+/* 교육위원회: 2-1 부서별 총액 배정표 + 교회 표어 */
+async function allocCard(year, cp) {
+  const rows = [];
+  for (const d of Object.keys(DEPTS)) { const dd = await loadDept(d); const p = await loadPlan(dd, year); const led = y => dd.doc.ledgers.find(l => l.kind === 'budget' && +(l.year || YEAR) === y); const ex = y => dd.expenses.filter(e => (e.date || '').startsWith(String(y))).reduce((a, e) => a + (+e.amount || 0), 0);
+    rows.push({ d, dd, p, b1: (led(year - 2) || {}).budget || 0, e1: ex(year - 2), b2: (led(year - 1) || {}).budget || 0, e2: ex(year - 1) }); }
+  const sum = k => rows.reduce((a, r) => a + (+r[k] || 0), 0);
+  return `<div class="card"><h2>2부. 부서별 예산 총액 배정 <span class="r">${year}년 · 교육위원회가 정하면 부서는 그 안에서 세부를 나눕니다</span></h2>
+    <div class="fields" style="margin-bottom:10px"><label class="f" style="grid-column:1/-1"><span>${year}년 교회 표어 (부서 계획서 맨 위에 보입니다)</span><input type="text" id="cp-slogan" value="${esc(cp.churchSlogan || '')}"></label></div>
+    <div class="tw"><table><thead><tr><th>부서</th><th class="n">${year - 2} 예산</th><th class="n">${year - 2} 집행</th><th class="n">${year - 1} 예산</th><th class="n">${year - 1} 집행</th><th class="n">${year} 배정</th><th class="n">부서 세부 합계</th><th>계획서</th></tr></thead><tbody>
+    ${rows.map(r => { const t = r.p ? budgetTotal(normPlan(r.p)) : 0; const a = allocOf(cp, r.d); return `<tr><td>${DEPTS[r.d]}</td><td class="n">${r.b1 ? won(r.b1) : '—'}</td><td class="n">${r.e1 ? won(r.e1) : '—'}</td><td class="n">${r.b2 ? won(r.b2) : '—'}</td><td class="n">${r.e2 ? won(r.e2) : '—'}</td><td class="n"><input type="number" data-alloc="${r.d}" value="${a || ''}" style="width:120px;text-align:right"></td><td class="n">${r.p ? won(t) : '—'}${a && t > a ? ' <span class="pill bad">초과</span>' : ''}</td><td>${r.p ? planPill(r.p) : '<span class="pill mute">없음</span>'} <button class="btn s" data-go="plan" data-sub='${JSON.stringify({ dept: r.d, year })}'>보기</button></td></tr>`; }).join('')}
+    <tr class="sum"><td>합계</td><td class="n">${won(sum('b1'))}</td><td class="n">${won(sum('e1'))}</td><td class="n">${won(sum('b2'))}</td><td class="n">${won(sum('e2'))}</td><td class="n">${won(Object.keys(DEPTS).reduce((a, d) => a + allocOf(cp, d), 0))}</td><td></td><td></td></tr></tbody></table></div>
+    <div class="row" style="margin-top:10px"><button class="btn p" id="cp-save">배정 저장</button><span class="note">예산·집행 칸은 장부와 지출에서 자동으로 채워집니다. 비어 있으면 아직 자료가 없는 것입니다.</span></div></div>`;
 }
 VIEWS.plan = async () => {
   let dd; if (isCommittee()) dd = await loadDept(S.sub.dept || 'kinder'); else dd = D();
   const year = S.sub.year || YEAR;
-  const plan = (await loadPlan(dd, year)) || blankPlan(dd, year);
-  if (S.sub.print) return `<div class="topbar no-print"><div><h1>연간계획서 출력</h1></div><div class="row"><button class="btn" id="pl-back">돌아가기</button><button class="btn p" id="pl-print">PDF로 저장 / 인쇄</button></div></div>${planPaper(dd, plan)}`;
-  const edit = canEdit() && !isCommittee() && plan.status !== 'confirmed';
-  const evs = planEvents(dd, year); const total = plan.budget.reduce((a, b) => a + (+b.amount || 0), 0);
-  const pick = isCommittee() ? `<div class="row" style="margin-bottom:10px">${Object.entries(DEPTS).map(([k, v]) => `<button class="btn ${dd.id === k ? 'p' : ''}" data-dept="${esc(k)}">${v}</button>`).join('')}</div>` : '';
-  const ro = (v, ml) => edit ? '' : 'readonly';
-  return `<div class="topbar"><div><h1>${year}년 연간계획서${isCommittee() ? ' — ' + esc(dd.doc.name) : ''}</h1><div class="sub">${plan.status === 'confirmed' ? `<span class="pill ok">확정</span> ${esc(plan.confirmedAt)} · 메인 화면에 알림` : '<span class="pill warn">작성 중</span> 확정하면 메인 화면에 알려집니다'}</div></div>
-    <div class="row"><select id="pl-year" style="width:auto">${[YEAR - 1, YEAR, YEAR + 1].map(y => `<option ${y === year ? 'selected' : ''}>${y}</option>`).join('')}</select>${canEdit() ? '<button class="btn" id="pl-open-print">계획서 출력</button>' : ''}${canEdit() && !isCommittee() ? (plan.status === 'confirmed' ? '<button class="btn" id="pl-unconfirm">확정 취소(수정)</button>' : `<button class="btn" id="pl-copy">${year - 1}년에서 가져오기</button><button class="btn" id="pl-save">저장</button><button class="btn p" id="pl-confirm">확정</button>`) : ''}</div></div>
-  ${pick}
+  const plan = normPlan((await loadPlan(dd, year)) || blankPlan(dd, year)); const cp = await loadCPlan(year);
+  if (S.sub.print) return `<div class="topbar no-print"><div><h1>연간계획서 출력</h1><div class="sub">첫 장은 교육위원회 제출용 요약, 그 뒤는 상세</div></div><div class="row"><button class="btn" id="pl-back">돌아가기</button><button class="btn p" id="pl-print">PDF로 저장 / 인쇄</button></div></div>${planPaper(dd, plan)}`;
+  const cm = isCommittee(); const edit = canEdit() && !cm && plan.status !== 'confirmed';
+  const evs = planEvents(dd, year); const total = budgetTotal(plan); const alloc = allocOf(cp, dd.id); const over = alloc && total > alloc;
+  const prevA = prevActualByCat(dd, year - 1); const prevTotal = Object.values(prevA).reduce((a, b) => a + b, 0);
+  const pick = cm ? `<div class="row" style="margin-bottom:10px">${Object.entries(DEPTS).map(([k, v]) => `<button class="btn ${dd.id === k ? 'p' : ''}" data-dept="${esc(k)}">${v}</button>`).join('')}</div>` : '';
+  const ro = () => edit ? '' : 'readonly';
+  const byCat = {}; plan.budget.forEach(b => { byCat[b.category] = (byCat[b.category] || 0) + (+b.amount || 0); });
+  const stBtns = cm ? (canEdit() && plan.status === 'submitted' ? `<button class="btn p" id="pl-approve">확정(승인)</button><button class="btn" id="pl-return">돌려보내기</button>` : canEdit() && plan.status === 'confirmed' ? '<button class="btn" id="pl-unconfirm">확정 취소</button>' : '')
+    : canEdit() ? (plan.status === 'confirmed' ? '<button class="btn" id="pl-unconfirm">확정 취소(수정)</button>' : `<button class="btn" id="pl-copy">${year - 1}년에서 가져오기</button><button class="btn" id="pl-save">저장</button>${plan.status === 'draft' ? '<button class="btn" id="pl-review">부장 검토로</button>' : ''}${plan.status !== 'submitted' ? '<button class="btn" id="pl-submit">교육위원회 제출</button>' : ''}<button class="btn p" id="pl-confirm">확정</button>`) : '';
+  const steps = ['draft', 'review', 'submitted', 'confirmed']; const si = steps.indexOf(plan.status);
+  const stepBar = `<div class="row" style="gap:4px;flex-wrap:wrap;margin:6px 0 2px">${steps.map((s, i) => `<span class="pill ${i < si ? 'mute' : i === si ? PLAN_STATUS[s][1] : 'mute'}" style="${i === si ? 'font-weight:700' : 'opacity:.6'}">${i + 1}. ${PLAN_STATUS[s][0]}</span>${i < 3 ? '<span class="note">→</span>' : ''}`).join('')}</div>`;
+  return `<div class="topbar"><div><h1>${year}년 연간계획서${cm ? ' — ' + esc(dd.doc.name) : ''}</h1><div class="sub">${planPill(plan)} ${plan.status === 'confirmed' ? `${esc(plan.confirmedAt)} · 메인 화면에 알림` : plan.status === 'submitted' ? `${esc(plan.submittedAt)} 제출 · 교육위원회 확정을 기다림` : '1부 → 2부 → 3·4·5부 → 6부 순서로 채웁니다'}</div></div>
+    <div class="row"><select id="pl-year" style="width:auto">${[YEAR - 1, YEAR, YEAR + 1].map(y => `<option ${y === year ? 'selected' : ''}>${y}</option>`).join('')}</select>${canEdit() ? '<button class="btn" id="pl-open-print">계획서 출력</button>' : ''}${stBtns}</div></div>
+  ${pick}${stepBar}
   <div class="stack">
-    <div class="card"><h2>1. 개요</h2><div class="fields">
-      <label class="f" style="grid-column:1/-1"><span>표어</span><input type="text" id="pl-slogan" value="${esc(plan.slogan)}" ${ro()} placeholder="예: 기도를 사랑하는 어린이"></label>
-      <label class="f" style="grid-column:span 3"><span>주제 말씀</span><input type="text" id="pl-verse" value="${esc(plan.verse)}" ${ro()}></label>
-      <label class="f"><span>본문</span><input type="text" id="pl-ref" value="${esc(plan.verseRef)}" ${ro()} placeholder="마태복음 7:7"></label>
-      <label class="f" style="grid-column:1/-1"><span>교육 목표 (한 줄에 하나)</span><textarea id="pl-goals" ${ro()}>${esc((plan.goals || []).join('\n'))}</textarea></label>
-      <label class="f" style="grid-column:1/-1"><span>교육 방법 및 실천 방안</span><textarea id="pl-methods" ${ro()} style="min-height:110px">${esc(plan.methods)}</textarea></label>
-    </div></div>
+    ${fixedCalendarCard(year, cm && canEdit())}
+    ${cm ? await allocCard(year, cp) : ''}
+    <div class="card"><h2>2부. 예산안 <span class="r">합계 ${won(total)}원${alloc ? ` / 배정 ${won(alloc)}원` : ' / 배정 총액 미정(교육위원회)'}${over ? ' · <b style="color:var(--bad)">초과</b>' : ''}</span></h2>
+      ${over ? `<div class="hint" style="margin-bottom:8px">세부 항목 합계가 배정 총액보다 ${won(total - alloc)}원 많습니다. 줄이지 않으면 제출·확정할 수 없습니다.</div>` : ''}
+      <div class="tw"><table><thead><tr><th>항목</th><th>세부 내용</th><th>쓰는 달·행사</th><th class="n">${year - 1} 집행</th><th class="n">${year} 계획</th><th>비고</th>${edit ? '<th></th>' : ''}</tr></thead><tbody>${plan.budget.map((b, i) => `<tr><td>${esc(b.category)}</td><td class="wrap">${esc(b.item)}</td><td class="wrap note">${esc(b.when || '')}</td><td class="n note">${prevA[b.category] && !plan.budget.slice(0, i).some(x => x.category === b.category) ? won(prevA[b.category]) : ''}</td><td class="n">${won(b.amount)}</td><td class="wrap note">${esc(b.note || '')}</td>${edit ? `<td><button class="btn s d" data-del-b="${esc(i)}">삭제</button></td>` : ''}</tr>`).join('')}
+      <tr class="sum"><td colspan="3">합계 (${BUDGET_CATS.filter(c => byCat[c]).map(c => `${c} ${won(byCat[c])}`).join(' · ') || '항목 없음'})</td><td class="n">${won(prevTotal)}</td><td class="n" ${over ? 'style="color:var(--bad)"' : ''}>${won(total)}</td><td colspan="2">${alloc ? `배정 ${won(alloc)} · 남음 ${won(alloc - total)}` : ''}</td></tr></tbody></table></div>
+      ${edit ? `<div class="row" style="margin-top:10px;flex-wrap:wrap"><input type="text" id="b-cat" list="b-cats" placeholder="항목" style="width:120px" value="${esc(BUDGET_CATS[0])}"><datalist id="b-cats">${[...new Set([...BUDGET_CATS, ...plan.budget.map(b => b.category)])].map(c => `<option value="${esc(c)}">`).join('')}</datalist><input type="text" id="b-item" placeholder="세부 내용 (예: 교재, 여름 수련회)" style="flex:1;min-width:160px"><input type="text" id="b-when" placeholder="쓰는 달·행사" style="width:110px"><input type="number" id="b-amt" placeholder="금액" style="width:120px"><input type="text" id="b-note" placeholder="비고" style="width:100px"><button class="btn" id="b-add">추가</button></div><div class="note" style="margin-top:4px">금액 칸에서 Enter를 눌러도 추가됩니다. 참가비가 있는 행사는 교회 예산 지원액만 여기에 적고, 참가비는 아래 2-3에 적습니다.</div>` : ''}
+      <div class="note" style="margin-top:8px">${year - 1} 집행은 그해 지출을 예산안 항목으로 묶어 참고로 보여 줍니다. 확정하면 예산 합계가 ${year}년 회계 장부("${esc((dd.doc.ledgers.find(l => l.kind === 'budget' && +(l.year || YEAR) === year) || dd.doc.ledgers.find(l => l.kind === 'budget') || {}).name || '정규 예산')}")의 연간 예산이 됩니다.</div>
+      <h3 style="font-size:13px;margin:14px 0 6px">2-3. 수입이 있는 행사 <span class="note">참가비·찬조금 — 교회 예산과 섞지 않습니다</span></h3>${rowsEditor('revenue', plan.revenue, REV_COLS, edit)}
+      <h3 style="font-size:13px;margin:14px 0 6px">2-4. 변경 기록 <span class="note">확정 뒤 바뀐 금액(추경)</span></h3>${rowsEditor('changes', plan.changes, CHG_COLS, edit || (canEdit() && !cm && plan.status === 'confirmed'))}</div>
+    <div class="card"><h2>3부. 표어 · 주제성구 · 교육목표 · 세부실천사항</h2><div class="fields">
+      ${cp.churchSlogan ? `<div class="note" style="grid-column:1/-1">${year}년 교회 표어: <b>${esc(cp.churchSlogan)}</b></div>` : ''}
+      <label class="f" style="grid-column:1/-1"><span>부서 표어 (한 줄)</span><input type="text" id="pl-slogan" value="${esc(plan.slogan)}" ${ro()} placeholder="예: 기도를 사랑하는 어린이"></label>
+      <label class="f" style="grid-column:span 3"><span>주제성구 본문</span><input type="text" id="pl-verse" value="${esc(plan.verse)}" ${ro()}></label>
+      <label class="f"><span>책 장:절</span><input type="text" id="pl-ref" value="${esc(plan.verseRef)}" ${ro()} placeholder="마태복음 7:7"></label>
+      </div><div class="grid2" style="margin-top:10px">
+      <label class="f"><span>교육목표 3~5개 (한 줄에 하나 · "학생이 어떻게 되길 바라는가")</span><textarea id="pl-goals" ${ro()} style="min-height:96px">${esc((plan.goals || []).join('\n'))}</textarea></label>
+      <label class="f"><span>어떻게 확인하나 (목표와 같은 줄 순서 · 예: 연말 출석률, 암송 인원)</span><textarea id="pl-checks" ${ro()} style="min-height:96px">${esc((plan.goalChecks || []).join('\n'))}</textarea></label>
+      </div>
+      <h3 style="font-size:13px;margin:14px 0 6px">3-3. 세부실천사항 <span class="note">목표마다 2~3개 · 행사(5부)나 예산 항목(2부)과 연결 — 연결이 없으면 "말뿐인 항목"</span></h3>${rowsEditor('actions', plan.actions, ACTION_COLS(plan), edit)}
+      ${edit && plan.actions.some(a => !a.event && !a.cat) ? '<div class="note" style="margin-top:4px">연결 행사·연결 예산이 모두 빈 실천사항이 있습니다.</div>' : ''}
+      <h3 style="font-size:13px;margin:14px 0 6px">3-4. 지난해 돌아보기 <span class="note">${year - 1} 계획과 실제가 달랐던 점만 짧게</span></h3>${rowsEditor('review', plan.review, REVIEW_COLS(year), edit)}
+      <details style="margin-top:12px"><summary class="note">이전 양식 칸 (교육 방법·실천 방안) — 2026년까지 쓰던 칸</summary><label class="f" style="margin-top:6px"><span>교육 방법 및 실천 방안</span><textarea id="pl-methods" ${ro()} style="min-height:80px">${esc(plan.methods)}</textarea></label></details></div>
     <div class="grid2">
-      <div class="card"><h2>3. 조직 편성 <span class="r">출석부의 교사·반 편성에서 자동</span></h2><div class="tw"><table><tbody>${visibleStaff(dd).map(t => `<tr><td>${esc(t.role)}</td><td>${esc(t.name)}</td><td class="note">${esc(t.classId || '')}</td></tr>`).join('')}</tbody></table></div><div class="note" style="margin-top:6px">${dd.doc.classes.map(c => `${esc(c.name)}: ${esc(c.teacher || '-')}`).join(' · ')}</div></div>
-      <div class="card"><h2>4·5. 세부 사역 · 예배 순서</h2><div class="stack">
-        <label class="f"><span>세부 사역(직무 분담)</span><textarea id="pl-ministry" ${ro()}>${esc(plan.ministry)}</textarea></label>
-        <label class="f"><span>예배 순서 및 내용</span><textarea id="pl-worship" ${ro()}>${esc(plan.worship)}</textarea></label></div></div>
+      <div class="card"><h2>4부. 조직 · ${esc(dd.doc.classLabel)} 편성 <span class="r">출석부의 교사·${esc(dd.doc.classLabel)} 편성에서 자동</span></h2><div class="tw"><table><tbody>${visibleStaff(dd).map(t => `<tr><td>${esc(t.role)}</td><td>${esc(t.name)}</td><td class="note">${esc(t.classId || '')}</td></tr>`).join('') || '<tr><td class="note">출석부에 교사·임원이 없습니다.</td></tr>'}</tbody></table></div>
+        <div class="tw" style="margin-top:8px"><table><thead><tr><th>${esc(dd.doc.classLabel)}</th><th>담임</th><th>보조</th><th class="n">인원</th></tr></thead><tbody>${dd.doc.classes.map(c => `<tr><td>${esc(c.name)}</td><td>${esc(c.teacher || '')}</td><td>${esc(c.assistant || '')}</td><td class="n">${classStudents(dd, c.id).length}</td></tr>`).join('')}<tr class="sum"><td>합계</td><td>교사 ${dd.doc.classes.filter(c => c.teacher).length}명</td><td></td><td class="n">${activeStudents(dd).length}명</td></tr></tbody></table></div>
+        ${dd.id === 'young' ? '<div class="note" style="margin-top:6px">청년부 임원은 회장·부회장·총무·서기·회계 5명. 팀장·팸장(목장)은 임원이 아닌 별도 칸입니다.</div>' : ''}
+        <h3 style="font-size:13px;margin:14px 0 6px">4-3. 정기 모임</h3>${rowsEditor('meetings', plan.meetings, MEET_COLS, edit)}
+        <details style="margin-top:12px"><summary class="note">이전 양식 칸 (세부 사역 · 예배 순서)</summary><div class="stack" style="margin-top:6px"><label class="f"><span>세부 사역(직무 분담)</span><textarea id="pl-ministry" ${ro()}>${esc(plan.ministry)}</textarea></label><label class="f"><span>예배 순서 및 내용</span><textarea id="pl-worship" ${ro()}>${esc(plan.worship)}</textarea></label></div></details></div>
+      <div class="card"><h2>5부. 부서 행사 <span class="r">${evs.length}건 · 달력과 주일·월간 보고서 일정에 연결</span></h2><div class="list" style="max-height:420px;overflow:auto">${evs.map(e => `<div class="item"><div><div class="t">${esc(e.title)}${fixedEvents(year).some(f => f.date === e.date && /금지/.test(f.activity || '')) ? ' <span class="pill bad">고정 일정과 겹침</span>' : ''}</div><div class="d">${fmtK(e.date)}${e.end ? ' ~ ' + fmtK(e.end) : ''}${e.cat ? ' · ' + esc(e.cat) : ''}${e.amount ? ' · ' + won(e.amount) + '원' : ''}${e.owner ? ' · ' + esc(e.owner) : ''}${e.note ? ' · ' + esc(e.note) : ''}</div></div>${edit ? `<button class="btn s d" data-del-ev="${e._id || e.id}">삭제</button>` : ''}</div>`).join('') || '<div class="note">행사가 없습니다. 달만 정해졌으면 그달 첫 주일 날짜로 넣고, 확정되면 날짜를 고치세요.</div>'}</div>
+        ${edit ? `<div class="row" style="margin-top:10px;flex-wrap:wrap"><input type="date" id="ev-date" style="width:auto" value="${esc(year)}-01-01"><input type="text" id="ev-title" placeholder="행사 이름" style="flex:1;min-width:140px"><input type="text" id="ev-cat" list="b-cats2" placeholder="예산 항목" style="width:110px"><datalist id="b-cats2">${BUDGET_CATS.map(c => `<option value="${esc(c)}">`).join('')}</datalist><input type="number" id="ev-amt" placeholder="금액" style="width:100px"><input type="text" id="ev-owner" placeholder="담당" style="width:80px"><button class="btn" id="ev-add">추가</button></div>` : ''}</div>
     </div>
-    <div class="grid2">
-      <div class="card"><h2>6. 연중 계획 <span class="r">${evs.length}건 · 달력과 주일 보고서 일정에 연결</span></h2><div class="list" style="max-height:520px;overflow:auto">${evs.map(e => `<div class="item"><div><div class="t">${esc(e.title)}</div><div class="d">${fmtK(e.date)}${e.end ? ' ~ ' + fmtK(e.end) : ''}${e.note ? ' · ' + esc(e.note) : ''}</div></div>${edit ? `<button class="btn s d" data-del-ev="${e._id || e.id}">삭제</button>` : ''}</div>`).join('') || '<div class="note">일정이 없습니다.</div>'}</div>
-        ${edit ? `<div class="row" style="margin-top:10px"><input type="date" id="ev-date" style="width:auto" value="${esc(year)}-01-01"><input type="text" id="ev-title" placeholder="행사 이름" style="flex:1"><button class="btn" id="ev-add">추가</button></div>` : ''}</div>
-      <div class="card"><h2>7. 예산안 <span class="r">합계 ${won(total)}원</span></h2><div class="tw"><table><thead><tr><th>사역</th><th>품목</th><th class="n">금액</th><th></th></tr></thead><tbody>${plan.budget.map((b, i) => `<tr><td>${esc(b.category)}</td><td class="wrap">${esc(b.item)}${b.note ? ` <span class="note">(${esc(b.note)})</span>` : ''}</td><td class="n">${won(b.amount)}</td><td>${edit ? `<button class="btn s d" data-del-b="${esc(i)}">삭제</button>` : ''}</td></tr>`).join('')}<tr class="sum"><td colspan="2">합계</td><td class="n">${won(total)}</td><td></td></tr></tbody></table></div>
-        ${edit ? `<div class="row" style="margin-top:10px"><input type="text" id="b-cat" placeholder="사역" style="width:90px"><input type="text" id="b-item" placeholder="품목" style="flex:1"><input type="number" id="b-amt" placeholder="금액" style="width:120px"><button class="btn" id="b-add">추가</button></div>` : ''}
-        <div class="note" style="margin-top:8px">확정하면 예산 합계가 그해 회계 장부("${esc((dd.doc.ledgers.find(l => l.kind === 'budget') || {}).name || '정규 예산')}")의 연간 예산이 됩니다.</div></div>
-    </div>
-    <div class="card"><h2>8. 참고 사항</h2><textarea id="pl-notes" ${ro()} style="width:100%">${esc(plan.notes)}</textarea></div>
+    <div class="card"><h2>5부. 월별 행사 계획표 <span class="r">고정 일정은 1부에서, 부서 행사는 위 목록에서 자동</span></h2>${monthPlanTable(dd, plan, edit)}</div>
+    <div class="card"><h2>참고 사항</h2><textarea id="pl-notes" ${ro()} style="width:100%">${esc(plan.notes)}</textarea></div>
   </div>`;
 };
 function collectPlan(plan) {
   const v = id => { const el = $('#' + id); return el ? el.value : null; };
   if (v('pl-slogan') === null) return plan;
-  Object.assign(plan, { slogan: v('pl-slogan').trim(), verse: v('pl-verse').trim(), verseRef: v('pl-ref').trim(), goals: v('pl-goals').split('\n').map(x => x.trim()).filter(Boolean), methods: v('pl-methods'), ministry: v('pl-ministry'), worship: v('pl-worship'), notes: v('pl-notes') });
+  Object.assign(plan, { slogan: v('pl-slogan').trim(), verse: v('pl-verse').trim(), verseRef: v('pl-ref').trim(), goals: v('pl-goals').split('\n').map(x => x.trim()).filter(Boolean), goalChecks: (v('pl-checks') || '').split('\n').map(x => x.trim()), methods: v('pl-methods') || '', ministry: v('pl-ministry') || '', worship: v('pl-worship') || '', notes: v('pl-notes') || '' });
+  plan.goalChecks = plan.goalChecks.slice(0, Math.max(plan.goals.length, plan.goalChecks.filter(Boolean).length));
+  plan.actions = readRowsEditor('actions', ACTION_COLS(plan), plan.actions); plan.review = readRowsEditor('review', REVIEW_COLS(plan.year), plan.review); plan.meetings = readRowsEditor('meetings', MEET_COLS, plan.meetings); plan.revenue = readRowsEditor('revenue', REV_COLS, plan.revenue); plan.changes = readRowsEditor('changes', CHG_COLS, plan.changes);
   return plan;
 }
 BIND.plan = () => {
   const dd = isCommittee() ? S.data[S.sub.dept || 'kinder'] : D();
-  const year = S.sub.year || YEAR;
-  const plan = dd.plans[year] || blankPlan(dd, year); dd.plans[year] = plan;
+  const year = S.sub.year || YEAR; const cm = isCommittee();
+  const plan = normPlan(dd.plans[year] || blankPlan(dd, year)); dd.plans[year] = plan; const cp = (C().plans || {})[year] || { year, alloc: {} };
   document.querySelectorAll('[data-dept]').forEach(b => b.onclick = () => { S.sub = { dept: b.dataset.dept, year: S.sub.year }; render(); });
   // 출력 화면을 먼저 처리한다 (출력 화면에는 연도 선택 등이 없어, 뒤의 연결에서 오류가 나면 돌아가기·인쇄 단추가 연결되지 않았음)
   const bk = $('#pl-back'); if (bk) { bk.onclick = () => { delete S.sub.print; render(); }; $('#pl-print').onclick = doPrint; return; }
-  // 계획서 초안 보존: 일정 추가·삭제, 미리보기, 연도 바꾸기 전에 쓰던 글을 먼저 임시 저장한다(확정 전 초안만)
-  const keepDraft = async () => { collectPlan(plan); if (plan.status !== 'confirmed' && canEdit() && !isCommittee()) await savePlan(dd, plan); };
+  // 계획서 초안 보존: 일정·줄 추가·삭제, 미리보기, 연도 바꾸기 전에 쓰던 글을 먼저 임시 저장한다(확정 전 초안만)
+  const keepDraft = async () => { collectPlan(plan); if (plan.status !== 'confirmed' && canEdit() && !cm) await savePlan(dd, plan); };
   const py = $('#pl-year'); if (py) py.onchange = async e => { await keepDraft(); S.sub.year = +e.target.value; render(); };
   const op = $('#pl-open-print'); if (op) op.onclick = async () => { await keepDraft(); S.sub.print = true; render(); };
-  const sv = $('#pl-save'); if (sv) sv.onclick = async () => { collectPlan(plan); await savePlan(dd, plan); toast('저장했습니다'); };
-  const cf = $('#pl-confirm'); if (cf) cf.onclick = () => { collectPlan(plan); if (!plan.slogan) { toast('표어를 넣어 주세요'); return; }
-    openModal(`<h2>${year}년 연간계획서 확정<button class="btn s" id="modal-close">닫기</button></h2><p>확정하면 수정이 잠기고, ${esc(dd.doc.name)} 메인 화면과 교육위원회 메인에 계획서 내용(표어·말씀·목표·이달 행사)이 알려집니다. 예산 합계 ${won(plan.budget.reduce((a, b) => a + (+b.amount || 0), 0))}원이 ${year}년 장부 연간 예산이 됩니다.</p><div class="row"><button class="btn p" id="pl-yes">확정</button><button class="btn" id="pl-no">취소</button></div>`);
-    $('#pl-no').onclick = closeModal; $('#pl-yes').onclick = async () => { plan.status = 'confirmed'; plan.confirmedAt = today(); await savePlan(dd, plan); if (year === YEAR) { const main = dd.doc.ledgers.find(l => l.kind === 'budget'); if (main) { main.budget = plan.budget.reduce((a, b) => a + (+b.amount || 0), 0); await saveDeptDoc(dd.id); } } closeModal(); render(); toast('확정했습니다 — 메인 화면에 알립니다'); }; };
-  const uc = $('#pl-unconfirm'); if (uc) uc.onclick = async () => { plan.status = 'draft'; await savePlan(dd, plan); render(); toast('확정을 풀었습니다. 수정 후 다시 확정하세요'); };
+  const sv = $('#pl-save'); if (sv) sv.onclick = async () => { collectPlan(plan); await savePlan(dd, plan); toast('저장했습니다'); renderHere(); };
+  const overAlloc = () => { const a = allocOf(cp, dd.id); const t = budgetTotal(plan); if (a && t > a) { toast(`예산안 합계가 배정 총액보다 ${won(t - a)}원 많습니다`); return true; } return false; };
+  const setStatus = async (st, key) => { collectPlan(plan); if (st !== 'draft' && !plan.slogan) { toast('표어를 넣어 주세요'); return false; } if (st !== 'draft' && overAlloc()) return false; plan.status = st; if (key) plan[key] = today(); await savePlan(dd, plan); return true; };
+  const rv = $('#pl-review'); if (rv) rv.onclick = async () => { if (await setStatus('review', 'reviewedAt')) { renderHere(); toast('부장 검토 단계로 옮겼습니다'); } };
+  const sb = $('#pl-submit'); if (sb) sb.onclick = async () => { if (await setStatus('submitted', 'submittedAt')) { renderHere(); toast('교육위원회에 제출했습니다 — 교육위원회 메인·계획서 화면에 보입니다'); } };
+  const rt = $('#pl-return'); if (rt) rt.onclick = async () => { plan.status = 'review'; await savePlan(dd, plan); renderHere(); toast('부서로 돌려보냈습니다(부장 검토 단계)'); };
+  // 확정: 부서가 직접, 또는 제출된 계획서를 교육위원회가 승인. 예산 합계가 그해 장부 연간 예산이 된다
+  const doConfirm = async () => { plan.status = 'confirmed'; plan.confirmedAt = today(); if (cm) plan.approvedAt = today(); await savePlan(dd, plan); const main = dd.doc.ledgers.find(l => l.kind === 'budget' && +(l.year || YEAR) === year) || (year === YEAR ? dd.doc.ledgers.find(l => l.kind === 'budget') : null); if (main) { main.budget = budgetTotal(plan); await saveDeptDoc(dd.id); } closeModal(); render(); toast('확정했습니다 — 메인 화면에 알립니다'); };
+  const askConfirm = () => openModal(`<h2>${year}년 연간계획서 확정<button class="btn s" id="modal-close">닫기</button></h2><p>확정하면 수정이 잠기고(예산 변경은 2-4 변경 기록으로만), ${esc(dd.doc.name)} 메인 화면과 교육위원회 메인에 계획서 내용(표어·말씀·목표·이달 행사)이 알려집니다. 예산 합계 ${won(budgetTotal(plan))}원이 ${year}년 장부 연간 예산이 됩니다.</p><div class="row"><button class="btn p" id="pl-yes">확정</button><button class="btn" id="pl-no">취소</button></div>`);
+  const cf = $('#pl-confirm'); if (cf) cf.onclick = () => { collectPlan(plan); if (!plan.slogan) { toast('표어를 넣어 주세요'); return; } if (overAlloc()) return; askConfirm(); $('#pl-no').onclick = closeModal; $('#pl-yes').onclick = doConfirm; };
+  const ap = $('#pl-approve'); if (ap) ap.onclick = () => { askConfirm(); $('#pl-no').onclick = closeModal; $('#pl-yes').onclick = doConfirm; };
+  const uc = $('#pl-unconfirm'); if (uc) uc.onclick = async () => { plan.status = 'review'; await savePlan(dd, plan); render(); toast('확정을 풀었습니다. 수정 후 다시 제출·확정하세요'); };
+  // 교육위원회: 교회 표어·부서별 총액 배정 저장, 고정 일정 넣기
+  const cs = $('#cp-save'); if (cs) cs.onclick = async () => { cp.churchSlogan = $('#cp-slogan').value.trim(); cp.alloc = cp.alloc || {}; document.querySelectorAll('[data-alloc]').forEach(i => { cp.alloc[i.dataset.alloc] = +i.value || 0; }); await saveCPlan(cp); renderHere(); toast('배정을 저장했습니다'); };
+  const addFixed = async rows => { let n = 0; for (const r of rows) { if (C().events.some(e => e.date === r.date && e.title === r.title)) continue; const ev = { id: uid(), date: r.date, end: r.end || '', title: r.title, note: r.note || '', kind: r.kind || 'church', activity: r.activity || '' }; await backend.set(`committee/main/events/${ev.id}`, ev); C().events.push({ _id: ev.id, ...ev }); n++; } return n; };
+  const fa = $('#fx-auto'); if (fa) fa.onclick = async () => { const n = await addFixed(churchCalendar(year)); renderHere(); toast(n ? `${n}건 넣었습니다 — 성탄주일 날짜는 교회 결정을 확인하세요` : '이미 모두 들어 있습니다'); };
+  const fxAdd = async () => { const dt = $('#fx-date').value, t = $('#fx-title').value.trim(); if (!dt || !t) { toast('날짜와 일정 이름을 넣어 주세요'); return; } await addFixed([{ date: dt, end: $('#fx-end').value, title: t, kind: $('#fx-kind').value, activity: $('#fx-act').value.trim(), note: $('#fx-note').value.trim() }]); renderHere(); };
+  const fx = $('#fx-add'); if (fx) { fx.onclick = fxAdd; ['fx-title', 'fx-act', 'fx-note'].forEach(id => { const el = $('#' + id); if (el) el.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); fxAdd(); } }; }); }
+  document.querySelectorAll('[data-del-fx]').forEach(b => b.onclick = async () => { await backend.del(`committee/main/events/${b.dataset.delFx}`); C().events = C().events.filter(n => (n._id || n.id) !== b.dataset.delFx); renderHere(); });
   // 전년도 계획서에서 가져오기: 고른 항목만. 빈 칸은 채우고, 글이 있으면 아래에 덧붙임. 일정은 같은 요일이 되도록 52주 뒤 날짜로(확인 필요)
   const pc = $('#pl-copy'); if (pc) pc.onclick = async () => { collectPlan(plan); const prev = await loadPlan(dd, year - 1);
-    if (!prev) { toast(`${year - 1}년 계획서가 없습니다`); return; }
+    if (!prev) { toast(`${year - 1}년 계획서가 없습니다`); return; } normPlan(prev);
     const pevs = planEvents(dd, year - 1); const shift = d => { const t = new Date(d + 'T00:00:00'); t.setDate(t.getDate() + 364); return iso(t); };
-    const F = [['slogan', '표어', prev.slogan, false], ['verse', '주제 말씀', [prev.verse, prev.verseRef].filter(Boolean).join(' '), false], ['goals', '교육 목표', (prev.goals || []).join(' / '), true], ['methods', '교육 방법·실천 방안', prev.methods, true], ['ministry', '세부 사역', prev.ministry, true], ['worship', '예배 순서', prev.worship, true], ['notes', '비고', prev.notes, false], ['budget', `예산 항목 ${(prev.budget || []).length}개`, (prev.budget || []).map(b => b.item).join(', '), true], ['events', `연중 일정 ${pevs.length}건 (날짜는 같은 요일로 옮김 — 꼭 확인)`, pevs.slice(0, 6).map(e => e.title).join(', ') + (pevs.length > 6 ? ' …' : ''), false]].filter(x => String(x[2] || '').trim());
+    const F = [['slogan', '표어', prev.slogan, false], ['verse', '주제 말씀', [prev.verse, prev.verseRef].filter(Boolean).join(' '), false], ['goals', '교육 목표', (prev.goals || []).join(' / '), true], ['actions', `세부실천사항 ${prev.actions.length}줄`, prev.actions.map(a => a.text).join(', '), true], ['review', `지난해 목표를 "돌아보기" 표에`, (prev.goals || []).join(' / '), true], ['meetings', `정기 모임 ${prev.meetings.length}줄`, prev.meetings.map(m => m.name).join(', '), true], ['methods', '교육 방법·실천 방안', prev.methods, true], ['ministry', '세부 사역', prev.ministry, true], ['worship', '예배 순서', prev.worship, true], ['notes', '비고', prev.notes, false], ['budget', `예산 항목 ${(prev.budget || []).length}개`, (prev.budget || []).map(b => b.item).join(', '), true], ['events', `연중 일정 ${pevs.length}건 (날짜는 같은 요일로 옮김 — 꼭 확인)`, pevs.slice(0, 6).map(e => e.title).join(', ') + (pevs.length > 6 ? ' …' : ''), false]].filter(x => String(x[2] || '').trim());
     openModal(`<h2>${year - 1}년 계획서에서 가져오기<button class="btn s" id="modal-close">닫기</button></h2><p class="note">고른 항목만 가져옵니다. 비어 있는 칸은 채우고, 이미 쓴 칸은 그 아래에 덧붙입니다. 예산은 같은 이름의 항목이 없을 때만 넣습니다. 가져온 뒤 올해에 맞게 고치세요.</p><div class="list">${F.map(([k, l, v, on]) => `<label class="item" style="align-items:flex-start"><input type="checkbox" data-pc="${k}" ${on ? 'checked' : ''}> <div><b>${esc(l)}</b><div class="note">${esc(String(v).slice(0, 140))}</div></div></label>`).join('')}</div><div class="row" style="margin-top:10px"><button class="btn p" id="pc-go">가져오기</button></div>`);
     $('#modal-close').onclick = closeModal; $('#pc-go').onclick = async () => { const pick = new Set([...document.querySelectorAll('[data-pc]:checked')].map(x => x.dataset.pc)); const join = (a, b) => !String(a || '').trim() ? (b || '') : !String(b || '').trim() || String(a).includes(b) ? a : a + '\n' + b;
       if (pick.has('slogan')) plan.slogan = plan.slogan || prev.slogan; if (pick.has('verse')) { plan.verse = plan.verse || prev.verse; plan.verseRef = plan.verseRef || prev.verseRef; }
-      if (pick.has('goals')) plan.goals = [...new Set([...(plan.goals || []), ...(prev.goals || [])])];
+      if (pick.has('goals')) { plan.goals = [...new Set([...(plan.goals || []), ...(prev.goals || [])])]; plan.goalChecks = plan.goals.map((g, i) => plan.goalChecks[i] || prev.goalChecks[(prev.goals || []).indexOf(g)] || ''); }
+      if (pick.has('actions')) prev.actions.forEach(a => { if (!plan.actions.some(x => x.text === a.text)) plan.actions.push({ ...a }); });
+      if (pick.has('review')) (prev.goals || []).forEach(g => { if (!plan.review.some(r => r.goal === g)) plan.review.push({ goal: g, done: '', why: '', apply: '' }); });
+      if (pick.has('meetings')) prev.meetings.forEach(m => { if (!plan.meetings.some(x => x.name === m.name)) plan.meetings.push({ ...m }); });
       ['methods', 'ministry', 'worship', 'notes'].forEach(k => { if (pick.has(k)) plan[k] = join(plan[k], prev[k]); });
       if (pick.has('budget')) (prev.budget || []).forEach(b => { if (!plan.budget.some(x => x.item === b.item)) plan.budget.push({ ...b }); });
-      let nEv = 0; if (pick.has('events')) for (const e of pevs) { const d = shift(e.date); if (dd.events.some(x => x.date === d && x.title === e.title)) continue; const ne = { id: 'ev_' + uid(), date: d, end: e.end ? shift(e.end) : '', title: e.title, note: [e.note, '전년도에서 복사 — 날짜 확인'].filter(Boolean).join(' · '), from: e._id || e.id }; await backend.set(`depts/${dd.id}/events/${ne.id}`, ne); dd.events.push({ _id: ne.id, ...ne }); nEv++; }
+      let nEv = 0; if (pick.has('events')) for (const e of pevs) { const d = shift(e.date); if (dd.events.some(x => x.date === d && x.title === e.title)) continue; const ne = { id: 'ev_' + uid(), date: d, end: e.end ? shift(e.end) : '', title: e.title, note: [e.note, '전년도에서 복사 — 날짜 확인'].filter(Boolean).join(' · '), cat: e.cat || '', amount: e.amount || 0, owner: e.owner || '', from: e._id || e.id }; await backend.set(`depts/${dd.id}/events/${ne.id}`, ne); dd.events.push({ _id: ne.id, ...ne }); nEv++; }
       await savePlan(dd, plan); closeModal(); render(); toast(`가져왔습니다${nEv ? ` (일정 ${nEv}건 — 날짜를 꼭 확인하세요)` : ''}`); }; };
-  const ea = $('#ev-add'); if (ea) ea.onclick = async () => { await keepDraft(); const dt = $('#ev-date').value, t = $('#ev-title').value.trim(); if (!dt || !t) return; const e = { id: 'ev_' + uid(), date: dt, end: '', title: t, note: '' }; await backend.set(`depts/${dd.id}/events/${e.id}`, e); dd.events.push({ _id: e.id, ...e }); render(); };
-  document.querySelectorAll('[data-del-ev]').forEach(b => b.onclick = async () => { await keepDraft(); await backend.del(`depts/${dd.id}/events/${b.dataset.delEv}`); dd.events = dd.events.filter(e => (e._id || e.id) !== b.dataset.delEv); render(); });
-  const ba = $('#b-add'); if (ba) ba.onclick = async () => { collectPlan(plan); const a = +$('#b-amt').value, it = $('#b-item').value.trim(); if (!a || !it) return; plan.budget.push({ category: $('#b-cat').value.trim(), item: it, amount: a, note: '' }); await savePlan(dd, plan); render(); };
-  document.querySelectorAll('[data-del-b]').forEach(b => b.onclick = async () => { collectPlan(plan); plan.budget.splice(+b.dataset.delB, 1); await savePlan(dd, plan); render(); });
+  // 부서 행사 추가·삭제 (Enter로도 추가, 보던 자리 유지)
+  const evAdd = async () => { const dt = $('#ev-date').value, t = $('#ev-title').value.trim(); if (!dt || !t) { toast('날짜와 행사 이름을 넣어 주세요'); return; } await keepDraft(); const e = { id: 'ev_' + uid(), date: dt, end: '', title: t, note: '', cat: $('#ev-cat').value.trim(), amount: +$('#ev-amt').value || 0, owner: $('#ev-owner').value.trim() }; await backend.set(`depts/${dd.id}/events/${e.id}`, e); dd.events.push({ _id: e.id, ...e }); renderHere(); };
+  const ea = $('#ev-add'); if (ea) { ea.onclick = evAdd; ['ev-title', 'ev-cat', 'ev-amt', 'ev-owner'].forEach(id => { const el = $('#' + id); if (el) el.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); evAdd(); } }; }); }
+  document.querySelectorAll('[data-del-ev]').forEach(b => b.onclick = async () => { await keepDraft(); await backend.del(`depts/${dd.id}/events/${b.dataset.delEv}`); dd.events = dd.events.filter(e => (e._id || e.id) !== b.dataset.delEv); renderHere(); });
+  // 예산 항목 추가·삭제 (Enter로도 추가, 배정 총액을 넘으면 넣지 않음, 보던 자리 유지)
+  const bAdd = async () => { collectPlan(plan); const a = +$('#b-amt').value, it = $('#b-item').value.trim(); if (!a || !it) { toast('세부 내용과 금액을 넣어 주세요'); return; } const al = allocOf(cp, dd.id); if (al && budgetTotal(plan) + a > al) { toast(`배정 총액(${won(al)}원)을 ${won(budgetTotal(plan) + a - al)}원 넘습니다 — 넣지 않았습니다`); return; } plan.budget.push({ category: $('#b-cat').value.trim() || BUDGET_CATS[0], item: it, when: $('#b-when').value.trim(), amount: a, note: $('#b-note').value.trim() }); await savePlan(dd, plan); renderHere(); };
+  const ba = $('#b-add'); if (ba) { ba.onclick = bAdd; ['b-cat', 'b-item', 'b-when', 'b-amt', 'b-note'].forEach(id => { const el = $('#' + id); if (el) el.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); bAdd(); } }; }); }
+  document.querySelectorAll('[data-del-b]').forEach(b => b.onclick = async () => { collectPlan(plan); plan.budget.splice(+b.dataset.delB, 1); await savePlan(dd, plan); renderHere(); });
+  // 줄 표: 줄 추가·삭제 (쓰던 글은 먼저 거둔다)
+  document.querySelectorAll('[data-re-add]').forEach(b => b.onclick = async () => { collectPlan(plan); const k = b.dataset.reAdd; plan[k].push(k === 'changes' ? { date: today() } : {}); if (plan.status === 'confirmed') await savePlan(dd, plan); else await keepDraft(); renderHere(); });
+  document.querySelectorAll('[data-re-del]').forEach(b => b.onclick = async () => { collectPlan(plan); plan[b.dataset.reDel].splice(+b.dataset.i, 1); if (plan.status === 'confirmed') await savePlan(dd, plan); else await keepDraft(); renderHere(); });
+  // 확정 뒤 변경 기록만 고칠 때 저장 단추가 없으므로, 칸을 벗어나면 바로 저장
+  if (plan.status === 'confirmed' && canEdit() && !cm) document.querySelectorAll('[data-re="changes"]').forEach(el => el.onchange = async () => { collectPlan(plan); await savePlan(dd, plan); toast('변경 기록 저장'); });
 };
 function planBanner(dd, plan, compact) {
   if (!plan || plan.status !== 'confirmed') return '';

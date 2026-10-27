@@ -75,6 +75,12 @@
 
 ### data/budget_plan_2026.json — 배열
 `{"dept":"elem","category":"양육","item":"여름성경학교","amount":2000000,"note":"","source":"..."}`
+- 2027년 계획서부터 예산안 항목(category)은 `예배·교육비`·`행사비`·`심방·새가족비`·`교사비`·`비품·운영비`·`예비비` 여섯 가지로 고정, `when`(쓰는 달·행사) 칸이 붙는다.
+
+### 연간계획서(앱 안, 2027년 양식) — `depts/{d}/plans/{year}`
+`{year, status:'draft'|'review'|'submitted'|'confirmed', slogan, verse, verseRef, goals:[문장], goalChecks:[확인 방법], actions:[{goal,text,when,event,cat,owner}], review:[{goal,done,why,apply}], meetings:[{name,when,place,who}], budget:[{category,item,when,amount,note}], revenue:[{title,people,fee,other,church,spend,note}], changes:[{date,item,before,after,why,approved}], methods, ministry, worship, notes}`
+- 교육위원회 몫: `committee/main/plans/{year}` = `{year, churchSlogan, alloc:{kinder,elem,youth,young}}` (부서별 총액 배정). 고정 일정은 `committee/main/events`에 `kind:'church'|'edu'`, `activity`(부서 활동)를 붙여 저장하며 `churchCalendar(year)`가 교회 규칙(첫째·셋째 주일, 부활절, 성탄 등)으로 날짜를 계산한다.
+- 부서 행사(`depts/{d}/events`)에는 `cat`(예산 항목)·`amount`·`owner`가 붙을 수 있다.
 
 ### data/monthly_2026.json — 배열 (월간 보고서의 글 부분)
 `{"dept":"kinder","month":"2026-01","report":["1주: 암송배우기 / ...","2주: ..."],"plan":["1주: 목장예배", ...],"notes":"","source":"..."}`

@@ -370,5 +370,37 @@ with sync_playwright() as p:
     try: t_R24()
     except Exception as e: rec('R24 (실행 오류)', False, str(e)[:160])
 
+    # ── 2026-10-27 연간계획서 양식(1~6부) ──
+    def t_R25():
+        # R25 예산안: 금액 칸에서 Enter로 추가되고, 추가 뒤 화면이 맨 위로 튀지 않아야 함
+        pg = login(b, 'elem'); Y = pg.evaluate("()=>window.CBCS_YEAR||2026") + 1
+        go(pg, 'plan', f"{{year:{Y}}}")
+        pg.evaluate("()=>document.querySelector('#b-item').scrollIntoView()"); pg.wait_for_timeout(300)
+        y0 = pg.evaluate("()=>window.scrollY")
+        pg.fill('#b-item', '시험 교재'); pg.fill('#b-amt', '120000'); pg.press('#b-amt', 'Enter'); pg.wait_for_timeout(1500)
+        y1 = pg.evaluate("()=>window.scrollY"); n = pg.evaluate("()=>document.querySelectorAll('[data-del-b]').length")
+        rec('R25 예산 Enter 추가 · 화면 위치 유지', n == 1 and y0 > 0 and abs(y1 - y0) < 40, f'줄={n}, 스크롤 {y0}→{y1}')
+        pg.close()
+    try: t_R25()
+    except Exception as e: rec('R25 (실행 오류)', False, str(e)[:160])
+
+    def t_R26():
+        # R26 교육위원회 배정 총액을 넘는 예산 항목은 넣지 않고, 교회력 자동 채우기는 부서 계획서 1부에 보여야 함
+        pg = login(b, 'committee'); Y = pg.evaluate("()=>window.CBCS_YEAR||2026") + 1
+        go(pg, 'plan', f"{{dept:'elem',year:{Y}}}")
+        pg.click('#fx-auto'); pg.wait_for_timeout(1200); pg.fill('[data-alloc=elem]', '500000'); pg.click('#cp-save'); pg.wait_for_timeout(1200)
+        fx = pg.evaluate("()=>document.querySelectorAll('[data-del-fx]').length")
+        pg.evaluate("()=>window.CBCS_APP.backend.logout()"); pg.wait_for_timeout(500)
+        pg.goto(BASE + '/?demo=1'); pg.wait_for_timeout(1000); pg.select_option('#lg-dept', 'elem'); pg.fill('#lg-pw', 'x'); pg.click('#lg-go'); pg.wait_for_timeout(2500)
+        go(pg, 'plan', f"{{year:{Y}}}")
+        seen = pg.evaluate("()=>[...document.querySelectorAll('.card')].find(c=>c.querySelector('h2').textContent.startsWith('1부')).querySelectorAll('tbody tr').length")
+        pg.fill('#b-item', '한도 안'); pg.fill('#b-amt', '300000'); pg.click('#b-add'); pg.wait_for_timeout(1200)
+        pg.fill('#b-item', '한도 밖'); pg.fill('#b-amt', '300000'); pg.click('#b-add'); pg.wait_for_timeout(1200)
+        n = pg.evaluate("()=>document.querySelectorAll('[data-del-b]').length")
+        rec('R26 고정 일정 공유 · 배정 총액 초과 막기', fx >= 17 and seen == fx and n == 1, f'고정 일정={fx}, 부서에 보임={seen}, 예산 줄={n}')
+        pg.close()
+    try: t_R26()
+    except Exception as e: rec('R26 (실행 오류)', False, str(e)[:160])
+
 print(json.dumps(results, ensure_ascii=False, indent=1))
 sys.exit(0 if all(r['pass'] for r in results) else 1)
