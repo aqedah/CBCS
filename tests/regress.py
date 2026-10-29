@@ -417,5 +417,22 @@ with sync_playwright() as p:
     try: t_R27()
     except Exception as e: rec('R27 (실행 오류)', False, str(e)[:160])
 
+    def t_R28():
+        # R28 예산 표: 칸을 눌러도 열 너비가 바뀌지 않고, 표 머리를 누르면 항목 순으로 정렬되어야 함
+        pg = login(b, 'elem'); Y = pg.evaluate("()=>window.CBCS_YEAR||2026") + 1
+        go(pg, 'plan', f"{{year:{Y}}}")
+        for c, it, a in [('사역', '새가족팀', '400000'), ('예배·교육비', '교재비', '200000'), ('행사비', '소풍', '150000')]:
+            pg.fill('#b-cat', c); pg.fill('#b-item', it); pg.fill('#b-amt', a); pg.press('#b-amt', 'Enter'); pg.wait_for_timeout(900)
+        w0 = pg.evaluate("()=>[...document.querySelectorAll('table.budget thead th')].map(t=>t.getBoundingClientRect().width|0)")
+        pg.click('[data-bcell="0|item"]'); pg.wait_for_timeout(300)
+        w1 = pg.evaluate("()=>[...document.querySelectorAll('table.budget thead th')].map(t=>t.getBoundingClientRect().width|0)")
+        pg.press('#bc-in', 'Escape'); pg.wait_for_timeout(200)
+        pg.click('[data-bsort="category"]'); pg.wait_for_timeout(1200)
+        order = pg.evaluate("()=>[...document.querySelectorAll('[data-bcell$=\"|category\"]')].map(t=>t.textContent)")
+        rec('R28 예산 표 열 너비 고정 · 항목 정렬', w0 == w1 and order == ['예배·교육비', '행사비', '사역'], f'너비 {w0}→{w1}, 순서={order}')
+        pg.close()
+    try: t_R28()
+    except Exception as e: rec('R28 (실행 오류)', False, str(e)[:160])
+
 print(json.dumps(results, ensure_ascii=False, indent=1))
 sys.exit(0 if all(r['pass'] for r in results) else 1)
