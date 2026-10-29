@@ -402,5 +402,18 @@ with sync_playwright() as p:
     try: t_R26()
     except Exception as e: rec('R26 (실행 오류)', False, str(e)[:160])
 
+    def t_R27():
+        # R27 예산 줄을 누르면 편집 창이 열리고, 고친 값이 저장되어야 함
+        pg = login(b, 'elem'); Y = pg.evaluate("()=>window.CBCS_YEAR||2026") + 1
+        go(pg, 'plan', f"{{year:{Y}}}")
+        pg.fill('#b-cat', '공통'); pg.fill('#b-item', '동계수련회'); pg.fill('#b-amt', '700000'); pg.press('#b-amt', 'Enter'); pg.wait_for_timeout(1200)
+        pg.click('[data-edit-b="0"] td'); pg.wait_for_timeout(500); opened = bool(pg.query_selector('.ie-pop'))
+        pg.fill('#be-cat', '행사비'); pg.fill('#be-amt', '650000'); pg.press('#be-amt', 'Enter'); pg.wait_for_timeout(1500)
+        v = pg.evaluate(f"async()=>{{const p=await window.CBCS_APP.backend.get('depts/elem/plans/{Y}'); const b=(p.budget||[])[0]||{{}}; return [b.category,b.amount]}}")
+        rec('R27 예산 줄 눌러서 고치기', opened and v == ['행사비', 650000], f'창 열림={opened}, 저장={v}')
+        pg.close()
+    try: t_R27()
+    except Exception as e: rec('R27 (실행 오류)', False, str(e)[:160])
+
 print(json.dumps(results, ensure_ascii=False, indent=1))
 sys.exit(0 if all(r['pass'] for r in results) else 1)
