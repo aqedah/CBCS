@@ -12,6 +12,11 @@ const $ = s => document.querySelector(s);
 const uid = () => Math.random().toString(36).slice(2, 10);
 const DEL = Symbol('delete-field'); // backend.update에서 칸 지우기
 const won = n => (Number(n) || 0).toLocaleString('ko-KR');
+// 금액 칸: 글자 칸에 쉼표를 붙여 보여 주고, 읽을 때는 숫자만 거둔다 (class="money")
+const moneyNum = v => +String(v ?? '').replace(/[^\d-]/g, '') || 0;
+const moneyFmt = v => /\d/.test(String(v ?? '')) ? moneyNum(v).toLocaleString('ko-KR') : '';
+const moneyInput = (attrs, v, ph) => `<input type="text" inputmode="numeric" class="money" ${attrs} value="${moneyFmt(v)}" placeholder="${ph || '금액'}">`;
+function bindMoney(root) { (root || document).querySelectorAll('input.money').forEach(el => { if (el._money) return; el._money = true; el.addEventListener('input', () => { const pos = el.value.length - el.selectionStart; el.value = moneyFmt(el.value); el.setSelectionRange(Math.max(0, el.value.length - pos), Math.max(0, el.value.length - pos)); }); }); }
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 // 저장해 둔 HTML(월간 제출본 등)을 다시 띄울 때: 스크립트·외부 틀·이벤트 속성·javascript: 링크를 걷어 낸다
 const safeHtml = h => { const t = document.createElement('template'); t.innerHTML = String(h ?? ''); t.content.querySelectorAll('script,iframe,frame,object,embed,link,meta,base,form,svg,math').forEach(n => n.remove()); t.content.querySelectorAll('*').forEach(n => [...n.attributes].forEach(a => { const k = a.name.toLowerCase(); if (k.startsWith('on') || k === 'srcdoc' || k === 'formaction' || (/^(href|src|xlink:href|action)$/.test(k) && !/^(https?:|#|data:image\/|blob:|$)/i.test(a.value.trim()))) n.removeAttribute(a.name); })); return t.innerHTML; };
@@ -1539,10 +1544,11 @@ function planPaper(dd, plan) {
 function rowsEditor(key, rows, cols, edit, extra) {
   const cell = (r, c, i) => { const v = r[c.k] ?? ''; if (!edit) return `<td class="${c.n ? 'n' : 'wrap'}">${c.n && v !== '' ? won(v) : esc(String(v))}</td>`;
     if (c.opts) return `<td><select data-re="${key}" data-i="${i}" data-k="${c.k}">${['', ...c.opts].map(o => `<option value="${esc(o)}" ${String(v) === String(o) ? 'selected' : ''}>${esc(o || '—')}</option>`).join('')}</select></td>`;
-    return `<td><input type="${c.n ? 'number' : 'text'}" data-re="${key}" data-i="${i}" data-k="${c.k}" value="${esc(String(v))}" style="width:100%;min-width:${c.w || 80}px" placeholder="${esc(c.p || '')}"></td>`; };
+    if (c.n) return `<td>${moneyInput(`data-re="${key}" data-i="${i}" data-k="${c.k}" style="width:100%;min-width:${c.w || 80}px;text-align:right"`, v, c.p || '')}</td>`;
+    return `<td><input type="text" data-re="${key}" data-i="${i}" data-k="${c.k}" value="${esc(String(v))}" style="width:100%;min-width:${c.w || 80}px" placeholder="${esc(c.p || '')}"></td>`; };
   return `<div class="tw"><table><thead><tr>${cols.map(c => `<th class="${c.n ? 'n' : ''}">${esc(c.l)}</th>`).join('')}${edit ? '<th></th>' : ''}</tr></thead><tbody>${rows.map((r, i) => `<tr>${cols.map(c => cell(r, c, i)).join('')}${edit ? `<td><button class="btn s d" data-re-del="${key}" data-i="${i}">×</button></td>` : ''}</tr>`).join('') || `<tr><td colspan="${cols.length + 1}" class="note">없음</td></tr>`}${extra || ''}</tbody></table></div>${edit ? `<div class="row" style="margin-top:6px"><button class="btn s" data-re-add="${key}">줄 추가</button></div>` : ''}`;
 }
-function readRowsEditor(key, cols, rows) { const out = rows.map(r => ({ ...r })); document.querySelectorAll(`[data-re="${key}"]`).forEach(el => { const i = +el.dataset.i; if (!out[i]) out[i] = {}; const c = cols.find(x => x.k === el.dataset.k); out[i][el.dataset.k] = c && c.n ? (+el.value || 0) : el.value.trim(); }); return out; }
+function readRowsEditor(key, cols, rows) { const out = rows.map(r => ({ ...r })); document.querySelectorAll(`[data-re="${key}"]`).forEach(el => { const i = +el.dataset.i; if (!out[i]) out[i] = {}; const c = cols.find(x => x.k === el.dataset.k); out[i][el.dataset.k] = c && c.n ? moneyNum(el.value) : el.value.trim(); }); return out; }
 const ACTION_COLS = plan => [{ k: 'goal', l: '목표', opts: (plan.goals || []).map((_, i) => String(i + 1)), w: 50 }, { k: 'text', l: '실천사항', w: 200 }, { k: 'when', l: '시기', w: 70, p: '예: 3월' }, { k: 'event', l: '연결 행사', w: 110 }, { k: 'cat', l: '연결 예산', opts: BUDGET_CATS }, { k: 'owner', l: '담당', w: 70 }];
 const REVIEW_COLS = y => [{ k: 'goal', l: `${y - 1} 목표`, w: 160 }, { k: 'done', l: '되었나', opts: ['되었음', '일부', '안 됨'] }, { k: 'why', l: '달랐던 이유', w: 160 }, { k: 'apply', l: `${y}에 반영`, w: 160 }];
 const MEET_COLS = [{ k: 'name', l: '모임', w: 120 }, { k: 'when', l: '요일·시간', w: 110 }, { k: 'place', l: '장소', w: 90 }, { k: 'who', l: '참석', w: 90 }];
@@ -1557,7 +1563,7 @@ async function allocCard(year, cp) {
   return `<div class="card"><h2>2부. 부서별 예산 총액 배정 <span class="r">${year}년 · 교육위원회가 정하면 부서는 그 안에서 세부를 나눕니다</span></h2>
     <div class="fields" style="margin-bottom:10px"><label class="f" style="grid-column:1/-1"><span>${year}년 교회 표어 (부서 계획서 맨 위에 보입니다)</span><input type="text" id="cp-slogan" value="${esc(cp.churchSlogan || '')}"></label></div>
     <div class="tw"><table><thead><tr><th>부서</th><th class="n">${year - 2} 예산</th><th class="n">${year - 2} 집행</th><th class="n">${year - 1} 예산</th><th class="n">${year - 1} 집행</th><th class="n">${year} 배정</th><th class="n">부서 세부 합계</th><th>계획서</th></tr></thead><tbody>
-    ${rows.map(r => { const t = r.p ? budgetTotal(normPlan(r.p)) : 0; const a = allocOf(cp, r.d); return `<tr><td>${DEPTS[r.d]}</td><td class="n">${r.b1 ? won(r.b1) : '—'}</td><td class="n">${r.e1 ? won(r.e1) : '—'}</td><td class="n">${r.b2 ? won(r.b2) : '—'}</td><td class="n">${r.e2 ? won(r.e2) : '—'}</td><td class="n"><input type="number" data-alloc="${r.d}" value="${a || ''}" style="width:120px;text-align:right"></td><td class="n">${r.p ? won(t) : '—'}${a && t > a ? ' <span class="pill bad">초과</span>' : ''}</td><td>${r.p ? planPill(r.p) : '<span class="pill mute">없음</span>'} <button class="btn s" data-go="plan" data-sub='${JSON.stringify({ dept: r.d, year })}'>보기</button></td></tr>`; }).join('')}
+    ${rows.map(r => { const t = r.p ? budgetTotal(normPlan(r.p)) : 0; const a = allocOf(cp, r.d); return `<tr><td>${DEPTS[r.d]}</td><td class="n">${r.b1 ? won(r.b1) : '—'}</td><td class="n">${r.e1 ? won(r.e1) : '—'}</td><td class="n">${r.b2 ? won(r.b2) : '—'}</td><td class="n">${r.e2 ? won(r.e2) : '—'}</td><td class="n">${moneyInput(`data-alloc="${r.d}" style="width:130px;text-align:right"`, a, '배정액')}</td><td class="n">${r.p ? won(t) : '—'}${a && t > a ? ' <span class="pill bad">초과</span>' : ''}</td><td>${r.p ? planPill(r.p) : '<span class="pill mute">없음</span>'} <button class="btn s" data-go="plan" data-sub='${JSON.stringify({ dept: r.d, year })}'>보기</button></td></tr>`; }).join('')}
     <tr class="sum"><td>합계</td><td class="n">${won(sum('b1'))}</td><td class="n">${won(sum('e1'))}</td><td class="n">${won(sum('b2'))}</td><td class="n">${won(sum('e2'))}</td><td class="n">${won(Object.keys(DEPTS).reduce((a, d) => a + allocOf(cp, d), 0))}</td><td></td><td></td></tr></tbody></table></div>
     <div class="row" style="margin-top:10px"><button class="btn p" id="cp-save">배정 저장</button><span class="note">예산·집행 칸은 장부와 지출에서 자동으로 채워집니다. 비어 있으면 아직 자료가 없는 것입니다.</span></div></div>`;
 }
@@ -1584,10 +1590,11 @@ VIEWS.plan = async () => {
     ${cm ? await allocCard(year, cp) : ''}
     <div class="card"><h2>2부. 예산안 <span class="r">합계 ${won(total)}원${alloc ? ` / 배정 ${won(alloc)}원` : ' / 배정 총액 미정(교육위원회)'}${over ? ' · <b style="color:var(--bad)">초과</b>' : ''}</span></h2>
       ${over ? `<div class="hint" style="margin-bottom:8px">세부 항목 합계가 배정 총액보다 ${won(total - alloc)}원 많습니다. 줄이지 않으면 제출·확정할 수 없습니다.</div>` : ''}
-      <div class="tw"><table><thead><tr><th>항목</th><th>세부 내용</th><th>쓰는 달·행사</th><th class="n">${year - 1} 집행</th><th class="n">${year} 계획</th><th>비고</th>${edit ? '<th></th>' : ''}</tr></thead><tbody>${plan.budget.map((b, i) => `<tr ${edit ? `class="click" data-edit-b="${i}" title="눌러서 고치기"` : ''}><td>${esc(b.category)}</td><td class="wrap">${esc(b.item)}</td><td class="wrap note">${esc(b.when || '')}</td><td class="n note">${prevA[b.category] && !plan.budget.slice(0, i).some(x => x.category === b.category) ? won(prevA[b.category]) : ''}</td><td class="n">${won(b.amount)}</td><td class="wrap note">${esc(b.note || '')}</td>${edit ? `<td><button class="btn s d" data-del-b="${esc(i)}">삭제</button></td>` : ''}</tr>`).join('')}
+      <div class="tw"><table><thead><tr><th>항목</th><th>세부 내용</th><th>쓰는 달·행사</th><th class="n">${year - 1} 집행</th><th class="n">${year} 계획</th><th>비고</th>${edit ? '<th></th>' : ''}</tr></thead><tbody>${plan.budget.map((b, i) => { const ce = (k, cls, html) => `<td class="${cls}${edit ? ' ie-on' : ''}" ${edit ? `data-bcell="${i}|${k}" title="눌러서 고치기"` : ''}>${html}</td>`;
+        return `<tr>${ce('category', '', esc(b.category))}${ce('item', 'wrap', esc(b.item))}${ce('when', 'wrap note', esc(b.when || '') || (edit ? '<span class="note">—</span>' : ''))}<td class="n note">${prevA[b.category] && !plan.budget.slice(0, i).some(x => x.category === b.category) ? won(prevA[b.category]) : ''}</td>${ce('amount', 'n', won(b.amount))}${ce('note', 'wrap note', esc(b.note || '') || (edit ? '<span class="note">—</span>' : ''))}${edit ? `<td><button class="btn s d" data-del-b="${esc(i)}">삭제</button></td>` : ''}</tr>`; }).join('')}
       <tr class="sum"><td colspan="3">합계 (${BUDGET_CATS.filter(c => byCat[c]).map(c => `${c} ${won(byCat[c])}`).join(' · ') || '항목 없음'})</td><td class="n">${won(prevTotal)}</td><td class="n" ${over ? 'style="color:var(--bad)"' : ''}>${won(total)}</td><td colspan="2">${alloc ? `배정 ${won(alloc)} · 남음 ${won(alloc - total)}` : ''}</td></tr></tbody></table></div>
-      ${edit && plan.budget.length ? '<div class="note" style="margin-top:4px">줄을 누르면 항목·내용·금액을 바로 고칠 수 있습니다.</div>' : ''}
-      ${edit ? `<div class="row" style="margin-top:10px;flex-wrap:wrap"><input type="text" id="b-cat" list="b-cats" placeholder="항목" style="width:120px" value="${esc(BUDGET_CATS[0])}"><datalist id="b-cats">${[...new Set([...BUDGET_CATS, ...plan.budget.map(b => b.category)])].map(c => `<option value="${esc(c)}">`).join('')}</datalist><input type="text" id="b-item" placeholder="세부 내용 (예: 교재, 여름 수련회)" style="flex:1;min-width:160px"><input type="text" id="b-when" placeholder="쓰는 달·행사" style="width:110px"><input type="number" id="b-amt" placeholder="금액" style="width:120px"><input type="text" id="b-note" placeholder="비고" style="width:100px"><button class="btn" id="b-add">추가</button></div><div class="note" style="margin-top:4px">금액 칸에서 Enter를 눌러도 추가됩니다. 참가비가 있는 행사는 교회 예산 지원액만 여기에 적고, 참가비는 아래 2-3에 적습니다.</div>` : ''}
+      ${edit && plan.budget.length ? '<div class="note" style="margin-top:4px">칸을 누르면 그 자리에서 바로 고칩니다 (Enter 저장 · Esc 취소).</div>' : ''}
+      ${edit ? `<div class="row" style="margin-top:10px;flex-wrap:wrap"><input type="text" id="b-cat" list="b-cats" placeholder="항목" style="width:120px" value="${esc(BUDGET_CATS[0])}"><datalist id="b-cats">${[...new Set([...BUDGET_CATS, ...plan.budget.map(b => b.category)])].map(c => `<option value="${esc(c)}">`).join('')}</datalist><input type="text" id="b-item" placeholder="세부 내용 (예: 교재, 여름 수련회)" style="flex:1;min-width:160px"><input type="text" id="b-when" placeholder="쓰는 달·행사" style="width:110px">${moneyInput('id="b-amt" style="width:120px;text-align:right"', '', '금액')}<input type="text" id="b-note" placeholder="비고" style="width:100px"><button class="btn" id="b-add">추가</button></div><div class="note" style="margin-top:4px">금액 칸에서 Enter를 눌러도 추가됩니다. 참가비가 있는 행사는 교회 예산 지원액만 여기에 적고, 참가비는 아래 2-3에 적습니다.</div>` : ''}
       <div class="note" style="margin-top:8px">${year - 1} 집행은 그해 지출을 예산안 항목으로 묶어 참고로 보여 줍니다. 확정하면 예산 합계가 ${year}년 회계 장부("${esc((dd.doc.ledgers.find(l => l.kind === 'budget' && +(l.year || YEAR) === year) || dd.doc.ledgers.find(l => l.kind === 'budget') || {}).name || '정규 예산')}")의 연간 예산이 됩니다.</div>
       <h3 style="font-size:13px;margin:14px 0 6px">2-3. 수입이 있는 행사 <span class="note">참가비·찬조금 — 교회 예산과 섞지 않습니다</span></h3>${rowsEditor('revenue', plan.revenue, REV_COLS, edit)}
       <h3 style="font-size:13px;margin:14px 0 6px">2-4. 변경 기록 <span class="note">확정 뒤 바뀐 금액(추경)</span></h3>${rowsEditor('changes', plan.changes, CHG_COLS, edit || (canEdit() && !cm && plan.status === 'confirmed'))}</div>
@@ -1611,7 +1618,7 @@ VIEWS.plan = async () => {
         <h3 style="font-size:13px;margin:14px 0 6px">4-3. 정기 모임</h3>${rowsEditor('meetings', plan.meetings, MEET_COLS, edit)}
         <details style="margin-top:12px"><summary class="note">이전 양식 칸 (세부 사역 · 예배 순서)</summary><div class="stack" style="margin-top:6px"><label class="f"><span>세부 사역(직무 분담)</span><textarea id="pl-ministry" ${ro()}>${esc(plan.ministry)}</textarea></label><label class="f"><span>예배 순서 및 내용</span><textarea id="pl-worship" ${ro()}>${esc(plan.worship)}</textarea></label></div></details></div>
       <div class="card"><h2>5부. 부서 행사 <span class="r">${evs.length}건 · 달력과 주일·월간 보고서 일정에 연결</span></h2><div class="list" style="max-height:420px;overflow:auto">${evs.map(e => `<div class="item"><div><div class="t">${esc(e.title)}${fixedEvents(year).some(f => f.date === e.date && /금지/.test(f.activity || '')) ? ' <span class="pill bad">고정 일정과 겹침</span>' : ''}</div><div class="d">${fmtK(e.date)}${e.end ? ' ~ ' + fmtK(e.end) : ''}${e.cat ? ' · ' + esc(e.cat) : ''}${e.amount ? ' · ' + won(e.amount) + '원' : ''}${e.owner ? ' · ' + esc(e.owner) : ''}${e.note ? ' · ' + esc(e.note) : ''}</div></div>${edit ? `<button class="btn s d" data-del-ev="${e._id || e.id}">삭제</button>` : ''}</div>`).join('') || '<div class="note">행사가 없습니다. 달만 정해졌으면 그달 첫 주일 날짜로 넣고, 확정되면 날짜를 고치세요.</div>'}</div>
-        ${edit ? `<div class="row" style="margin-top:10px;flex-wrap:wrap"><input type="date" id="ev-date" style="width:auto" value="${esc(year)}-01-01"><input type="text" id="ev-title" placeholder="행사 이름" style="flex:1;min-width:140px"><input type="text" id="ev-cat" list="b-cats2" placeholder="예산 항목" style="width:110px"><datalist id="b-cats2">${BUDGET_CATS.map(c => `<option value="${esc(c)}">`).join('')}</datalist><input type="number" id="ev-amt" placeholder="금액" style="width:100px"><input type="text" id="ev-owner" placeholder="담당" style="width:80px"><button class="btn" id="ev-add">추가</button></div>` : ''}</div>
+        ${edit ? `<div class="row" style="margin-top:10px;flex-wrap:wrap"><input type="date" id="ev-date" style="width:auto" value="${esc(year)}-01-01"><input type="text" id="ev-title" placeholder="행사 이름" style="flex:1;min-width:140px"><input type="text" id="ev-cat" list="b-cats2" placeholder="예산 항목" style="width:110px"><datalist id="b-cats2">${BUDGET_CATS.map(c => `<option value="${esc(c)}">`).join('')}</datalist>${moneyInput('id="ev-amt" style="width:100px;text-align:right"', '', '금액')}<input type="text" id="ev-owner" placeholder="담당" style="width:80px"><button class="btn" id="ev-add">추가</button></div>` : ''}</div>
     </div>
     <div class="card"><h2>5부. 월별 행사 계획표 <span class="r">고정 일정은 1부에서, 부서 행사는 위 목록에서 자동</span></h2>${monthPlanTable(dd, plan, edit)}</div>
     <div class="card"><h2>참고 사항</h2><textarea id="pl-notes" ${ro()} style="width:100%">${esc(plan.notes)}</textarea></div>
@@ -1649,7 +1656,7 @@ BIND.plan = () => {
   const ap = $('#pl-approve'); if (ap) ap.onclick = () => { askConfirm(); $('#pl-no').onclick = closeModal; $('#pl-yes').onclick = doConfirm; };
   const uc = $('#pl-unconfirm'); if (uc) uc.onclick = async () => { plan.status = 'review'; await savePlan(dd, plan); render(); toast('확정을 풀었습니다. 수정 후 다시 제출·확정하세요'); };
   // 교육위원회: 교회 표어·부서별 총액 배정 저장, 고정 일정 넣기
-  const cs = $('#cp-save'); if (cs) cs.onclick = async () => { cp.churchSlogan = $('#cp-slogan').value.trim(); cp.alloc = cp.alloc || {}; document.querySelectorAll('[data-alloc]').forEach(i => { cp.alloc[i.dataset.alloc] = +i.value || 0; }); await saveCPlan(cp); renderHere(); toast('배정을 저장했습니다'); };
+  const cs = $('#cp-save'); if (cs) cs.onclick = async () => { cp.churchSlogan = $('#cp-slogan').value.trim(); cp.alloc = cp.alloc || {}; document.querySelectorAll('[data-alloc]').forEach(i => { cp.alloc[i.dataset.alloc] = moneyNum(i.value); }); await saveCPlan(cp); renderHere(); toast('배정을 저장했습니다'); };
   const addFixed = async rows => { let n = 0; for (const r of rows) { if (C().events.some(e => e.date === r.date && e.title === r.title)) continue; const ev = { id: uid(), date: r.date, end: r.end || '', title: r.title, note: r.note || '', kind: r.kind || 'church', activity: r.activity || '' }; await backend.set(`committee/main/events/${ev.id}`, ev); C().events.push({ _id: ev.id, ...ev }); n++; } return n; };
   const fa = $('#fx-auto'); if (fa) fa.onclick = async () => { const n = await addFixed(churchCalendar(year)); renderHere(); toast(n ? `${n}건 넣었습니다 — 성탄주일 날짜는 교회 결정을 확인하세요` : '이미 모두 들어 있습니다'); };
   const fxAdd = async () => { const dt = $('#fx-date').value, t = $('#fx-title').value.trim(); if (!dt || !t) { toast('날짜와 일정 이름을 넣어 주세요'); return; } await addFixed([{ date: dt, end: $('#fx-end').value, title: t, kind: $('#fx-kind').value, activity: $('#fx-act').value.trim(), note: $('#fx-note').value.trim() }]); renderHere(); };
@@ -1672,49 +1679,36 @@ BIND.plan = () => {
       let nEv = 0; if (pick.has('events')) for (const e of pevs) { const d = shift(e.date); if (dd.events.some(x => x.date === d && x.title === e.title)) continue; const ne = { id: 'ev_' + uid(), date: d, end: e.end ? shift(e.end) : '', title: e.title, note: [e.note, '전년도에서 복사 — 날짜 확인'].filter(Boolean).join(' · '), cat: e.cat || '', amount: e.amount || 0, owner: e.owner || '', from: e._id || e.id }; await backend.set(`depts/${dd.id}/events/${ne.id}`, ne); dd.events.push({ _id: ne.id, ...ne }); nEv++; }
       await savePlan(dd, plan); closeModal(); render(); toast(`가져왔습니다${nEv ? ` (일정 ${nEv}건 — 날짜를 꼭 확인하세요)` : ''}`); }; };
   // 부서 행사 추가·삭제 (Enter로도 추가, 보던 자리 유지)
-  const evAdd = async () => { const dt = $('#ev-date').value, t = $('#ev-title').value.trim(); if (!dt || !t) { toast('날짜와 행사 이름을 넣어 주세요'); return; } await keepDraft(); const e = { id: 'ev_' + uid(), date: dt, end: '', title: t, note: '', cat: $('#ev-cat').value.trim(), amount: +$('#ev-amt').value || 0, owner: $('#ev-owner').value.trim() }; await backend.set(`depts/${dd.id}/events/${e.id}`, e); dd.events.push({ _id: e.id, ...e }); renderHere(); };
+  const evAdd = async () => { const dt = $('#ev-date').value, t = $('#ev-title').value.trim(); if (!dt || !t) { toast('날짜와 행사 이름을 넣어 주세요'); return; } await keepDraft(); const e = { id: 'ev_' + uid(), date: dt, end: '', title: t, note: '', cat: $('#ev-cat').value.trim(), amount: moneyNum($('#ev-amt').value), owner: $('#ev-owner').value.trim() }; await backend.set(`depts/${dd.id}/events/${e.id}`, e); dd.events.push({ _id: e.id, ...e }); renderHere(); };
   const ea = $('#ev-add'); if (ea) { ea.onclick = evAdd; ['ev-title', 'ev-cat', 'ev-amt', 'ev-owner'].forEach(id => { const el = $('#' + id); if (el) el.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); evAdd(); } }; }); }
   document.querySelectorAll('[data-del-ev]').forEach(b => b.onclick = async () => { await keepDraft(); await backend.del(`depts/${dd.id}/events/${b.dataset.delEv}`); dd.events = dd.events.filter(e => (e._id || e.id) !== b.dataset.delEv); renderHere(); });
   // 예산 항목 추가·삭제 (Enter로도 추가, 배정 총액을 넘으면 넣지 않음, 보던 자리 유지)
-  const bAdd = async () => { collectPlan(plan); const a = +$('#b-amt').value, it = $('#b-item').value.trim(); if (!a || !it) { toast('세부 내용과 금액을 넣어 주세요'); return; } const al = allocOf(cp, dd.id); if (al && budgetTotal(plan) + a > al) { toast(`배정 총액(${won(al)}원)을 ${won(budgetTotal(plan) + a - al)}원 넘습니다 — 넣지 않았습니다`); return; } plan.budget.push({ category: $('#b-cat').value.trim() || BUDGET_CATS[0], item: it, when: $('#b-when').value.trim(), amount: a, note: $('#b-note').value.trim() }); await savePlan(dd, plan); renderHere(); };
+  const bAdd = async () => { collectPlan(plan); const a = moneyNum($('#b-amt').value), it = $('#b-item').value.trim(); if (!a || !it) { toast('세부 내용과 금액을 넣어 주세요'); return; } const al = allocOf(cp, dd.id); if (al && budgetTotal(plan) + a > al) { toast(`배정 총액(${won(al)}원)을 ${won(budgetTotal(plan) + a - al)}원 넘습니다 — 넣지 않았습니다`); return; } plan.budget.push({ category: $('#b-cat').value.trim() || BUDGET_CATS[0], item: it, when: $('#b-when').value.trim(), amount: a, note: $('#b-note').value.trim() }); await savePlan(dd, plan); renderHere(); };
   const ba = $('#b-add'); if (ba) { ba.onclick = bAdd; ['b-cat', 'b-item', 'b-when', 'b-amt', 'b-note'].forEach(id => { const el = $('#' + id); if (el) el.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); bAdd(); } }; }); }
   document.querySelectorAll('[data-del-b]').forEach(b => b.onclick = async () => { collectPlan(plan); plan.budget.splice(+b.dataset.delB, 1); await savePlan(dd, plan); renderHere(); });
-  // 예산 줄을 누르면 작은 창에서 항목·세부 내용·쓰는 달·금액·비고를 고친다 (삭제 단추는 제외)
-  document.querySelectorAll('[data-edit-b]').forEach(tr => tr.onclick = e => { if (e.target.closest('button')) return; budgetEditor(dd, plan, +tr.dataset.editB, tr, cp); });
+  // 예산 칸을 누르면 그 자리에 입력 칸이 열린다 — Enter·칸 벗어남 = 저장, Esc = 취소. 금액은 쉼표가 붙고 배정 총액을 넘으면 저장하지 않음
+  document.querySelectorAll('[data-bcell]').forEach(td => td.onclick = () => { if (td.querySelector('input')) return; const [i, k] = td.dataset.bcell.split('|'); budgetCellEdit(dd, plan, +i, k, td, cp); });
+  bindMoney();
   // 줄 표: 줄 추가·삭제 (쓰던 글은 먼저 거둔다)
   document.querySelectorAll('[data-re-add]').forEach(b => b.onclick = async () => { collectPlan(plan); const k = b.dataset.reAdd; plan[k].push(k === 'changes' ? { date: today() } : {}); if (plan.status === 'confirmed') await savePlan(dd, plan); else await keepDraft(); renderHere(); });
   document.querySelectorAll('[data-re-del]').forEach(b => b.onclick = async () => { collectPlan(plan); plan[b.dataset.reDel].splice(+b.dataset.i, 1); if (plan.status === 'confirmed') await savePlan(dd, plan); else await keepDraft(); renderHere(); });
   // 확정 뒤 변경 기록만 고칠 때 저장 단추가 없으므로, 칸을 벗어나면 바로 저장
   if (plan.status === 'confirmed' && canEdit() && !cm) document.querySelectorAll('[data-re="changes"]').forEach(el => el.onchange = async () => { collectPlan(plan); await savePlan(dd, plan); toast('변경 기록 저장'); });
 };
-/* 예산 항목 줄 편집 창 (출석부의 inlineEditor와 같은 모양) */
-function budgetEditor(dd, plan, i, tr, cp) {
-  const b = plan.budget[i]; if (!b) return;
-  document.querySelectorAll('.ie-pop').forEach(x => x.remove());
-  const pop = document.createElement('div'); pop.className = 'ie-pop';
+/* 예산 표의 한 칸을 그 자리에서 고치기 */
+function budgetCellEdit(dd, plan, i, k, td, cp) {
+  const b = plan.budget[i]; if (!b) return; const money = k === 'amount'; const old = td.innerHTML;
   const cats = [...new Set([...BUDGET_CATS, ...plan.budget.map(x => x.category).filter(Boolean)])];
-  pop.innerHTML = `<b>예산 항목 고치기</b>
-    <label class="f"><span>항목</span><input type="text" id="be-cat" list="be-cats" value="${esc(b.category || '')}"><datalist id="be-cats">${cats.map(c => `<option value="${esc(c)}">`).join('')}</datalist></label>
-    <label class="f"><span>세부 내용</span><input type="text" id="be-item" value="${esc(b.item || '')}"></label>
-    <label class="f"><span>쓰는 달·행사</span><input type="text" id="be-when" value="${esc(b.when || '')}"></label>
-    <label class="f"><span>금액</span><input type="number" id="be-amt" value="${esc(String(b.amount || ''))}"></label>
-    <label class="f"><span>비고</span><input type="text" id="be-note" value="${esc(b.note || '')}"></label>
-    <div class="row" style="gap:6px;margin-top:8px"><button class="btn s p" id="be-save">저장</button><button class="btn s" id="be-cancel">취소</button><span class="note">Esc 닫기 · Enter 저장</span></div>`;
-  document.body.appendChild(pop);
-  const r = tr.getBoundingClientRect(); const w = Math.min(360, innerWidth - 16); pop.style.width = w + 'px'; pop.style.left = Math.max(8, Math.min(r.left + 24, innerWidth - w - 8)) + 'px';
-  const h = pop.offsetHeight, below = r.bottom + 4, above = r.top - h - 4; pop.style.top = (below + h <= innerHeight - 8 ? below : above >= 8 ? above : Math.max(8, innerHeight - h - 8)) + 'px';
-  const close = () => { pop.remove(); document.removeEventListener('mousedown', outside, true); document.removeEventListener('keydown', key, true); };
-  const outside = e => { if (!pop.contains(e.target)) close(); };
-  const save = async () => {
-    const a = +$('#be-amt').value || 0, it = $('#be-item').value.trim(); if (!it || !a) { toast('세부 내용과 금액을 넣어 주세요'); return; }
-    collectPlan(plan); const al = allocOf(cp, dd.id); const others = budgetTotal(plan) - (+b.amount || 0);
-    if (al && others + a > al) { toast(`배정 총액(${won(al)}원)을 ${won(others + a - al)}원 넘습니다`); return; }
-    Object.assign(b, { category: $('#be-cat').value.trim() || BUDGET_CATS[0], item: it, when: $('#be-when').value.trim(), amount: a, note: $('#be-note').value.trim() });
-    $('#be-save').disabled = true; await savePlan(dd, plan); close(); renderHere(); toast('고쳤습니다');
-  };
-  const key = e => { if (e.key === 'Escape') { e.preventDefault(); close(); } else if (e.key === 'Enter') { e.preventDefault(); save(); } };
-  setTimeout(() => { document.addEventListener('mousedown', outside, true); document.addEventListener('keydown', key, true); }, 0);
-  $('#be-cancel').onclick = close; $('#be-save').onclick = save; $('#be-item').focus();
+  td.innerHTML = money ? moneyInput('id="bc-in" style="width:100%;min-width:100px;text-align:right"', b.amount, '금액') : `<input type="text" id="bc-in" value="${esc(b[k] || '')}" style="width:100%;min-width:${k === 'category' ? 110 : 120}px" ${k === 'category' ? 'list="be-cats"' : ''}>${k === 'category' ? `<datalist id="be-cats">${cats.map(c => `<option value="${esc(c)}">`).join('')}</datalist>` : ''}`;
+  const inp = td.querySelector('#bc-in'); bindMoney(td); inp.focus(); inp.select();
+  let done = false; const cancel = () => { if (done) return; done = true; td.innerHTML = old; };
+  const save = async () => { if (done) return; const v = money ? moneyNum(inp.value) : inp.value.trim();
+    if (money && !v) { toast('금액을 넣어 주세요'); cancel(); return; } if (k === 'item' && !v) { toast('세부 내용은 비울 수 없습니다'); cancel(); return; }
+    if (money) { const al = allocOf(cp, dd.id); const others = budgetTotal(plan) - (+b.amount || 0); if (al && others + v > al) { toast(`배정 총액(${won(al)}원)을 ${won(others + v - al)}원 넘습니다 — 저장하지 않았습니다`); cancel(); return; } }
+    if (b[k] === v || (k === 'category' && !v)) { cancel(); return; }
+    done = true; collectPlan(plan); b[k] = v; await savePlan(dd, plan); renderHere(); toast('고쳤습니다'); };
+  inp.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); save(); } else if (e.key === 'Escape') { e.preventDefault(); cancel(); } };
+  inp.onblur = () => setTimeout(save, 0);
 }
 function planBanner(dd, plan, compact) {
   if (!plan || plan.status !== 'confirmed') return '';

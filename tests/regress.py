@@ -403,14 +403,16 @@ with sync_playwright() as p:
     except Exception as e: rec('R26 (실행 오류)', False, str(e)[:160])
 
     def t_R27():
-        # R27 예산 줄을 누르면 편집 창이 열리고, 고친 값이 저장되어야 함
+        # R27 예산 칸을 누르면 그 자리에서 고쳐지고, 금액 칸에는 쉼표가 붙어야 함
         pg = login(b, 'elem'); Y = pg.evaluate("()=>window.CBCS_YEAR||2026") + 1
         go(pg, 'plan', f"{{year:{Y}}}")
-        pg.fill('#b-cat', '공통'); pg.fill('#b-item', '동계수련회'); pg.fill('#b-amt', '700000'); pg.press('#b-amt', 'Enter'); pg.wait_for_timeout(1200)
-        pg.click('[data-edit-b="0"] td'); pg.wait_for_timeout(500); opened = bool(pg.query_selector('.ie-pop'))
-        pg.fill('#be-cat', '행사비'); pg.fill('#be-amt', '650000'); pg.press('#be-amt', 'Enter'); pg.wait_for_timeout(1500)
+        pg.fill('#b-cat', '공통'); pg.fill('#b-item', '동계수련회'); pg.type('#b-amt', '700000'); comma = pg.input_value('#b-amt')
+        pg.press('#b-amt', 'Enter'); pg.wait_for_timeout(1200)
+        pg.click('[data-bcell="0|category"]'); pg.wait_for_timeout(300); inplace = bool(pg.query_selector('[data-bcell="0|category"] input'))
+        pg.fill('#bc-in', '행사비'); pg.press('#bc-in', 'Enter'); pg.wait_for_timeout(1200)
+        pg.click('[data-bcell="0|amount"]'); pg.wait_for_timeout(300); pg.fill('#bc-in', '650000'); pg.press('#bc-in', 'Enter'); pg.wait_for_timeout(1200)
         v = pg.evaluate(f"async()=>{{const p=await window.CBCS_APP.backend.get('depts/elem/plans/{Y}'); const b=(p.budget||[])[0]||{{}}; return [b.category,b.amount]}}")
-        rec('R27 예산 줄 눌러서 고치기', opened and v == ['행사비', 650000], f'창 열림={opened}, 저장={v}')
+        rec('R27 예산 칸 눌러서 고치기 · 쉼표', comma == '700,000' and inplace and v == ['행사비', 650000], f'쉼표={comma!r}, 제자리 입력={inplace}, 저장={v}')
         pg.close()
     try: t_R27()
     except Exception as e: rec('R27 (실행 오류)', False, str(e)[:160])

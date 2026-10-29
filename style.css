@@ -444,6 +444,8 @@ button.tile.go .l{color:var(--muted)}
 .ro-desc{margin:0 0 12px}
 /* 출석부 표 바로 고치기 */
 td.ie-on{cursor:text;position:relative}
+td.ie-on input{padding:4px 6px;font:inherit}
+input.money{text-align:right;font-variant-numeric:tabular-nums}
 td.ie-on:hover{outline:2px dashed var(--accent);outline-offset:-3px;background:var(--panel) !important}
 .ie-pop{position:fixed;z-index:120;max-height:calc(100vh - 16px);overflow:auto;background:var(--panel);border:1px solid var(--accent);border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.2);padding:10px 12px;font-size:13px;display:flex;flex-direction:column;gap:6px}
 .ie-pop textarea{width:100%;font:inherit;padding:6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}
