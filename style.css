@@ -451,6 +451,8 @@ table.budget td.wrap{white-space:normal;overflow-wrap:anywhere}
 td.ie-on{padding:0 8px;height:36px}
 td.ie-on input.ie-in{width:100%;min-width:0;box-sizing:border-box;margin:0;padding:3px 4px;height:28px;font:inherit;font-size:13px;border:1px solid var(--accent);border-radius:4px;background:var(--panel)}
 th.sortable{cursor:pointer;user-select:none}
+.church-head{background:var(--line-soft);border-radius:8px;padding:8px 12px;margin-bottom:6px}
+tr.routine td,tr.routine th{background:var(--line-soft)}
 th.sortable:hover{color:var(--fg)}
 input.money{text-align:right;font-variant-numeric:tabular-nums}
 td.ie-on:hover{outline:2px dashed var(--accent);outline-offset:-3px;background:var(--panel) !important}
