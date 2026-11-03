@@ -145,6 +145,7 @@ with sync_playwright() as p:
         # R09 계획서 일정 추가 뒤에도 쓰던 표어가 저장되어야 함 (UX-02)
         pg = login(b, 'elem'); Y = pg.evaluate("()=>window.CBCS_YEAR||2026") + 1
         go(pg, 'plan', f"{{year:{Y}}}")
+        pg.evaluate("()=>document.querySelectorAll('details').forEach(d=>d.open=true)")
         pg.fill('#pl-slogan', '사라지면 안 되는 계획 초안')
         pg.fill('#ev-date', f'{Y}-01-10'); pg.fill('#ev-title', '시험 일정'); pg.click('#ev-add'); pg.wait_for_timeout(1500)
         saved = pg.evaluate(f"async()=>((await window.CBCS_APP.backend.get('depts/elem/plans/{Y}'))||{{}}).slogan||''")
@@ -280,11 +281,11 @@ with sync_playwright() as p:
 
     def t_R18():
         pg = login(b, 'elem'); Y = pg.evaluate("()=>window.CBCS_YEAR||2026")
-        pg.evaluate(f"""async()=>{{const A=window.CBCS_APP, dd=A.S.data.elem; const p={{year:{Y},status:'confirmed',slogan:'가상표어',verse:'',verseRef:'',goals:['가상목표 하나'],methods:'가상 방법',ministry:'',worship:'',notes:'',budget:[{{category:'교육',item:'가상교재',amount:10000,note:''}}]}}; await A.backend.set('depts/elem/plans/{Y}', p); dd.plans=dd.plans||{{}}; dd.plans[{Y}]=p; delete dd.plans[{Y+1}];}}""")
+        pg.evaluate(f"""async()=>{{const A=window.CBCS_APP, dd=A.S.data.elem; const p={{year:{Y},status:'confirmed',slogan:'가상표어',verse:'',verseRef:'',goals:['가상목표 하나'],practice:{{예배:'가상 예배 실천'}},org:{{chief:'가상 부장'}},budget:[{{category:'교육',item:'가상교재',amount:10000,note:''}}]}}; await A.backend.set('depts/elem/plans/{Y}', p); dd.plans=dd.plans||{{}}; dd.plans[{Y}]=p; delete dd.plans[{Y+1}];}}""")
         go(pg, 'plan', f"{{year:{Y + 1}}}")
         pg.click('#pl-copy'); pg.wait_for_timeout(800); pg.click('#pc-go'); pg.wait_for_timeout(1500)
-        g = pg.evaluate(f"async()=>{{const p=await window.CBCS_APP.backend.get('depts/elem/plans/{Y + 1}')||{{}}; return {{goals:p.goals||[], budget:(p.budget||[]).map(x=>x.item), slogan:p.slogan||''}}}}")
-        rec('R18 전년도 계획서에서 골라 가져오기', '가상목표 하나' in g['goals'] and '가상교재' in g['budget'] and g['slogan'] == '', str(g))
+        g = pg.evaluate(f"async()=>{{const p=await window.CBCS_APP.backend.get('depts/elem/plans/{Y + 1}')||{{}}; return {{pr:(p.practice||{{}}).예배||'', chief:(p.org||{{}}).chief||'', budget:(p.budget||[]).map(x=>x.item), slogan:p.slogan||''}}}}")
+        rec('R18 전년도 계획서에서 골라 가져오기', g['pr'] == '가상 예배 실천' and g['chief'] == '가상 부장' and '가상교재' in g['budget'] and g['slogan'] == '', str(g))
         pg.close()
     try: t_R18()
     except Exception as e: rec('R18 (실행 오류)', False, str(e)[:160])
@@ -370,66 +371,64 @@ with sync_playwright() as p:
     try: t_R24()
     except Exception as e: rec('R24 (실행 오류)', False, str(e)[:160])
 
-    # ── 2026-10-27 연간계획서 양식(1~6부) ──
+    # ── 2026-11-03 연간계획서(교육부서 양식) ──
     def t_R25():
-        # R25 예산안: 금액 칸에서 Enter로 추가되고, 추가 뒤 화면이 맨 위로 튀지 않아야 함
+        # R25 예산안: 금액 칸에서 Enter로 줄이 추가되고(쉼표 입력), 추가 뒤 화면이 맨 위로 튀지 않아야 함
         pg = login(b, 'elem'); Y = pg.evaluate("()=>window.CBCS_YEAR||2026") + 1
         go(pg, 'plan', f"{{year:{Y}}}")
+        n0 = pg.evaluate("()=>document.querySelectorAll('[data-del-b]').length")
         pg.evaluate("()=>document.querySelector('#b-item').scrollIntoView()"); pg.wait_for_timeout(300)
         y0 = pg.evaluate("()=>window.scrollY")
-        pg.fill('#b-item', '시험 교재'); pg.fill('#b-amt', '120000'); pg.press('#b-amt', 'Enter'); pg.wait_for_timeout(1500)
+        pg.fill('#b-item', '시험 교재'); pg.type('#b-amt', '120000'); comma = pg.input_value('#b-amt'); pg.press('#b-amt', 'Enter'); pg.wait_for_timeout(1500)
         y1 = pg.evaluate("()=>window.scrollY"); n = pg.evaluate("()=>document.querySelectorAll('[data-del-b]').length")
-        rec('R25 예산 Enter 추가 · 화면 위치 유지', n == 1 and y0 > 0 and abs(y1 - y0) < 40, f'줄={n}, 스크롤 {y0}→{y1}')
+        rec('R25 예산 Enter 추가 · 쉼표 · 화면 위치 유지', n == n0 + 1 and comma == '120,000' and y0 > 0 and abs(y1 - y0) < 120, f'줄={n0}→{n}, 쉼표={comma!r}, 스크롤 {y0}→{y1}')
         pg.close()
     try: t_R25()
     except Exception as e: rec('R25 (실행 오류)', False, str(e)[:160])
 
     def t_R26():
-        # R26 교육위원회 배정 총액을 넘는 예산 항목은 넣지 않고, 교회력 자동 채우기는 부서 계획서 1부에 보여야 함
-        pg = login(b, 'committee'); Y = pg.evaluate("()=>window.CBCS_YEAR||2026") + 1
+        # R26 교회 공통(정책당회 자료)이 자동으로 깔리고, 교육위원회 배정 총액을 넘는 금액은 되돌려야 함
+        pg = login(b, 'committee'); Y = 2027
         go(pg, 'plan', f"{{dept:'elem',year:{Y}}}")
-        pg.click('#fx-auto'); pg.wait_for_timeout(1200); pg.fill('[data-alloc=elem]', '500000'); pg.click('#cp-save'); pg.wait_for_timeout(1200)
-        fx = pg.evaluate("()=>document.querySelectorAll('[data-del-fx]').length")
+        slogan = pg.input_value('#cp-slogan'); w1 = pg.evaluate("()=>document.querySelector('table.weeks tbody tr td:nth-child(3)').textContent")
+        pg.fill('[data-alloc=elem]', '500000'); pg.click('#cp-save'); pg.wait_for_timeout(1200)
         pg.evaluate("()=>window.CBCS_APP.backend.logout()"); pg.wait_for_timeout(500)
         pg.goto(BASE + '/?demo=1'); pg.wait_for_timeout(1000); pg.select_option('#lg-dept', 'elem'); pg.fill('#lg-pw', 'x'); pg.click('#lg-go'); pg.wait_for_timeout(2500)
         go(pg, 'plan', f"{{year:{Y}}}")
-        seen = pg.evaluate("()=>[...document.querySelectorAll('.card')].find(c=>c.querySelector('h2').textContent.startsWith('1부')).querySelectorAll('tbody tr').length")
-        pg.fill('#b-item', '한도 안'); pg.fill('#b-amt', '300000'); pg.click('#b-add'); pg.wait_for_timeout(1200)
-        pg.fill('#b-item', '한도 밖'); pg.fill('#b-amt', '300000'); pg.click('#b-add'); pg.wait_for_timeout(1200)
-        n = pg.evaluate("()=>document.querySelectorAll('[data-del-b]').length")
-        rec('R26 고정 일정 공유 · 배정 총액 초과 막기', fx >= 17 and seen == fx and n == 1, f'고정 일정={fx}, 부서에 보임={seen}, 예산 줄={n}')
+        seen = pg.evaluate("()=>document.querySelector('table.weeks tbody tr td:nth-child(3)').textContent")
+        pg.click('[data-cell="bg|0|amount"]'); pg.wait_for_timeout(300); pg.fill('#pc-in', '300000'); pg.press('#pc-in', 'Enter'); pg.wait_for_timeout(1200)
+        pg.click('[data-cell="bg|1|amount"]'); pg.wait_for_timeout(300); pg.fill('#pc-in', '300000'); pg.press('#pc-in', 'Enter'); pg.wait_for_timeout(1500)
+        tot = pg.evaluate(f"async()=>{{const p=await window.CBCS_APP.backend.get('depts/elem/plans/{Y}'); return p.budget.reduce((a,b)=>a+(+b.amount||0),0)}}")
+        rec('R26 교회 공통 자동 · 배정 총액 초과 되돌림', slogan == '복음들고 세상으로' and '신년감사주일' in w1 and seen == w1 and tot == 300000, f'표어={slogan!r}, 1주차 같음={seen == w1}, 합계={tot}')
         pg.close()
     try: t_R26()
     except Exception as e: rec('R26 (실행 오류)', False, str(e)[:160])
 
     def t_R27():
-        # R27 예산 칸을 누르면 그 자리에서 고쳐지고, 금액 칸에는 쉼표가 붙어야 함
+        # R27 개요·조직·52주·사역 계획 칸을 눌러 그 자리에서 쓰면 저장되어야 함
         pg = login(b, 'elem'); Y = pg.evaluate("()=>window.CBCS_YEAR||2026") + 1
         go(pg, 'plan', f"{{year:{Y}}}")
-        pg.fill('#b-cat', '공통'); pg.fill('#b-item', '동계수련회'); pg.type('#b-amt', '700000'); comma = pg.input_value('#b-amt')
-        pg.press('#b-amt', 'Enter'); pg.wait_for_timeout(1200)
-        pg.click('[data-bcell="0|category"]'); pg.wait_for_timeout(300); inplace = bool(pg.query_selector('[data-bcell="0|category"] input'))
-        pg.fill('#bc-in', '행사비'); pg.press('#bc-in', 'Enter'); pg.wait_for_timeout(1200)
-        pg.click('[data-bcell="0|amount"]'); pg.wait_for_timeout(300); pg.fill('#bc-in', '650000'); pg.press('#bc-in', 'Enter'); pg.wait_for_timeout(1200)
-        v = pg.evaluate(f"async()=>{{const p=await window.CBCS_APP.backend.get('depts/elem/plans/{Y}'); const b=(p.budget||[])[0]||{{}}; return [b.category,b.amount]}}")
-        rec('R27 예산 칸 눌러서 고치기 · 쉼표', comma == '700,000' and inplace and v == ['행사비', 650000], f'쉼표={comma!r}, 제자리 입력={inplace}, 저장={v}')
+        pg.click('[data-cell="pr|예배"]'); pg.wait_for_timeout(300); pg.fill('#pc-in', '매주 예배 후 분반'); pg.press('#pc-in', 'Tab'); pg.wait_for_timeout(1200)
+        pg.click('[data-cell="org|chief"]'); pg.wait_for_timeout(300); pg.fill('#pc-in', '시험 부장'); pg.press('#pc-in', 'Enter'); pg.wait_for_timeout(1200)
+        pg.click('[data-cell="pw|5|event"]'); pg.wait_for_timeout(300); pg.fill('#pc-in', '겨울성경학교'); pg.press('#pc-in', 'Tab'); pg.wait_for_timeout(1200)
+        pg.click('[data-cell="mon|3|전도"]'); pg.wait_for_timeout(300); pg.fill('#pc-in', '친구 초청'); pg.press('#pc-in', 'Tab'); pg.wait_for_timeout(1200)
+        v = pg.evaluate(f"async()=>{{const p=await window.CBCS_APP.backend.get('depts/elem/plans/{Y}'); return [p.practice.예배, p.org.chief, (p.weeks[5]||{{}}).event, (p.monthly[3]||{{}}).전도]}}")
+        rec('R27 칸 눌러서 쓰기(개요·조직·52주·사역 계획)', v == ['매주 예배 후 분반', '시험 부장', '겨울성경학교', '친구 초청'], str(v))
         pg.close()
     try: t_R27()
     except Exception as e: rec('R27 (실행 오류)', False, str(e)[:160])
 
     def t_R28():
-        # R28 예산 표: 칸을 눌러도 열 너비가 바뀌지 않고, 표 머리를 누르면 항목 순으로 정렬되어야 함
+        # R28 예산 표: 칸을 눌러도 열 너비가 바뀌지 않고, 표 머리를 누르면 사역 순으로 정렬되어야 함
         pg = login(b, 'elem'); Y = pg.evaluate("()=>window.CBCS_YEAR||2026") + 1
         go(pg, 'plan', f"{{year:{Y}}}")
-        for c, it, a in [('사역', '새가족팀', '400000'), ('예배·교육비', '교재비', '200000'), ('행사비', '소풍', '150000')]:
-            pg.fill('#b-cat', c); pg.fill('#b-item', it); pg.fill('#b-amt', a); pg.press('#b-amt', 'Enter'); pg.wait_for_timeout(900)
         w0 = pg.evaluate("()=>[...document.querySelectorAll('table.budget thead th')].map(t=>t.getBoundingClientRect().width|0)")
-        pg.click('[data-bcell="0|item"]'); pg.wait_for_timeout(300)
+        pg.click('[data-cell="bg|0|item"]'); pg.wait_for_timeout(300)
         w1 = pg.evaluate("()=>[...document.querySelectorAll('table.budget thead th')].map(t=>t.getBoundingClientRect().width|0)")
-        pg.press('#bc-in', 'Escape'); pg.wait_for_timeout(200)
-        pg.click('[data-bsort="category"]'); pg.wait_for_timeout(1200)
-        order = pg.evaluate("()=>[...document.querySelectorAll('[data-bcell$=\"|category\"]')].map(t=>t.textContent)")
-        rec('R28 예산 표 열 너비 고정 · 항목 정렬', w0 == w1 and order == ['예배·교육비', '행사비', '사역'], f'너비 {w0}→{w1}, 순서={order}')
+        pg.press('#pc-in', 'Escape'); pg.wait_for_timeout(200)
+        pg.click('[data-bsort="category"]'); pg.wait_for_timeout(1200); pg.click('[data-bsort="category"]'); pg.wait_for_timeout(1200)
+        order = pg.evaluate("()=>[...new Set([...document.querySelectorAll('[data-cell$=\"|category\"]')].map(t=>t.textContent))]")
+        rec('R28 예산 표 열 너비 고정 · 사역 정렬', w0 == w1 and order == ['운영', '전도', '교제', '양육', '예배', '공통'], f'너비 {w0}→{w1}, 순서={order}')
         pg.close()
     try: t_R28()
     except Exception as e: rec('R28 (실행 오류)', False, str(e)[:160])
