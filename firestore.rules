@@ -38,6 +38,10 @@ service cloud.firestore {
     // 장학: 교육위원회 전용
     match /scholarship/{docId} { allow read, write: if isCommittee(); }
 
+    // 교육부 수첩(planner/): 로그인한 계정의 개인 기록(일정·할 일·일지) — 그 계정(uid)만 읽고 씀. 다른 계정·다른 부서는 접근 불가
+    match /planner/{u} { allow read, write: if signedIn() && request.auth.uid == u; }
+    match /planner/{u}/{sub}/{docId} { allow read, write: if signedIn() && request.auth.uid == u; }
+
     // 보관 색인·가져오기 기록: 로그인한 모두 읽기, 교육위원회만 쓰기
     match /archive/{docId} { allow read: if signedIn(); allow write: if isCommittee(); }
     match /meta/{docId} { allow read: if signedIn(); allow write: if isCommittee(); }

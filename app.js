@@ -305,6 +305,7 @@ async function render() {
       <div class="nav-bottom"><div class="sec">${DEMO ? '체험 모드 (가상 자료)' : MOCK ? '시험 모드 (로컬)' : 'CBCS · ' + YEAR}</div>
       ${nav.filter(n => n[0] === 'import').map(n => `<button data-nav="import" class="${S.view === 'import' ? 'on' : ''}"><span class="k">⇪</span>${n[1]}</button>`).join('')}
       <button data-refresh><span class="k">↻</span>새로고침</button></div></nav>
+      <a class="planner-banner" href="planner/${DEMO ? '?demo=1' : ''}" target="_blank" rel="noopener" title="교육부 수첩 — 개인 일정·요람·일지 (새 창)"><span class="k">📓</span><span class="t">교육부 수첩<small>개인 일정 · 요람 · 일지</small></span></a>
       ${FOOTER}
     </aside>
     <main class="main" id="main">${DEMO ? `<div class="demo-bar no-print"><b>체험 모드</b> · 모든 이름과 숫자는 가상입니다. 바꾼 내용은 이 브라우저에만 저장됩니다.<span style="flex:1"></span><button class="btn s" data-tour>튜토리얼</button><button class="btn s" data-demo-reset>체험 자료 초기화</button></div>` : ''}${body}<div class="main-foot">${FOOTER}</div></main>

@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://www.gstatic.com/firebasejs/10.14.1/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://www.gstatic.com; frame-src https://*.firebaseapp.com; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>교육부 수첩</title>
+<meta name="description" content="교육부 관리자용 개인 수첩 — 오늘 · 달력 · 요람 · 일지 · 할 일. CBCS 자료를 읽어 씁니다.">
+<meta name="theme-color" content="#8a1f2b">
+<meta name="robots" content="noindex">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="../icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="planner.css?v=202611061">
+</head>
+<body>
+<div id="root"><div class="boot">수첩 여는 중…</div></div>
+<div class="toast" id="toast"></div>
+<div class="modal-bg" id="modal" hidden><div class="modal" id="modal-box"></div></div>
+<script src="../config.js?v=202610131605"></script>
+<script type="module" src="planner.js?v=202611061"></script>
+</body>
+</html>

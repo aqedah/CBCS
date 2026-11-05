@@ -194,6 +194,11 @@ table.roster{min-width:1040px}
 .nav-sep{height:1px;background:var(--line);margin:8px 6px}
 .nav-bottom{margin-top:auto;padding-top:12px;border-top:1px solid var(--line-soft);display:flex;flex-direction:column;gap:2px}
 .side .foot{margin-top:12px}
+/* 왼쪽 아래 "교육부 수첩" 배너 — 관리자 개인 수첩(planner/)으로 가는 문 */
+.planner-banner{margin:10px 0 0;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--accent-soft);color:var(--accent);text-decoration:none;display:flex;gap:10px;align-items:center;font-size:13px;font-weight:500}
+.planner-banner:hover{border-color:var(--accent)}
+.planner-banner .k{font-size:18px;line-height:1}
+.planner-banner small{display:block;font-size:11px;color:var(--muted);font-weight:400}
 .foot{font-size:11px;color:var(--muted);line-height:1.5;padding:8px}
 .foot p{margin:0 0 4px}
 .main-foot{display:none;margin-top:28px;border-top:1px solid var(--line);padding-top:8px}
@@ -614,7 +619,10 @@ details.card.principle>summary:hover .pr-tg{border-color:var(--accent);color:var
 @media (min-width:761px) and (max-width:1100px){
   .app{grid-template-columns:64px 1fr}
   .side{width:64px;padding:16px 8px;overflow-x:hidden;z-index:40;transition:width .15s ease,box-shadow .15s ease}
-  .side .brand small,.side .dept-chip,.side .nav-bottom .sec,.side .foot,.side #admin-mode,.side #admin-off,.side .sub-nav,.side .caret{display:none}
+  .side .brand small,.side .dept-chip,.side .nav-bottom .sec,.side .foot,.side #admin-mode,.side #admin-off,.side .sub-nav,.side .caret,.side .planner-banner .t{display:none}
+  .side .planner-banner{justify-content:center;padding:8px 0}
+  .side:hover .planner-banner .t,.side:focus-within .planner-banner .t{display:block}
+  .side:hover .planner-banner,.side:focus-within .planner-banner{justify-content:flex-start;padding:10px 12px}
   .side .brand{font-size:15px;text-align:center}
   .side .nav button{font-size:0;justify-content:center;padding:10px 0}
   .side .nav button .k{font-size:17px;width:auto}
