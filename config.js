@@ -13,5 +13,7 @@ window.CBCS_ACCOUNTS = { kinder: "kid", elem: "youth", youth: "teen", young: "fl
 // 심방 카드는 부서별 "관리자 모드"(앱 안에서 관리자 비밀번호 입력)로만 열림. 기록은 그 비밀번호로 암호화되어 저장되므로 계정을 더 만들지 않아도 됨
 // 부서 표시 이름
 window.CBCS_DEPT_NAMES = { kinder: "영유치부", elem: "초등부", youth: "중고등부", young: "청년부" };
+// 잠시 숨길 부서 (청년부로 먼저 실사용을 확인한 뒤 다른 부서를 다시 열 때 이 목록에서 빼면 됨). 체험 모드에는 적용 안 됨
+window.CBCS_HIDDEN_DEPTS = ["kinder", "elem", "youth"];
 // 2026년 데이터 기준 연도 (연초에 바꾸면 통계·월간 집계의 기본 연도가 바뀜)
 window.CBCS_YEAR = 2026;

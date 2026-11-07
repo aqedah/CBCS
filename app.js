@@ -2,12 +2,15 @@
 
 /* ───────────── 공통 ───────────── */
 const YEAR = window.CBCS_YEAR || new Date().getFullYear();
-const DEPTS = window.CBCS_DEPT_NAMES || { kinder:'영유치부', elem:'초등부', youth:'중고등부', young:'청년부' };
 const ACCOUNTS = window.CBCS_ACCOUNTS || { kinder:'kinder', elem:'elem', youth:'youth', young:'young', committee:'committee' };
 const deptOfAccount = local => Object.keys(ACCOUNTS).find(k => ACCOUNTS[k] === local) || null;
 const QS = new URLSearchParams(location.search);
 const DEMO = QS.has('demo'); // 체험 모드: 가상 자료(demo-data.js)만 쓰고 실제 서버에는 접속하지 않음
 const MOCK = QS.has('mock') || DEMO;
+// 잠시 숨긴 부서(config.js의 CBCS_HIDDEN_DEPTS): 목록·탭·로그인에서 빠진다. 이름(DEPTS.youth 등)은 그대로 읽히도록 '열거되지 않는 칸'으로 둔다. 체험 모드는 모든 부서를 보여 준다
+const HIDDEN_DEPTS = DEMO ? [] : (window.CBCS_HIDDEN_DEPTS || []);
+const DEPTS = (() => { const all = window.CBCS_DEPT_NAMES || { kinder:'영유치부', elem:'초등부', youth:'중고등부', young:'청년부' }; const o = {}; Object.entries(all).forEach(([k, v]) => Object.defineProperty(o, k, { value: v, enumerable: !HIDDEN_DEPTS.includes(k) })); return o; })();
+const FIRST_DEPT = Object.keys(DEPTS)[0] || 'young'; // 교육위원회가 부서를 고르지 않았을 때 처음 보여 줄 부서
 const $ = s => document.querySelector(s);
 const uid = () => Math.random().toString(36).slice(2, 10);
 const DEL = Symbol('delete-field'); // backend.update에서 칸 지우기
@@ -633,7 +636,7 @@ function studentRow(dd, s, edit, no, div) {
   return `<tr class="click" data-student="${esc(s.id)}">${no ? `<td class="n no">${no}</td>` : ''}${div ? `<td><span class="pill ${div === '라피끄' ? 'info' : 'mute'}">${div}</span></td>` : ''}<td>${esc(s.name)}${s.flags && s.flags.length ? ` <span class="tag flag" title="${esc(s.flags.join(' / '))}">!</span>` : ''}</td><td>${esc(c ? c.name : s.classId)}</td><td>${esc(s.sex)}</td><td>${esc(s.birth || '')}</td><td class="ie" data-ie="faith" title="${esc(faithLabel(s))}">${s.faith ? esc(s.faith) : '<span class="note">모름</span>'}</td><td class="ie" data-ie="phone">${esc(phoneLabel(s)) || '<span class="note">—</span>'}</td><td class="wrap note" title="${esc(s.school || '')}"><div class="clamp2">${esc(s.school || '')}</div></td><td class="wrap note ie" data-ie="note" title="${esc(s.note || '')}">${s.note ? `<div class="clamp2">${esc(s.note)}</div>` : '<span class="note">—</span>'}</td><td class="ie" data-ie="status">${statusPill(s)}</td></tr>`;
 }
 VIEWS.roster = async () => {
-  let dd; if (isCommittee()) { const d = S.sub.dept || 'kinder'; dd = await loadDept(d); } else dd = D();
+  let dd; if (isCommittee()) { const d = S.sub.dept || FIRST_DEPT; dd = await loadDept(d); } else dd = D();
   const nextYear = YEAR + 1; const plan = promotionPlan(dd, nextYear);
   if (!isCommittee() && canEdit()) { try { await syncPromotions(dd, nextYear); } catch (e) { console.warn('진급 동기화 실패', e); } }
   await loadShared(); if (!isCommittee() && canEdit()) { try { await syncSiblings(dd); } catch (e) {} }
@@ -701,7 +704,7 @@ VIEWS.roster = async () => {
 };
 /* ───────────── 출석 기록 (연도별 주일 × 학생 표) ───────────── */
 VIEWS.attlog = async () => {
-  let dd; if (isCommittee()) dd = await loadDept(S.sub.dept || 'kinder'); else dd = D();
+  let dd; if (isCommittee()) dd = await loadDept(S.sub.dept || FIRST_DEPT); else dd = D();
   const years = [...new Set(Object.keys(dd.reports).map(d => +d.slice(0, 4)))].sort((a, b) => b - a);
   const year = S.sub.year || (years.includes(YEAR) ? YEAR : years[0] || YEAR);
   const mon = S.sub.mon || 0;
@@ -749,7 +752,7 @@ function attPersonModal(dd, s, year) {
     ${!isMobile() ? `<div class="row" style="margin-top:12px"><button class="btn" id="ap-card">출석부 학생 카드 열기</button></div>` : ''}`;
 }
 BIND.attlog = () => {
-  const dd = isCommittee() ? S.data[S.sub.dept || 'kinder'] : D();
+  const dd = isCommittee() ? S.data[S.sub.dept || FIRST_DEPT] : D();
   document.querySelectorAll('[data-alwho]').forEach(b => b.onclick = () => { const s = dd.students.find(x => x.id === b.dataset.alwho); if (!s) return; const yr = +($('#al-year') || {}).value || YEAR; openModal(attPersonModal(dd, s, yr)); const ac = $('#ap-card'); if (ac) ac.onclick = () => { closeModal(); S.view = 'roster'; S.sub = { ...(isCommittee() ? { dept: dd.id } : {}), show: s.status === 'left' ? 'all' : (s.status === 'newcomer' ? 'newcomer' : 'active'), open: s.id }; render(); }; });
   document.querySelectorAll('[data-dept]').forEach(b => b.onclick = () => { S.sub = { dept: b.dataset.dept }; render(); });
   $('#al-year').onchange = e => { S.sub.year = +e.target.value; S.sub.mon = 0; render(); };
@@ -803,7 +806,7 @@ function studentCard(dd, s) {
 }
 BIND.dropouts = () => BIND.roster();
 BIND.roster = () => {
-  const dd = isCommittee() ? S.data[S.sub.dept || 'kinder'] : D();
+  const dd = isCommittee() ? S.data[S.sub.dept || FIRST_DEPT] : D();
   const po = $('#pp-open'); if (po) po.onclick = () => { S.sub.promoPrint = true; render(); };
   if (S.sub.show === 'next' && document.querySelector('[data-pa], #pg-save, #pg-apply')) { const prep = S.prep || {}; const people = S.prepPeople || [];
     const readGroups = () => { const base = prep.groups && prep.groups.length ? prep.groups : prepDefaultGroups(dd); const g = base.map(x => ({ ...x }));
@@ -1120,7 +1123,7 @@ BIND.attend = () => {
 /* 열람 전용 보고서 목록 (모바일 부서 / 교육위원회) */
 VIEWS.reports = async () => {
   let dd;
-  if (isCommittee()) { const d = S.sub.dept || 'kinder'; dd = await loadDept(d); } else dd = D();
+  if (isCommittee()) { const d = S.sub.dept || FIRST_DEPT; dd = await loadDept(d); } else dd = D();
   if (S.sub.preview) return reportPaper(dd, dd.reports[S.sub.preview], true);
   const pick = isCommittee() ? `<div class="row" style="margin-bottom:10px">${Object.entries(DEPTS).map(([k,v]) => `<button class="btn ${dd.id === k ? 'p' : ''}" data-dept="${esc(k)}">${v}</button>`).join('')}</div>` : '';
   return reportList(dd, { title: ' — ' + esc(dd.doc.name), pick });
@@ -1333,7 +1336,7 @@ function assetPaper(dd, list) {
     <div class="ft"><b>중앙성서교회 교육위원회</b><span>CBCS에서 생성 · ${esc(dd.doc.name)}-물품대장-${today()}.pdf</span></div></section>`;
 }
 VIEWS.assets = async () => {
-  let dd; if (isCommittee()) { dd = await loadDept(S.sub.dept || 'kinder'); } else dd = D();
+  let dd; if (isCommittee()) { dd = await loadDept(S.sub.dept || FIRST_DEPT); } else dd = D();
   const q = (S.sub.q || '').trim(), st = S.sub.st || 'live', cat = S.sub.cat || '';
   let list = dd.assets.filter(a => (st === 'all' || (st === 'live' ? !['폐기', '분실'].includes(a.status) : ['폐기', '분실'].includes(a.status))) && (!cat || a.category === cat) && (!q || [a.name, a.spec, a.location, a.manager, a.note, a.no].join(' ').includes(q)));
   list.sort((a, b) => (b.purchaseDate || '') < (a.purchaseDate || '') ? -1 : 1);
@@ -1355,7 +1358,7 @@ VIEWS.assets = async () => {
   </div>`;
 };
 BIND.assets = () => {
-  const dd = isCommittee() ? S.data[S.sub.dept || 'kinder'] : D();
+  const dd = isCommittee() ? S.data[S.sub.dept || FIRST_DEPT] : D();
   document.querySelectorAll('[data-dept]').forEach(b => b.onclick = () => { S.sub = { dept: b.dataset.dept }; render(); });
   const op = $('#as-open-print'); if (op) op.onclick = () => { S.sub.print = true; render(); };
   const bk = $('#as-back'); if (bk) { bk.onclick = () => { delete S.sub.print; render(); }; $('#as-print').onclick = doPrint; return; }
@@ -1386,7 +1389,7 @@ function monthlyShown(dd, m, snap, edit) {
 VIEWS.monthly = async () => {
   const m = S.sub.month || prevMonth(today().slice(0, 7));
   if (isCommittee()) {
-    const d = S.sub.dept || 'kinder'; const dd = await loadDept(d); const snap = await monthSnap(dd, m);
+    const d = S.sub.dept || FIRST_DEPT; const dd = await loadDept(d); const snap = await monthSnap(dd, m);
     return `<div class="topbar no-print"><div><h1>월간 보고서</h1><div class="sub">부서를 고르면 그 달 보고서가 보입니다${snap ? ' · 이 달은 제출본이 고정되어 있습니다' : ''}</div></div>${canEdit() ? '<button class="btn p" id="m-print">PDF로 저장 / 인쇄</button>' : ''}</div><div class="stack">${monthNav(m)}<div class="row no-print">${Object.entries(DEPTS).map(([k,v]) => `<button class="btn ${d === k ? 'p' : ''}" data-dept="${esc(k)}">${v}</button>`).join('')}</div>${monthlyShown(dd, m, snap, false)}</div>`;
   }
   const dd = D(); const snap = await monthSnap(dd, m);
@@ -1616,7 +1619,7 @@ async function committeeCard(year, cp) {
     <details style="margin-top:8px"><summary class="note">교회력 달력 넣기 (메인 달력·월간 보고서용)</summary><div class="row" style="margin-top:6px"><button class="btn s" id="fx-auto">${year}년 교회력을 공통 일정 달력에 넣기</button><span class="note">신년감사·세계선교·세대통합·부활·어린이·어버이·교사·맥추·추수감사·성탄 등 날짜를 계산해 교육위원회 공통 일정에 넣습니다(이미 있으면 건너뜀).</span></div></details></div>`;
 }
 VIEWS.plan = async () => {
-  let dd; if (isCommittee()) dd = await loadDept(S.sub.dept || 'kinder'); else dd = D();
+  let dd; if (isCommittee()) dd = await loadDept(S.sub.dept || FIRST_DEPT); else dd = D();
   const year = S.sub.year || YEAR; const cp = await loadCPlan(year);
   const exists = !!(await loadPlan(dd, year)); const plan = normPlan(dd.plans[year] || blankPlan(dd, year));
   if (S.sub.print) return `<div class="topbar no-print"><div><h1>연간교육계획안 출력</h1><div class="sub">양식 그대로 3장 — 개요·조직 / 52주 계획 / 사역 계획·예산</div></div><div class="row"><button class="btn" id="pl-back">돌아가기</button><button class="btn p" id="pl-print">PDF로 저장 / 인쇄</button></div></div>${planPaper(dd, plan, cp)}`;
@@ -1693,7 +1696,7 @@ function planCellEdit(dd, plan, cp, td, key, after) {
   inp.onblur = () => setTimeout(save, 0); if (sel) inp.onchange = save;
 }
 BIND.plan = () => {
-  const dd = isCommittee() ? S.data[S.sub.dept || 'kinder'] : D();
+  const dd = isCommittee() ? S.data[S.sub.dept || FIRST_DEPT] : D();
   const year = S.sub.year || YEAR; const cm = isCommittee();
   const plan = normPlan(dd.plans[year] || blankPlan(dd, year)); dd.plans[year] = plan; const cp = (C().plans || {})[year] || { year, alloc: {}, weeks: {}, churchGoals: [] };
   document.querySelectorAll('[data-dept]').forEach(b => b.onclick = () => { S.sub = { dept: b.dataset.dept, year: S.sub.year }; render(); });
@@ -4298,6 +4301,7 @@ function importYoungAttendance(dd) {
 /* ───────────── 시작 ───────────── */
 window.CBCS_APP = { S, render, backend, matchPerson, saveReport, blankReport }; // matchPerson·saveReport는 회귀 시험용
 backend.onSession(async d => {
+  if (d && HIDDEN_DEPTS.includes(d)) { try { await backend.logoutOne(d); } catch (e) {} d = null; setTimeout(() => toast('이 부서는 아직 준비 중이라 잠시 닫아 두었습니다', 4000), 300); }
   if (d) { S.user = d; S.dept = d === 'committee' ? null : d; }
   else { S.user = null; S.dept = null; }
   if (DEMO) { try { localStorage.setItem('cbcs-tutorial-elem', '1'); localStorage.setItem('cbcs-tutorial-committee', '1'); } catch (e) {} }
