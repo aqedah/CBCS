@@ -683,6 +683,7 @@ VIEWS.roster = async () => {
         <label class="f"><span>비고</span><input type="text" id="s-n" placeholder="형제자매, 특이사항"></label>
       </div><div class="row edit-only" style="margin-top:8px"><button class="btn p" id="s-add">학생 추가</button><span class="note">새친구는 주일 보고서에서 등록하면 자동으로 들어옵니다. 세부 정보는 학생 카드에서 고칩니다.</span></div>` : ''}
     </div>
+    ${show === 'active' && young ? ageBandCard(dd, cats, canEdit() && !isCommittee()) : ''}
     ${show === 'active' ? (incoming.length || plan.out.length ? `<div class="card"><h2>${nextYear}년 진급 예정 <span class="r">생년월일·학년으로 자동 계산 · 연초에 "출석부에 받기"를 누르면 재적으로 들어옵니다</span></h2>
       ${incoming.length ? `<div class="note" style="margin-bottom:4px">입학 예정 (${incoming.length}명)</div><div class="tw"><table><thead><tr><th class="n no">번호</th><th>이름</th><th>성별</th><th>생년월일</th><th>배정 ${esc(dd.doc.classLabel)}</th><th>이전 소속</th><th>연락처</th></tr></thead><tbody>${incoming.map((x, i) => `<tr><td class="n no">${i + 1}</td><td>${esc(x.name)}</td><td>${esc(x.sex || '')}</td><td>${esc(x.birth || '')}</td><td>${esc(x.toClass || '')}</td><td>${esc(DEPTS[x.fromDept] || x.fromDept)} ${esc(x.fromClass || '')}</td><td>${esc(phoneLabel(x))}</td></tr>`).join('')}</tbody></table></div>${canEdit() && !isCommittee() ? `<div class="row edit-only" style="margin-top:8px"><button class="btn p" id="pp-receive">${nextYear}년 입학 예정자 ${incoming.length}명을 출석부에 받기</button><span class="note">받은 뒤에는 "${esc(dd.doc.classLabel)}"과 상태를 출석부에서 고칠 수 있습니다.</span></div>` : ''}` : ''}
       ${plan.out.length ? `<div class="note" style="margin:10px 0 4px">졸업·상급 부서 진급 예정 (${plan.out.length}명) — 상대 부서 출석부에 자동으로 표시됩니다</div><div class="row" style="gap:6px">${plan.out.map(({ s, toDept, toClass }) => `<span class="pill mute">${esc(s.name)} → ${DEPTS[toDept]} ${esc(toClass)}</span>`).join('')}</div>` : ''}
@@ -802,6 +803,11 @@ BIND.dropouts = () => BIND.roster();
 BIND.roster = () => {
   const dd = isCommittee() ? S.data[S.sub.dept || 'kinder'] : D();
   const po = $('#pp-open'); if (po) po.onclick = () => { S.sub.promoPrint = true; render(); };
+  const abs = $('#agb-save'); if (abs) abs.onclick = async () => { const rows = {}; document.querySelectorAll('[data-agb]').forEach(el => { (rows[el.dataset.i] = rows[el.dataset.i] || {})[el.dataset.agb] = el.value.trim(); });
+    const list = Object.keys(rows).sort((a, b) => a - b).map(i => rows[i]).filter(r => r.name).map(r => ({ name: r.name, from: r.from === '' ? '' : +r.from, to: r.to === '' ? '' : +r.to }));
+    if (list.some(r => r.from !== '' && r.to !== '' && r.from > r.to)) { toast('"부터"가 "까지"보다 큰 줄이 있습니다'); return; }
+    dd.doc.ageBands = list; await saveDeptDoc(dd.id); toast('나이대 구간을 저장했습니다'); renderHere(); };
+  const abr = $('#agb-reset'); if (abr) abr.onclick = async () => { delete dd.doc.ageBands; await saveDeptDoc(dd.id); toast('기본 구간으로 되돌렸습니다'); renderHere(); };
   const pb = $('#pp-back'); if (pb) { pb.onclick = () => { delete S.sub.promoPrint; render(); }; $('#pp-print').onclick = doPrint; return; }
   const pr = $('#pp-receive'); if (pr) pr.onclick = async () => {
     const nextYear = YEAR + 1; const inc = (S.promotions || []).filter(p => p.toDept === dd.id && p.year === nextYear && !p.received);
@@ -1675,7 +1681,7 @@ BIND.plan = () => {
   const plan = normPlan(dd.plans[year] || blankPlan(dd, year)); dd.plans[year] = plan; const cp = (C().plans || {})[year] || { year, alloc: {}, weeks: {}, churchGoals: [] };
   document.querySelectorAll('[data-dept]').forEach(b => b.onclick = () => { S.sub = { dept: b.dataset.dept, year: S.sub.year }; render(); });
   const bk = $('#pl-back'); if (bk) { bk.onclick = () => { delete S.sub.print; render(); }; $('#pl-print').onclick = doPrint; return; }
-  const keepDraft = async () => { collectPlan(plan); if (plan.status !== 'confirmed' && canEdit() && !cm) await savePlan(dd, plan); };
+  const keepDraft = async (collect = true) => { if (collect) collectPlan(plan); if (plan.status !== 'confirmed' && canEdit() && !cm) await savePlan(dd, plan); };
   const py = $('#pl-year'); if (py) py.onchange = async e => { await keepDraft(); S.sub.year = +e.target.value; render(); };
   const op = $('#pl-open-print'); if (op) op.onclick = async () => { await keepDraft(); S.sub.print = true; render(); };
   const sv = $('#pl-save'); if (sv) sv.onclick = async () => { collectPlan(plan); await savePlan(dd, plan); toast('저장했습니다'); renderHere(); };
@@ -1725,8 +1731,8 @@ BIND.plan = () => {
     if (key.startsWith('bg|') && key.endsWith('|amount')) { const i = +key.split('|')[1]; const b0 = plan.budget[i]; const before = +b0.amount || 0; return planCellEdit(dd, plan, cp, td, key, async () => { const t = planTotal(plan, cp, dd.id); if (t && budgetTotal(plan) > t) { toast(`총 예산(${won(t)}원)을 ${won(budgetTotal(plan) - t)}원 넘습니다 — 되돌렸습니다`); b0.amount = before; await savePlan(dd, plan); renderHere(); } }); }
     planCellEdit(dd, plan, cp, td, key); });
   // 줄 표: 줄 추가·삭제 (쓰던 글은 먼저 거둔다)
-  document.querySelectorAll('[data-re-add]').forEach(b => b.onclick = async () => { collectPlan(plan); const k = b.dataset.reAdd; plan[k].push(k === 'changes' ? { date: today() } : {}); if (plan.status === 'confirmed') await savePlan(dd, plan); else await keepDraft(); renderHere(); });
-  document.querySelectorAll('[data-re-del]').forEach(b => b.onclick = async () => { collectPlan(plan); plan[b.dataset.reDel].splice(+b.dataset.i, 1); if (plan.status === 'confirmed') await savePlan(dd, plan); else await keepDraft(); renderHere(); });
+  document.querySelectorAll('[data-re-add]').forEach(b => b.onclick = async () => { collectPlan(plan); const k = b.dataset.reAdd; plan[k].push(k === 'changes' ? { date: today() } : {}); if (plan.status === 'confirmed') await savePlan(dd, plan); else await keepDraft(false); renderHere(); });
+  document.querySelectorAll('[data-re-del]').forEach(b => b.onclick = async () => { collectPlan(plan); plan[b.dataset.reDel].splice(+b.dataset.i, 1); if (plan.status === 'confirmed') await savePlan(dd, plan); else await keepDraft(false); renderHere(); });
   if (plan.status === 'confirmed' && canEdit() && !cm) document.querySelectorAll('[data-re="changes"]').forEach(el => el.onchange = async () => { collectPlan(plan); await savePlan(dd, plan); toast('변경 기록 저장'); });
   bindMoney();
   // 접은 표의 상태 기억
@@ -4051,6 +4057,24 @@ const marriedOut = s => !!s.married && (!marriedYear(s) || marriedYear(s) < YEAR
 const isGrad = s => isYoungStu(s) && (marriedOut(s) || !!s.churchRole || (s.status === 'left' && YOUNG_GRAD_KINDS.includes(s.leftKind) && !(s.leftKind === '결혼' && s.married && !marriedOut(s))));
 // 지금 교사·임원 명단에서 팸장·부팸장으로 임명된 사람 (결혼·직분으로 회원이 아니어도 팸장 탭에 둔다)
 const isFamStaff = (dd, s) => !!dd && dd.doc.staff.some(t => t.status !== 'left' && /팸장/.test(t.role || '') && normName(t.name) === normName(s.name));
+/* 나이대(태어난 해)별 인원 — 목장·반을 나이로 나눌 때 몇 명씩 되는지 본다. 구간은 부서 문서 ageBands에 저장 */
+const AGE_BANDS_DEFAULT = { young: [{ name: '19–24세', from: 2003, to: 2008 }, { name: '25–30세', from: 1997, to: 2002 }, { name: '31세 이상', from: '', to: 1996 }] };
+function ageBands(dd) { return (dd.doc.ageBands && dd.doc.ageBands.length ? dd.doc.ageBands : AGE_BANDS_DEFAULT[dd.id] || []).map(b => ({ name: b.name || '', from: b.from === '' || b.from == null ? '' : +b.from, to: b.to === '' || b.to == null ? '' : +b.to })); }
+function ageBandCard(dd, cats, edit) {
+  const bands = ageBands(dd); const by = s => { const y = parseInt(String(s.birth || '').slice(0, 4), 10); return y > 1900 ? y : 0; };
+  const inB = (b, y) => y && (b.from === '' || y >= b.from) && (b.to === '' || y <= b.to);
+  const groups = [['active', '재적'], ['newcomer', '새친구'], ['away', '장기결석'], ['paused', '정지']].filter(([k]) => k === 'active' || (cats[k] || []).length);
+  const rows = [...bands.map(b => ({ label: b.name || '(이름 없음)', yr: `${b.from === '' ? '' : b.from}~${b.to === '' ? '' : b.to}년생`, test: s => inB(b, by(s)) })),
+    { label: '그 밖', yr: '구간에 안 드는 생년', test: s => by(s) && !bands.some(b => inB(b, by(s))) }, { label: '생년월일 없음', yr: '', test: s => !by(s) }];
+  const cell = (r, k) => { const l = (cats[k] || []).filter(r.test).sort((a, b) => by(a) - by(b) || a.name.localeCompare(b.name, 'ko')); return l.length ? `<details><summary><b>${l.length}</b>명</summary><div class="note" style="margin-top:4px">${l.map(s => `${esc(s.name)}<span style="opacity:.7">(${by(s) ? String(by(s)).slice(2) : '?'})</span>`).join(', ')}</div></details>` : '<span class="note">0</span>'; };
+  const body = rows.filter((r, i) => i < bands.length || groups.some(([k]) => (cats[k] || []).some(r.test)));
+  return `<div class="card" id="agb-card"><h2>나이대별 인원 <span class="r">태어난 해 기준 · 숫자를 누르면 이름(생년)이 보입니다</span></h2>
+    <div class="tw"><table class="tight"><thead><tr><th>나이대</th><th>생년</th>${groups.map(([, l]) => `<th class="n">${l}</th>`).join('')}</tr></thead><tbody>
+    ${body.map(r => `<tr><td>${esc(r.label)}</td><td class="note">${esc(r.yr)}</td>${groups.map(([k]) => `<td class="n" style="vertical-align:top">${cell(r, k)}</td>`).join('')}</tr>`).join('')}
+    <tr><th colspan="2">합계</th>${groups.map(([k]) => `<th class="n">${(cats[k] || []).length}</th>`).join('')}</tr></tbody></table></div>
+    ${edit ? `<details style="margin-top:8px"><summary class="note">나이대 구간 고치기</summary><div class="stack" style="margin-top:6px">${bands.concat([{ name: '', from: '', to: '' }]).map((b, i) => `<div class="row" style="gap:6px"><input type="text" data-agb="name" data-i="${i}" value="${esc(b.name)}" placeholder="이름 (예: 19–24세)" style="flex:1;min-width:110px"><input type="number" data-agb="from" data-i="${i}" value="${esc(b.from)}" placeholder="부터(년생)" style="width:110px"><span class="note">~</span><input type="number" data-agb="to" data-i="${i}" value="${esc(b.to)}" placeholder="까지(년생)" style="width:110px"></div>`).join('')}
+      <div class="row"><button class="btn s p" id="agb-save">구간 저장</button><button class="btn s" id="agb-reset">기본값으로</button><span class="note">비운 칸은 끝이 열린 구간입니다(예: "까지 1996"만 쓰면 1996년생 이상). 이름을 지우면 그 줄이 빠집니다.</span></div></div></details>` : ''}</div>`;
+}
 function rosterCats(dd) {
   const young = dd.id === 'young'; const c = { active: [], newcomer: [], away: [], paused: [], left: [], archived: [], grad: [] };
   for (const s of dd.students) {
