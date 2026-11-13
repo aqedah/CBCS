@@ -642,6 +642,7 @@ VIEWS.roster = async () => {
   await loadShared(); if (!isCommittee() && canEdit()) { try { await syncSiblings(dd); } catch (e) {} }
   const promos = S.promotions || (S.promotions = await backend.list('promotions'));
   const incoming = promos.filter(p => p.toDept === dd.id && p.year === nextYear && !p.received).sort((a, b) => (a.birth || '') < (b.birth || '') ? -1 : 1);
+  const receivedN = promoReceived(dd, nextYear).length;
   if (S.sub.promoPrint) return `<div class="topbar no-print"><div><h1>진급자 명단</h1><div class="sub">${nextYear}년 기준 · 인쇄하거나 PDF로 저장</div></div><div class="row"><button class="btn" id="pp-back">출석부로</button><button class="btn p" id="pp-print">PDF로 저장 / 인쇄</button></div></div>${promotionPaper(dd, nextYear, plan, incoming)}`;
   if (S.sub.leftPrint) return `<div class="topbar no-print"><div><h1>제적 명단 출력</h1></div><div class="row"><button class="btn" id="lf-back">출석부로</button><button class="btn p" id="lf-pr">PDF로 저장 / 인쇄</button></div></div>${leftPaper(dd)}`;
   // ── 출석부: 한 화면에서 탭으로 나눈다 ──
@@ -689,6 +690,7 @@ VIEWS.roster = async () => {
       </div><div class="row edit-only" style="margin-top:8px"><button class="btn p" id="s-add">학생 추가</button><span class="note">새친구는 주일 보고서에서 등록하면 자동으로 들어옵니다. 세부 정보는 학생 카드에서 고칩니다.</span></div>` : ''}
     </div>
     ${show === 'active' && young ? ageBandCard(dd, cats, canEdit() && !isCommittee()) : ''}
+    ${show === 'active' && receivedN && canEdit() && !isCommittee() ? `<div class="card"><h2>${nextYear}년 진급자 받음 <span class="r">${receivedN}명 · 출석부 재적에 들어와 있습니다</span></h2><div class="row"><button class="btn" id="pp-undo">받은 진급자 되돌리기</button><span class="note">너무 일찍 받았다면 되돌릴 수 있습니다. 받은 학생을 출석부에서 빼고 다시 "진급 예정" 명단으로 돌려놓습니다(${nextYear} 준비 탭의 목장 배정은 그대로 이어짐). 이미 출석이 찍힌 학생은 빼지 않습니다.</span></div></div>` : ''}
     ${show === 'active' ? (incoming.length || plan.out.length ? `<div class="card"><h2>${nextYear}년 진급 예정 <span class="r">생년월일·학년으로 자동 계산 · 연초에 "출석부에 받기"를 누르면 재적으로 들어옵니다</span></h2>
       ${incoming.length ? `<div class="note" style="margin-bottom:4px">입학 예정 (${incoming.length}명)</div><div class="tw"><table><thead><tr><th class="n no">번호</th><th>이름</th><th>성별</th><th>생년월일</th><th>배정 ${esc(dd.doc.classLabel)}</th><th>이전 소속</th><th>연락처</th></tr></thead><tbody>${incoming.map((x, i) => `<tr><td class="n no">${i + 1}</td><td>${esc(x.name)}</td><td>${esc(x.sex || '')}</td><td>${esc(x.birth || '')}</td><td>${esc(x.toClass || '')}</td><td>${esc(DEPTS[x.fromDept] || x.fromDept)} ${esc(x.fromClass || '')}</td><td>${esc(phoneLabel(x))}</td></tr>`).join('')}</tbody></table></div>${canEdit() && !isCommittee() ? `<div class="row edit-only" style="margin-top:8px"><button class="btn p" id="pp-receive">${nextYear}년 입학 예정자 ${incoming.length}명을 출석부에 받기</button><span class="note">받은 뒤에는 "${esc(dd.doc.classLabel)}"과 상태를 출석부에서 고칠 수 있습니다.</span></div>` : ''}` : ''}
       ${plan.out.length ? `<div class="note" style="margin:10px 0 4px">졸업·상급 부서 진급 예정 (${plan.out.length}명) — 상대 부서 출석부에 자동으로 표시됩니다</div><div class="row" style="gap:6px">${plan.out.map(({ s, toDept, toClass }) => `<span class="pill mute">${esc(s.name)} → ${DEPTS[toDept]} ${esc(toClass)}</span>`).join('')}</div>` : ''}
@@ -829,7 +831,14 @@ BIND.roster = () => {
     dd.doc.ageBands = list; await saveDeptDoc(dd.id); toast('나이대 구간을 저장했습니다'); renderHere(); };
   const abr = $('#agb-reset'); if (abr) abr.onclick = async () => { delete dd.doc.ageBands; await saveDeptDoc(dd.id); toast('기본 구간으로 되돌렸습니다'); renderHere(); };
   const pb = $('#pp-back'); if (pb) { pb.onclick = () => { delete S.sub.promoPrint; render(); }; $('#pp-print').onclick = doPrint; return; }
-  const pr = $('#pp-receive'); if (pr) pr.onclick = async () => {
+  const pu = $('#pp-undo'); if (pu) pu.onclick = () => { const ny = YEAR + 1; const n = promoReceived(dd, ny).length;
+    openModal(`<h2>받은 진급자 되돌리기<button class="btn s" id="modal-close">닫기</button></h2><p>${ny}년 진급자 ${n}명을 출석부에서 빼고 "진급 예정" 명단으로 돌려놓습니다. 학생 카드에 그사이 고친 내용은 사라집니다(진급 기록에 있던 내용은 남음). 출석이 찍힌 학생은 빼지 않습니다. 진행할까요?</p><div class="row"><button class="btn p" id="pu-yes">되돌리기</button><button class="btn" id="pu-no">취소</button></div>`);
+    $('#modal-close').onclick = closeModal; $('#pu-no').onclick = closeModal;
+    $('#pu-yes').onclick = async () => { $('#pu-yes').disabled = true; try { const r = await undoPromoReceive(dd, ny); closeModal(); toast(`${r.done.length}명을 되돌렸습니다${r.kept.length ? ` · 출석 기록이 있어 남긴 학생: ${r.kept.join(', ')}` : ''}`, 5000); render(); } catch (e) { closeModal(); toast('되돌리다 멈췄습니다: ' + (e.code || e.message), 5000); } }; };
+  const pr = $('#pp-receive'); if (pr) pr.onclick = () => { const nextYear = YEAR + 1; const n = (S.promotions || []).filter(p => p.toDept === dd.id && p.year === nextYear && !p.received).length;
+    openModal(`<h2>진급자 출석부에 받기<button class="btn s" id="modal-close">닫기</button></h2><p>${nextYear}년 진급자 ${n}명을 지금 출석부 재적으로 넣습니다. 받은 날부터 ${YEAR}년 출석부·출석 체크·통계에도 들어갑니다. 보통은 ${YEAR}년 마지막 주일이 지난 뒤(연초)에 받습니다. 잘못 받으면 "받은 진급자 되돌리기"로 돌릴 수 있습니다.</p><div class="row"><button class="btn p" id="pr-yes">지금 받기</button><button class="btn" id="pr-no">취소</button></div>`);
+    $('#modal-close').onclick = closeModal; $('#pr-no').onclick = closeModal; $('#pr-yes').onclick = () => { closeModal(); receivePromos(); }; };
+  const receivePromos = async () => {
     const nextYear = YEAR + 1; const inc = (S.promotions || []).filter(p => p.toDept === dd.id && p.year === nextYear && !p.received);
     for (const x of inc) {
       const sid = `${dd.id}_${x.name}_${x.birth || uid()}`;
@@ -4077,6 +4086,23 @@ const marriedOut = s => !!s.married && (!marriedYear(s) || marriedYear(s) < YEAR
 const isGrad = s => isYoungStu(s) && (marriedOut(s) || !!s.churchRole || (s.status === 'left' && YOUNG_GRAD_KINDS.includes(s.leftKind) && !(s.leftKind === '결혼' && s.married && !marriedOut(s))));
 // 지금 교사·임원 명단에서 팸장·부팸장으로 임명된 사람 (결혼·직분으로 회원이 아니어도 팸장 탭에 둔다)
 const isFamStaff = (dd, s) => !!dd && dd.doc.staff.some(t => t.status !== 'left' && /팸장/.test(t.role || '') && normName(t.name) === normName(s.name));
+// "출석부에 받기"로 들어온 진급자: 받은 진급 기록과, 그때 만든 학생(source에 '진급 {해}')을 짝지어 돌려준다
+function promoReceived(dd, ny) {
+  return (S.promotions || []).filter(p => p.toDept === dd.id && p.year === ny && p.received).map(p => ({ p, s: dd.students.find(x => (x.source || []).includes(`진급 ${ny}`) && normName(x.name) === normName(p.name)) })).filter(x => x.s);
+}
+async function undoPromoReceive(dd, ny) {
+  const list = promoReceived(dd, ny); const used = id => Object.values(dd.reports || {}).some(r => (r.att && r.att[id]) || (r.absent && r.absent[id]));
+  const done = [], kept = []; const prep = await backend.get(`depts/${dd.id}/yearPrep/${ny}`); let prepCh = false;
+  for (const { p, s: st } of list) {
+    if (used(st.id)) { kept.push(st.name); continue; }
+    await backend.del(`depts/${dd.id}/students/${st.id}`); dd.students = dd.students.filter(x => x.id !== st.id);
+    const { _id, received, receivedAt, ...pd } = p; await backend.set(`promotions/${_id}`, pd); delete p.received; delete p.receivedAt;
+    if (prep && prep.assign && prep.assign[st.id]) { prep.assign['p:' + _id] = prep.assign[st.id]; delete prep.assign[st.id]; prepCh = true; }
+    done.push(st.name);
+  }
+  if (prepCh) { const { _id, ...pd } = prep; await backend.set(`depts/${dd.id}/yearPrep/${ny}`, pd); }
+  return { done, kept };
+}
 /* 다음 해 준비(청년부): 내년 예상 명단을 목장(팸)으로 미리 나눠 둔다. 데이터 depts/{d}/yearPrep/{내년}
    { groups:[{id,name,from,to,leader,note}], assign:{사람키: 목장id | 'x'(내년 제외)}, at }
    사람키: 출석부 학생은 학생 id, 아직 받지 않은 진급 예정자는 'p:'+진급 기록 id. 해가 바뀌면 "팸 소속으로 옮기기"로 출석부에 적용 */
