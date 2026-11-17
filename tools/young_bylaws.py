@@ -66,6 +66,16 @@ bylaws.append({ 'id': '2025-24', 'kind': 'young', 'textOnly': True, 'text': read
 # 기드온 찬양팀 회칙 (별도 규례)
 bylaws.append({ 'id': 'gideon-12', 'kind': 'gideon', 'title': '중앙성서교회 기드온 찬양팀 회칙', 'revision': '12차 수정', 'date': '2025-11-30', 'status': 'current',
                 'text': read('2025_중앙성서교회 기드온 회칙.txt', True), 'summary': [], 'notes': '기드온 찬양팀 자체 회칙 — 청년부 총회 자동 판정에는 쓰지 않습니다.' })
+# 밀알선교팀 회칙 (청년부 안의 선교팀, 5차 수정 2021-01-03). txt 폴더에 '밀알선교팀 회칙.txt'가 있을 때만
+if os.path.exists(os.path.join(SRC, '밀알선교팀 회칙.txt')):
+    bylaws.append({ 'id': 'milal-5', 'kind': 'milal', 'title': '중앙성서교회 밀알선교팀 회칙', 'revision': '5차 수정', 'date': '2021-01-03', 'status': 'current',
+                    'text': read('밀알선교팀 회칙.txt'),
+                    'summary': [('3조', '자격', '만 19세 이상, 청년부 예배 6개월 이상 출석한 세례자 (담당 목회자와 상의해 예외 가입 가능) · 준회원(투표권 없음)/정회원(3개월 이상 참여)'),
+                                ('4조', '임원 자격', '교회 출석 1년 이상 + 입단 후 모임 참석 70% 이상 + 해외 선교 1회 이상 · 다른 팀 리더는 불가'),
+                                ('4조', '선출', '자원 → 추천·투표 → 제비뽑기 순, 정회원 2/3 찬성'),
+                                ('7조', '정기총회', '연 1회 9월, 성원은 재적 과반수')],
+                    'notes': '청년부 안의 선교팀 회칙 — 청년부 총회 자동 판정에는 쓰지 않습니다. 원본: 밀알선교팀 회칙 2021 (HWP)' })
+    bylaws[-1]['summary'] = [{ 'no': n, 'title': t, 'body': b } for n, t, b in bylaws[-1]['summary']]
 out = { 'generated': datetime.datetime.now().isoformat(timespec='seconds'), 'dept': 'young', 'bylaws': bylaws,
         '_review': ['2013년 판은 파일 안의 수정 이력이 12차(2012-10-21)까지만 있고 파일명이 "13년총회수정본"이라 13차로 두었습니다 (날짜 기록 없음)',
                     '2011~2018 판의 판정 수치(선거권 출석률 없음, 회장 나이 제한 등)는 본문을 읽고 넣은 값이라 참고용입니다'] }

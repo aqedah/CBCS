@@ -2197,6 +2197,7 @@ async function loadYoung() {
   if (!dd.bylaws) { const l = await backend.list('depts/young/bylaws'); dd.bylaws = l.length ? l.map(b => ({ ...b, id: b.id || b._id })) : BYLAW_SEED.map(b => ({ ...b, unsaved: true })); }
   if (!dd.bylaws.some(b => b.kind === 'charter')) dd.bylaws.push({ id: 'charter', kind: 'charter', title: '한국성서선교회 헌장', revision: '', date: '', status: 'current', text: '', summary: [], notes: '', unsaved: true });
   if (!dd.bylaws.some(b => b.kind === 'gideon')) dd.bylaws.push({ id: 'gideon', kind: 'gideon', title: '중앙성서교회 기드온 찬양팀 회칙', revision: '', date: '', status: 'current', text: '', summary: [], notes: '', unsaved: true });
+  if (!dd.bylaws.some(b => b.kind === 'milal')) dd.bylaws.push({ id: 'milal', kind: 'milal', title: '중앙성서교회 밀알선교팀 회칙', revision: '', date: '', status: 'current', text: '', summary: [], notes: '', unsaved: true });
   if (!dd.assemblies) dd.assemblies = (await backend.list('depts/young/assemblies')).map(a => ({ ...a, id: a.id || a._id }));
   return dd;
 }
@@ -2204,7 +2205,7 @@ async function loadYoung() {
 // 청년부 회칙 화면 맨 위에 늘 보이는 원칙
 const YOUNG_PRINCIPLE = { src: '사단법인 한국성서선교회 헌장 제29조(기관의 권리 및 의무)', lead: '각 회원교회는 남, 녀 전도회, 장년회, 청년회, 각급 주일학교 등 여러 기관을 가지며 다음과 같은 권리 및 의무를 갖는다.', items: ['전 기관은 그 교회에 소속된다.', '각 기관은 그 교회에 봉사하기 위하여 존재한다.', '각 기관은 당회의 관할 하에 그 지도 및 치리를 받는다.', '각 기관은 당회의 지도하에 사업을 운영한다.', '각 기관은 사업을 위한 예산 결산을 당회에 제출하여 감사를 받는다.'], more: [{ src: '사단법인 한국성서선교회 헌장 제60조(권리)', body: '입교인은 성찬 참여와 공동의회 회원권을 가지며 선거권과 피선거권을 갖는다.' }] };
 const principleHTML = () => `<details class="card principle" ${S.principleClosed ? '' : 'open'}><summary><h2>${esc(YOUNG_PRINCIPLE.src)}</h2><span class="pr-tg"></span></summary><p>${esc(YOUNG_PRINCIPLE.lead)}</p><ol>${YOUNG_PRINCIPLE.items.map(x => `<li>${esc(x)}</li>`).join('')}</ol>${(YOUNG_PRINCIPLE.more || []).map(m => `<h3 style="margin:14px 0 4px;font-size:15px">${esc(m.src)}</h3><p>${esc(m.body)}</p>`).join('')}</details>`;
-const RULE_DOCS = { young: { name: '청년부 회칙', org: '중앙성서교회 청년부' }, gideon: { name: '기드온 찬양팀 회칙', org: '중앙성서교회 기드온 찬양팀' }, charter: { name: '한국성서선교회 헌장', org: '한국성서선교회' } };
+const RULE_DOCS = { young: { name: '청년부 회칙', org: '중앙성서교회 청년부' }, gideon: { name: '기드온 찬양팀 회칙', org: '중앙성서교회 기드온 찬양팀' }, milal: { name: '밀알선교팀 회칙', org: '중앙성서교회 밀알선교팀' }, charter: { name: '한국성서선교회 헌장', org: '한국성서선교회' } };
 const bylawKind = b => (b && b.kind) || 'young';
 const bylawsOf = (dd, k) => dd.bylaws.filter(b => bylawKind(b) === k);
 const currentOf = (dd, k) => { const l = bylawsOf(dd, k); return l.find(b => b.status === 'current') || l[0]; };
@@ -2486,7 +2487,7 @@ VIEWS.bylaws = async () => {
   const sel = dd.bylaws.find(x => x.id === S.sub.bylaw); const kind = sel ? bylawKind(sel) : (S.sub.rdoc || 'young'); const DOC = RULE_DOCS[kind]; const isYoung = kind === 'young';
   const vs = bylawsOf(dd, kind).sort(bylawOrder);
   const b = vs.find(x => x.id === S.sub.bylaw) || currentOf(dd, kind);
-  const docTabs = `<div class="row" style="gap:6px;margin:-4px 0 14px">${Object.entries(RULE_DOCS).map(([k, d]) => `<button class="btn ${k === kind ? 'p' : ''}" data-rdoc="${esc(k)}">${d.name}</button>`).join('')}<span class="note" style="margin-left:6px">${isYoung ? '청년부 총회 자동 판정의 기준' : kind === 'gideon' ? '기드온 찬양팀 자체 회칙 — 총회 자동 판정에는 쓰지 않습니다' : '통상 규례 — 총회 자동 판정에는 쓰지 않습니다'}</span></div>`;
+  const docTabs = `<div class="row" style="gap:6px;margin:-4px 0 14px">${Object.entries(RULE_DOCS).map(([k, d]) => `<button class="btn ${k === kind ? 'p' : ''}" data-rdoc="${esc(k)}">${d.name}</button>`).join('')}<span class="note" style="margin-left:6px">${isYoung ? '청년부 총회 자동 판정의 기준' : kind === 'gideon' ? '기드온 찬양팀 자체 회칙 — 총회 자동 판정에는 쓰지 않습니다' : kind === 'milal' ? '밀알선교팀(청년부 내 선교팀) 자체 회칙 — 총회 자동 판정에는 쓰지 않습니다' : '통상 규례 — 총회 자동 판정에는 쓰지 않습니다'}</span></div>`;
   const edit = canYoung();
   if (S.sub.print === 'changes') { const o = bylawDiffOpt(b, vs); const groups = bylawChangeGroups(o); const st = x => ({ current: '현행', draft: '개정안', old: '이전 판' }[x.status] || '');
     return `<div class="topbar no-print"><div><h1>바뀐 점 출력</h1><div class="sub">${esc(o.pv ? o.pv.revision : '')} → ${esc(b.revision)} 개정 대비</div></div><div class="row"><button class="btn" id="bl-back">돌아가기</button><button class="btn p" id="bl-pr">PDF로 저장 / 인쇄</button></div></div>
@@ -2507,7 +2508,7 @@ VIEWS.bylaws = async () => {
       ${b.notes ? `<div class="note" style="margin-top:10px">${esc(b.notes)}</div>` : ''}</div>
     <div class="stack">
       <div class="card"><h2>판(版) 목록</h2><div class="list vlist">${vs.map(x => `<button class="item ${x.id === b.id ? 'on' : ''}" data-bylaw="${esc(x.id)}" style="text-align:left;width:100%"><div><div class="t">${esc(x.revision || DOC.name)}</div><div class="d">${x.date ? esc(x.date) + ' · ' : ''}${x.gap ? (x.gap === 'missing' ? '본문 없음' : '결번') : { current: '현행', draft: '개정안', old: '이전 판' }[x.status]}</div></div></button>`).join('')}</div>
-        ${edit ? `<div class="row" style="margin-top:10px"><button class="btn s" id="bl-add">새 개정안 추가</button>${isYoung || kind === 'gideon' ? '<button class="btn s" id="bl-import">역대 회칙 가져오기 (JSON)</button>' : ''}</div>` : ''}</div>
+        ${edit ? `<div class="row" style="margin-top:10px"><button class="btn s" id="bl-add">새 개정안 추가</button>${isYoung || kind === 'gideon' || kind === 'milal' ? '<button class="btn s" id="bl-import">역대 회칙 가져오기 (JSON)</button>' : ''}</div>` : ''}</div>
       ${b.text.trim() ? (() => { const o = bylawDiffOpt(b, vs); if (!o.pv) return `<div class="card"><h2>앞 판에서 바뀐 점</h2><div class="note">이 판보다 앞선 판이 없어 비교할 수 없습니다.</div></div>`;
         const groups = bylawChangeGroups(o);
         return `<div class="card bl-chgcard"><h2>${esc(b.revision || '')}에서 바뀐 점 <span class="r">${esc(o.pv.revision || '')} 대비 · 조문 ${groups.length}곳${groups.length ? ' <button class="btn s" id="bl-chgprint">PDF로 출력</button>' : ''}</span></h2>${bylawChangesBody(groups)}</div>`; })() : ''}
