@@ -641,3 +641,12 @@ table.roster td.wrap{min-width:0}
 .t-abs label{display:flex;align-items:center;gap:8px;min-width:0}
 .t-abs label span{flex:0 0 auto;min-width:3.5em;font-weight:600;font-size:13px}
 .t-abs label input{flex:1;min-width:0}
+/* 출석부 출력(가로) */
+.att-paper{max-width:none;font-size:10px}
+.att-paper table.att{display:table !important;width:100%;border-collapse:collapse}.att-paper table.att thead{display:table-header-group !important}.att-paper table.att tbody{display:table-row-group !important}.att-paper table.att tr{display:table-row !important}.att-paper table.att th,.att-paper table.att td{display:table-cell !important}
+.att-paper table.att th,.att-paper table.att td{border:1px solid #999;padding:1px 2px;text-align:center;white-space:nowrap;font-size:8.5px;line-height:1.25}
+.att-paper table.att th.d{font-size:7.5px;line-height:1.1;padding:1px 0;width:13px}.att-paper table.att th.d span{display:block}
+.att-paper table.att td.m{width:13px;padding:0}.att-paper table.att td.m.t{color:#1d5fa8}
+.att-paper table.att .nm{text-align:left;min-width:46px}.att-paper table.att td.n,.att-paper table.att th.n{min-width:18px}
+.att-paper table.att tr.sep td{text-align:left;background:#eee;font-weight:700}.att-paper table.att tr.sum td{background:#f4f1ea;font-weight:700}
+@media print{.att-paper{page-break-after:always;padding:0}.att-paper:last-child{page-break-after:auto}.att-paper table.att{width:100% !important;page-break-inside:auto}.att-paper thead{display:table-header-group !important}.att-paper tr,.att-paper td,.att-paper th{break-inside:auto;page-break-inside:auto}}
